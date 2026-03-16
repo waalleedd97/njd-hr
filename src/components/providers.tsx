@@ -59,6 +59,7 @@ export interface UserProfile {
   positionEn: string;
   initials: string;
   email: string;
+  profileCompleted?: boolean;
 }
 
 /** Admin emails — users in HR department are admins */
@@ -67,9 +68,22 @@ const ADMIN_EMAILS = new Set(
 );
 
 function resolveUser(email: string): { profile: UserProfile; role: UserRole } | null {
-  const emp = allEmployees.find(
+  // Check static employees first
+  let emp = allEmployees.find(
     (e) => e.email.toLowerCase() === email.toLowerCase()
   );
+  // Also check dynamic employees from data store (invited employees)
+  if (!emp) {
+    try {
+      const saved = localStorage.getItem("njd-hr-data");
+      if (saved) {
+        const data = JSON.parse(saved);
+        emp = (data.employees || []).find(
+          (e: { email: string }) => e.email.toLowerCase() === email.toLowerCase()
+        );
+      }
+    } catch { /* ignore */ }
+  }
   if (!emp) return null;
   const profile: UserProfile = {
     id: emp.id,
@@ -79,6 +93,7 @@ function resolveUser(email: string): { profile: UserProfile; role: UserRole } | 
     positionEn: emp.positionEn,
     initials: emp.initials,
     email: emp.email,
+    profileCompleted: emp.profileCompleted !== false,
   };
   const role: UserRole = ADMIN_EMAILS.has(emp.email) ? "admin" : "employee";
   return { profile, role };
@@ -150,6 +165,21 @@ function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     (email: string, _password: string): boolean => {
       if (!email) return false;
+      // Check if this email has a pending invitation — accept it first
+      try {
+        const saved = localStorage.getItem("njd-hr-data");
+        if (saved) {
+          const data = JSON.parse(saved);
+          const hasInvitation = (data.pendingInvitations || []).some(
+            (i: { email: string; status: string }) =>
+              i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
+          );
+          if (hasInvitation) {
+            // Trigger acceptInvitation via a custom event (picked up by DataProvider)
+            window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
+          }
+        }
+      } catch { /* ignore */ }
       const resolved = resolveUser(email);
       if (!resolved) return false;
       setUser(resolved.profile);

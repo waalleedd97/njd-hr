@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -41,8 +42,8 @@ export function Topbar() {
   const visibleNavItems = getNavForRole(navItems, role);
 
   const handleProfile = useCallback(() => {
-    router.push(isAdmin ? "/employees" : "/");
-  }, [router, isAdmin]);
+    router.push("/profile");
+  }, [router]);
 
   const handleSettings = useCallback(() => {
     router.push(isAdmin ? "/settings" : "/");
@@ -72,9 +73,7 @@ export function Topbar() {
               <SheetHeader className="p-4 border-b border-border">
                 <SheetTitle>
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg">
-                      ن
-                    </div>
+                    <Image src="/logo.png" alt="NJD Games" width={40} height={40} className="w-10 h-10 rounded-xl object-contain" />
                     <div className="text-start">
                       <div className="font-bold text-foreground leading-tight">
                         {t.appName}
@@ -114,9 +113,7 @@ export function Topbar() {
 
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">
-              ن
-            </div>
+            <Image src="/logo.png" alt="NJD Games" width={32} height={32} className="w-8 h-8 rounded-lg object-contain" />
             <span className="font-bold text-sm">{t.appName}</span>
           </div>
         </div>

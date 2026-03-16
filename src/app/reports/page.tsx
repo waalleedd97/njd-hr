@@ -1,7 +1,8 @@
 "use client";
 
 import { useLanguage } from "@/components/providers";
-import { employees, departments, todayAttendance, leaveBalances } from "@/lib/mock-data";
+import { employees, todayAttendance, leaveBalances } from "@/lib/mock-data";
+import { useData } from "@/lib/data-store";
 import { cn } from "@/lib/utils";
 import { Users, TrendingDown, Clock, CheckCircle } from "lucide-react";
 
@@ -35,6 +36,7 @@ const leaveTrackMap: Record<string, string> = {
 
 export default function ReportsPage() {
   const { t, lang } = useLanguage();
+  const departments = useData().departments;
   const isAr = lang === "ar";
 
   // --- KPI Calculations ---

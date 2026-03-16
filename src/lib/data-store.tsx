@@ -18,6 +18,7 @@ import {
   attendanceAdjustments as defaultAdjustments,
   pendingInvitations as defaultInvitations,
   notifications as defaultNotifications,
+  departments as defaultDepartments,
   type Employee,
   type Notification,
   type SalaryAdvance,
@@ -83,6 +84,7 @@ interface DataState {
   notifications: Notification[];
   settings: AppSettings;
   payrollProcessed: boolean;
+  departments: Record<string, { ar: string; en: string }>;
 }
 
 // ─── Default State ───────────────────────────────────────────────────
@@ -106,6 +108,7 @@ function getDefaultState(): DataState {
       crNumber: "1010XXXXXX",
     },
     payrollProcessed: false,
+    departments: { ...defaultDepartments },
   };
 }
 
@@ -186,6 +189,15 @@ interface DataContextType extends DataState {
   // Settings
   updateSettings: (updates: Partial<AppSettings>) => void;
 
+  // Departments
+  addDepartment: (key: string, ar: string, en: string) => void;
+  updateDepartment: (key: string, ar: string, en: string) => void;
+  removeDepartment: (key: string) => void;
+
+  // Profile completion (for invited employees)
+  acceptInvitation: (email: string) => void;
+  completeProfile: (id: string, data: Partial<Employee>) => void;
+
   // Payroll
   processPayroll: () => void;
 
@@ -226,6 +238,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     }
   }, [state, hydrated]);
+
+  // Listen for invitation acceptance from AuthProvider
+  useEffect(() => {
+    function handleAccept(e: Event) {
+      const email = (e as CustomEvent).detail;
+      if (email) acceptInvitation(email);
+    }
+    window.addEventListener("njd-accept-invitation", handleAccept);
+    return () => window.removeEventListener("njd-accept-invitation", handleAccept);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Actions ──
 
@@ -468,6 +491,77 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  const addDepartment = useCallback((key: string, ar: string, en: string) => {
+    setState((p) => ({
+      ...p,
+      departments: { ...p.departments, [key]: { ar, en } },
+    }));
+  }, []);
+
+  const updateDepartment = useCallback((key: string, ar: string, en: string) => {
+    setState((p) => ({
+      ...p,
+      departments: { ...p.departments, [key]: { ar, en } },
+    }));
+  }, []);
+
+  const removeDepartment = useCallback((key: string) => {
+    setState((p) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { [key]: _removed, ...rest } = p.departments;
+      return { ...p, departments: rest };
+    });
+  }, []);
+
+  const acceptInvitation = useCallback((email: string) => {
+    setState((p) => {
+      const inv = p.pendingInvitations.find(
+        (i) => i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
+      );
+      if (!inv) return p;
+      const alreadyExists = p.employees.some(
+        (e) => e.email.toLowerCase() === email.toLowerCase()
+      );
+      if (alreadyExists) return p;
+      const colors = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-purple-500", "bg-cyan-500", "bg-orange-500", "bg-teal-500", "bg-pink-500", "bg-indigo-500"];
+      const newEmp: Employee = {
+        id: genId("EMP"),
+        nameAr: inv.nameAr,
+        nameEn: inv.nameEn,
+        positionAr: inv.positionAr,
+        positionEn: inv.positionEn,
+        department: inv.department,
+        email: inv.email,
+        phone: "",
+        status: "active",
+        joinDate: new Date().toISOString().split("T")[0],
+        salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+        initials: inv.nameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
+        color: colors[Math.floor(Math.random() * colors.length)],
+        profileCompleted: false,
+      };
+      return {
+        ...p,
+        employees: [...p.employees, newEmp],
+        pendingInvitations: p.pendingInvitations.map((i) =>
+          i.id === inv.id ? { ...i, status: "expired" as const } : i
+        ),
+      };
+    });
+  }, []);
+
+  const completeProfile = useCallback(
+    (id: string, data: Partial<Employee>) => {
+      setState((p) => ({
+        ...p,
+        employees: p.employees.map((e) =>
+          e.id === id ? { ...e, ...data, profileCompleted: true } : e
+        ),
+      }));
+    },
+    []
+  );
+
   const resetStore = useCallback(() => {
     const fresh = getDefaultState();
     setState(fresh);
@@ -491,6 +585,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     addNotification,
     updateEmployee,
     updateSettings,
+    addDepartment,
+    updateDepartment,
+    removeDepartment,
+    acceptInvitation,
+    completeProfile,
     processPayroll,
     resetStore,
   };

@@ -15,6 +15,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
   Building2,
   Shield,
   Users,
@@ -29,9 +37,13 @@ import {
   Plus,
   X,
   Check,
+  Layers,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 
 const tabs = [
+  "departments",
   "companyInfo",
   "branches",
   "rolesPermissions",
@@ -43,6 +55,7 @@ const tabs = [
 type Tab = (typeof tabs)[number];
 
 const tabIcons: Record<Tab, React.ReactNode> = {
+  departments: <Layers className="w-4 h-4" />,
   companyInfo: <Building2 className="w-4 h-4" />,
   branches: <MapPin className="w-4 h-4" />,
   rolesPermissions: <Users className="w-4 h-4" />,
@@ -55,7 +68,8 @@ const tabIcons: Record<Tab, React.ReactNode> = {
 export default function SettingsPage() {
   const { t, lang } = useLanguage();
   const isAr = lang === "ar";
-  const { settings, updateSettings, addNotification } = useData();
+  const store = useData();
+  const { settings, updateSettings, addNotification } = store;
 
   const [activeTab, setActiveTab] = useState<Tab>("companyInfo");
   const [geofenceEnabled, setGeofenceEnabled] = useState(settings.geofenceEnabled);
@@ -103,7 +117,15 @@ export default function SettingsPage() {
       : "Game Development"
   );
 
+  // Department management state
+  const [deptDialogOpen, setDeptDialogOpen] = useState(false);
+  const [deptEditKey, setDeptEditKey] = useState<string | null>(null);
+  const [deptNameAr, setDeptNameAr] = useState("");
+  const [deptNameEn, setDeptNameEn] = useState("");
+  const [deptKey, setDeptKey] = useState("");
+
   const tabLabels: Record<Tab, string> = {
+    departments: t.dept.title,
     companyInfo: t.set.companyInfo,
     branches: t.set.branches,
     rolesPermissions: t.set.rolesPermissions,
@@ -182,6 +204,65 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab Content */}
+      {activeTab === "departments" && (
+        <div className="glass-card rounded-xl p-5 lg:p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                <Layers className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <h2 className="text-lg font-bold">{t.dept.title}</h2>
+            </div>
+            <Button className="gap-2" onClick={() => {
+              setDeptEditKey(null);
+              setDeptKey("");
+              setDeptNameAr("");
+              setDeptNameEn("");
+              setDeptDialogOpen(true);
+            }}>
+              <Plus className="w-4 h-4" />
+              {t.dept.addDept}
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            {Object.entries(store.departments).map(([key, dept]) => {
+              const empCount = store.employees.filter((e) => e.department === key).length;
+              return (
+                <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-accent/30 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">{isAr ? dept.ar : dept.en}</p>
+                    <p className="text-xs text-muted-foreground">{isAr ? dept.en : dept.ar} · {empCount} {isAr ? "موظف" : "employees"}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      setDeptEditKey(key);
+                      setDeptKey(key);
+                      setDeptNameAr(dept.ar);
+                      setDeptNameEn(dept.en);
+                      setDeptDialogOpen(true);
+                    }}>
+                      <Pencil className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600" onClick={() => {
+                      if (empCount > 0) {
+                        addNotification({ type: "system", titleAr: "خطأ", titleEn: "Error", descAr: t.dept.hasEmployees, descEn: t.dept.hasEmployees, time: 0, read: false });
+                        return;
+                      }
+                      if (confirm(t.dept.confirmDelete)) {
+                        store.removeDepartment(key);
+                      }
+                    }}>
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {activeTab === "companyInfo" && (
         <div className="glass-card rounded-xl p-5 lg:p-6">
           <div className="flex items-center gap-3 mb-6">
@@ -1074,6 +1155,50 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* ─── Department Add/Edit Dialog ──────────────────────────────── */}
+      <Dialog open={deptDialogOpen} onOpenChange={setDeptDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{deptEditKey ? t.dept.editDept : t.dept.addDept}</DialogTitle>
+            <DialogDescription className="sr-only">{t.dept.title}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {!deptEditKey && (
+              <div>
+                <label className="text-sm font-medium block mb-1">{t.dept.key}</label>
+                <input
+                  type="text"
+                  value={deptKey}
+                  onChange={(e) => setDeptKey(e.target.value.toLowerCase().replace(/\s+/g, "-"))}
+                  placeholder="e.g. game-dev"
+                  dir="ltr"
+                  className={inputClass}
+                />
+              </div>
+            )}
+            <div>
+              <label className="text-sm font-medium block mb-1">{t.dept.nameAr}</label>
+              <input type="text" value={deptNameAr} onChange={(e) => setDeptNameAr(e.target.value)} dir="rtl" className={inputClass} />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{t.dept.nameEn}</label>
+              <input type="text" value={deptNameEn} onChange={(e) => setDeptNameEn(e.target.value)} dir="ltr" className={inputClass} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeptDialogOpen(false)}>{t.common.cancel}</Button>
+            <Button disabled={!deptKey || !deptNameAr || !deptNameEn} onClick={() => {
+              if (deptEditKey) {
+                store.updateDepartment(deptEditKey, deptNameAr, deptNameEn);
+              } else {
+                store.addDepartment(deptKey, deptNameAr, deptNameEn);
+              }
+              setDeptDialogOpen(false);
+            }}>{t.common.save}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

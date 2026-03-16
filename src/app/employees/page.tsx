@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
-import { departments, GOSI_RATE } from "@/lib/mock-data";
+import { GOSI_RATE } from "@/lib/mock-data";
 import type { Employee } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,7 @@ export default function EmployeesPage() {
   const { t, lang } = useLanguage();
   const { isAdmin } = useAuth();
   const store = useData();
+  const departments = store.departments;
   const isAr = lang === "ar";
 
   const [searchQuery, setSearchQuery] = useState("");

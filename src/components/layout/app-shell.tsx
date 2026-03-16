@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
 import { adminOnlyPaths } from "@/lib/navigation";
@@ -51,9 +52,7 @@ function LoginScreen() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#7C52D9] to-[#4C2A8A] flex items-center justify-center text-white font-bold text-2xl mx-auto shadow-lg shadow-primary/25">
-            ن
-          </div>
+          <Image src="/logo.png" alt="NJD Games" width={64} height={64} className="w-16 h-16 rounded-2xl object-contain mx-auto shadow-lg shadow-primary/25" />
           <h1 className="text-2xl font-bold mt-4 text-foreground">
             {isAr ? "نجد قيمز" : "NJD Games"}
           </h1>
@@ -78,7 +77,7 @@ function LoginScreen() {
                   setError(false);
                 }}
                 className="h-11 w-full rounded-lg border border-border bg-background px-4 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
-                placeholder="name@njdgames.com"
+                placeholder="example@njdstudio.net"
                 required
               />
             </div>
@@ -184,7 +183,7 @@ function LoginScreen() {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const { dir, lang, t } = useLanguage();
-  const { role, isAuthenticated } = useAuth();
+  const { role, user, isAuthenticated } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -198,6 +197,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname, isAuthenticated]);
+
+  // Redirect invited employees to profile completion
+  const needsProfileCompletion =
+    isAuthenticated && user.profileCompleted === false && pathname !== "/profile/complete";
+
+  useEffect(() => {
+    if (needsProfileCompletion) {
+      router.replace("/profile/complete");
+    }
+  }, [needsProfileCompletion, router]);
 
   // Route protection: redirect employees away from admin-only pages
   const isBlocked =

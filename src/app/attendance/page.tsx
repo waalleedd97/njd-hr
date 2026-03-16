@@ -5,7 +5,6 @@ import { useLanguage, useAuth } from "@/components/providers";
 import { useData, haversineDistance } from "@/lib/data-store";
 import {
   employees,
-  departments,
   calcDuration,
   geofenceConfig,
   penaltyRules,
@@ -35,7 +34,107 @@ import {
   FileEdit,
   ShieldAlert,
   Info,
+  ChevronUp,
+  ChevronDown,
 } from "lucide-react";
+
+// ─── 12-hour Time Picker ──────────────────────────────────────────────
+
+function to12h(time24: string): { hour: number; minute: number; period: "AM" | "PM" } {
+  if (!time24) return { hour: 12, minute: 0, period: "AM" };
+  const [h, m] = time24.split(":").map(Number);
+  const period: "AM" | "PM" = h >= 12 ? "PM" : "AM";
+  const hour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  return { hour, minute: m, period };
+}
+
+function to24h(hour: number, minute: number, period: "AM" | "PM"): string {
+  let h = hour;
+  if (period === "AM" && h === 12) h = 0;
+  else if (period === "PM" && h !== 12) h += 12;
+  return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function TimePicker({
+  value,
+  onChange,
+  label,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+}) {
+  const parsed = to12h(value);
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [period, setPeriod] = useState(parsed.period);
+
+  useEffect(() => {
+    const p = to12h(value);
+    setHour(p.hour);
+    setMinute(p.minute);
+    setPeriod(p.period);
+  }, [value]);
+
+  const emit = (h: number, m: number, p: "AM" | "PM") => {
+    onChange(to24h(h, m, p));
+  };
+
+  const incHour = () => { const next = hour >= 12 ? 1 : hour + 1; setHour(next); emit(next, minute, period); };
+  const decHour = () => { const next = hour <= 1 ? 12 : hour - 1; setHour(next); emit(next, minute, period); };
+  const incMinute = () => { const next = minute >= 59 ? 0 : minute + 1; setMinute(next); emit(hour, next, period); };
+  const decMinute = () => { const next = minute <= 0 ? 59 : minute - 1; setMinute(next); emit(hour, next, period); };
+  const togglePeriod = () => { const next = period === "AM" ? "PM" : "AM"; setPeriod(next); emit(hour, minute, next); };
+
+  return (
+    <div>
+      <label className="text-sm font-medium text-foreground block mb-1.5">{label}</label>
+      <div className="flex items-center gap-1.5">
+        {/* Hour spinner */}
+        <div className="flex flex-col items-center">
+          <button type="button" onClick={incHour} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronUp className="w-4 h-4" />
+          </button>
+          <div className="w-10 h-9 rounded-lg border border-border bg-card flex items-center justify-center text-sm font-semibold tabular-nums">
+            {String(hour).padStart(2, "0")}
+          </div>
+          <button type="button" onClick={decHour} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronDown className="w-4 h-4" />
+          </button>
+        </div>
+
+        <span className="text-lg font-bold text-muted-foreground pb-0.5">:</span>
+
+        {/* Minute spinner */}
+        <div className="flex flex-col items-center">
+          <button type="button" onClick={incMinute} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronUp className="w-4 h-4" />
+          </button>
+          <div className="w-10 h-9 rounded-lg border border-border bg-card flex items-center justify-center text-sm font-semibold tabular-nums">
+            {String(minute).padStart(2, "0")}
+          </div>
+          <button type="button" onClick={decMinute} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronDown className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* AM/PM toggle */}
+        <button
+          type="button"
+          onClick={togglePeriod}
+          className={cn(
+            "ms-1 h-9 px-2.5 rounded-lg text-xs font-bold transition-colors self-center",
+            period === "AM"
+              ? "bg-primary/10 text-primary"
+              : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+          )}
+        >
+          {period}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 const statusStyles: Record<string, string> = {
   present:
@@ -62,6 +161,7 @@ export default function AttendancePage() {
   const { t, lang } = useLanguage();
   const { isAdmin } = useAuth();
   const store = useData();
+  const departments = store.departments;
   const isAr = lang === "ar";
   const [selectedDept, setSelectedDept] = useState("all");
 
@@ -606,56 +706,32 @@ export default function AttendancePage() {
               />
             </div>
 
-            {/* Original Check-in */}
+            {/* Original / Requested Check-in */}
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1">
-                  {t.clock.originalTime} ({t.att.checkIn})
-                </label>
-                <input
-                  type="time"
-                  value={adjOriginalIn}
-                  onChange={(e) => setAdjOriginalIn(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1">
-                  {t.clock.requestedTime} ({t.att.checkIn})
-                </label>
-                <input
-                  type="time"
-                  value={adjRequestedIn}
-                  onChange={(e) => setAdjRequestedIn(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none"
-                />
-              </div>
+              <TimePicker
+                label={`${t.clock.originalTime} (${t.att.checkIn})`}
+                value={adjOriginalIn}
+                onChange={setAdjOriginalIn}
+              />
+              <TimePicker
+                label={`${t.clock.requestedTime} (${t.att.checkIn})`}
+                value={adjRequestedIn}
+                onChange={setAdjRequestedIn}
+              />
             </div>
 
-            {/* Original Check-out */}
+            {/* Original / Requested Check-out */}
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1">
-                  {t.clock.originalTime} ({t.att.checkOut})
-                </label>
-                <input
-                  type="time"
-                  value={adjOriginalOut}
-                  onChange={(e) => setAdjOriginalOut(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground block mb-1">
-                  {t.clock.requestedTime} ({t.att.checkOut})
-                </label>
-                <input
-                  type="time"
-                  value={adjRequestedOut}
-                  onChange={(e) => setAdjRequestedOut(e.target.value)}
-                  className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none"
-                />
-              </div>
+              <TimePicker
+                label={`${t.clock.originalTime} (${t.att.checkOut})`}
+                value={adjOriginalOut}
+                onChange={setAdjOriginalOut}
+              />
+              <TimePicker
+                label={`${t.clock.requestedTime} (${t.att.checkOut})`}
+                value={adjRequestedOut}
+                onChange={setAdjRequestedOut}
+              />
             </div>
 
             {/* Reason */}

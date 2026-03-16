@@ -1,3 +1,10 @@
+export interface UploadedDocument {
+  name: string;
+  type: string;
+  size: number;
+  uploadedAt: string;
+}
+
 export interface Employee {
   id: string;
   nameAr: string;
@@ -12,6 +19,23 @@ export interface Employee {
   salary: { basic: number; housing: number; transport: number; other: number };
   initials: string;
   color: string;
+  profileCompleted?: boolean;
+  // Extended profile fields (filled on first login)
+  fullNameAr?: string;
+  fullNameEn?: string;
+  maritalStatus?: string;
+  dateOfBirth?: string;
+  mobileNumber?: string;
+  nationalId?: string;
+  bankName?: string;
+  iban?: string;
+  nationality?: string;
+  documents?: {
+    nationalIdDoc?: UploadedDocument;
+    cv?: UploadedDocument;
+    qualification?: UploadedDocument;
+    passport?: UploadedDocument;
+  };
 }
 
 export const departments: Record<string, { ar: string; en: string }> = {

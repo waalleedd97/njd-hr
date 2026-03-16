@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
@@ -36,14 +37,10 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         )}
       >
         {collapsed ? (
-          <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0">
-            ن
-          </div>
+          <Image src="/logo.png" alt="NJD Games" width={40} height={40} className="w-10 h-10 rounded-xl object-contain shrink-0" />
         ) : (
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg shrink-0">
-              ن
-            </div>
+            <Image src="/logo.png" alt="NJD Games" width={40} height={40} className="w-10 h-10 rounded-xl object-contain shrink-0" />
             <div className="min-w-0">
               <h1 className="font-bold text-sidebar-foreground leading-tight truncate">
                 {t.appName}
