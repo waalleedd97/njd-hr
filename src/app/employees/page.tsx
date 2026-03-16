@@ -87,10 +87,26 @@ export default function EmployeesPage() {
     setDialogOpen(true);
   };
 
-  const handleInviteSubmit = () => {
-    if (!inviteName || !inviteEmail) return;
+  const [inviteSending, setInviteSending] = useState(false);
 
-    store.sendInvitation({
+  const sendInviteEmail = async (data: { email: string; nameAr: string; nameEn: string; positionAr: string; positionEn: string; department: string }) => {
+    try {
+      const deptLabel = departments[data.department];
+      await fetch("/api/invite", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...data, department: isAr ? deptLabel?.ar : deptLabel?.en || data.department }),
+      });
+    } catch {
+      // Email sending is best-effort; invitation is saved regardless
+    }
+  };
+
+  const handleInviteSubmit = async () => {
+    if (!inviteName || !inviteEmail) return;
+    setInviteSending(true);
+
+    const invData = {
       email: inviteEmail,
       nameAr: inviteName,
       nameEn: inviteName,
@@ -98,8 +114,13 @@ export default function EmployeesPage() {
       positionAr: invitePosition || "",
       positionEn: invitePosition || "",
       sentDate: new Date().toISOString().split("T")[0],
-      status: "pending",
-    });
+      status: "pending" as const,
+    };
+
+    store.sendInvitation(invData);
+    await sendInviteEmail(invData);
+
+    setInviteSending(false);
     setInviteSent(true);
 
     setTimeout(() => {
@@ -112,8 +133,10 @@ export default function EmployeesPage() {
     }, 2000);
   };
 
-  const handleResend = (id: string) => {
+  const handleResend = async (id: string) => {
     store.resendInvitation(id);
+    const inv = store.pendingInvitations.find((i) => i.id === id);
+    if (inv) await sendInviteEmail(inv);
   };
 
   return (
@@ -699,10 +722,14 @@ export default function EmployeesPage() {
               <Button
                 className="gap-2"
                 onClick={handleInviteSubmit}
-                disabled={!inviteName || !inviteEmail}
+                disabled={!inviteName || !inviteEmail || inviteSending}
               >
-                <Send className="w-4 h-4" />
-                {t.invite.sendInvite}
+                {inviteSending ? (
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
+                {inviteSending ? (isAr ? "جاري الإرسال..." : "Sending...") : t.invite.sendInvite}
               </Button>
             </DialogFooter>
           )}
