@@ -221,11 +221,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DataState>(getDefaultState);
   const [hydrated, setHydrated] = useState(false);
 
-  // Hydrate from localStorage after mount
+  // Hydrate from localStorage after mount (merge with defaults so new fields are preserved)
   useEffect(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) setState(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        setState((defaults) => ({ ...defaults, ...parsed }));
+      }
     } catch {
       // ignore parse errors
     }
