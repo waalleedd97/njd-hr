@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData, haversineDistance } from "@/lib/data-store";
 import {
@@ -34,11 +34,13 @@ import {
   FileEdit,
   ShieldAlert,
   Info,
-  ChevronUp,
-  ChevronDown,
 } from "lucide-react";
 
-// ─── 12-hour Time Picker ──────────────────────────────────────────────
+// ─── Scroll-style 12-hour Time Picker ─────────────────────────────────
+
+const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
+const MINUTES = Array.from({ length: 60 }, (_, i) => i);
+const ITEM_H = 36; // px per row
 
 function to12h(time24: string): { hour: number; minute: number; period: "AM" | "PM" } {
   if (!time24) return { hour: 12, minute: 0, period: "AM" };
@@ -55,19 +57,68 @@ function to24h(hour: number, minute: number, period: "AM" | "PM"): string {
   return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
+function ScrollColumn({
+  items,
+  selected,
+  onSelect,
+}: {
+  items: number[];
+  selected: number;
+  onSelect: (v: number) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const didMount = useRef(false);
+
+  // Scroll selected item into view
+  useEffect(() => {
+    const idx = items.indexOf(selected);
+    if (idx < 0 || !containerRef.current) return;
+    const top = idx * ITEM_H;
+    containerRef.current.scrollTo({ top, behavior: didMount.current ? "smooth" : "instant" });
+    didMount.current = true;
+  }, [selected, items]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-y-auto h-[180px] scrollbar-thin"
+      style={{ scrollbarWidth: "thin" }}
+    >
+      {items.map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onSelect(v)}
+          className={cn(
+            "w-full text-center text-sm tabular-nums transition-colors",
+            v === selected
+              ? "text-primary font-bold"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+          style={{ height: ITEM_H }}
+        >
+          {String(v).padStart(2, "0")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function TimePicker({
   value,
   onChange,
   label,
+  isAr,
 }: {
   value: string;
   onChange: (v: string) => void;
   label: string;
+  isAr: boolean;
 }) {
   const parsed = to12h(value);
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
-  const [period, setPeriod] = useState(parsed.period);
+  const [period, setPeriod] = useState<"AM" | "PM">(parsed.period);
 
   useEffect(() => {
     const p = to12h(value);
@@ -76,61 +127,65 @@ function TimePicker({
     setPeriod(p.period);
   }, [value]);
 
-  const emit = (h: number, m: number, p: "AM" | "PM") => {
+  const emit = useCallback((h: number, m: number, p: "AM" | "PM") => {
     onChange(to24h(h, m, p));
-  };
+  }, [onChange]);
 
-  const incHour = () => { const next = hour >= 12 ? 1 : hour + 1; setHour(next); emit(next, minute, period); };
-  const decHour = () => { const next = hour <= 1 ? 12 : hour - 1; setHour(next); emit(next, minute, period); };
-  const incMinute = () => { const next = minute >= 59 ? 0 : minute + 1; setMinute(next); emit(hour, next, period); };
-  const decMinute = () => { const next = minute <= 0 ? 59 : minute - 1; setMinute(next); emit(hour, next, period); };
-  const togglePeriod = () => { const next = period === "AM" ? "PM" : "AM"; setPeriod(next); emit(hour, minute, next); };
+  const selectHour = (h: number) => { setHour(h); emit(h, minute, period); };
+  const selectMinute = (m: number) => { setMinute(m); emit(hour, m, period); };
+  const selectPeriod = (p: "AM" | "PM") => { setPeriod(p); emit(hour, minute, p); };
+
+  const amLabel = isAr ? "صباحاً" : "AM";
+  const pmLabel = isAr ? "مساءً" : "PM";
 
   return (
     <div>
       <label className="text-sm font-medium text-foreground block mb-1.5">{label}</label>
-      <div className="flex items-center gap-1.5">
-        {/* Hour spinner */}
-        <div className="flex flex-col items-center">
-          <button type="button" onClick={incHour} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <ChevronUp className="w-4 h-4" />
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
+        {/* Display header */}
+        <div className="flex items-center justify-center gap-2 py-2.5 px-3 border-b border-border bg-muted/30">
+          <Clock className="w-4 h-4 text-primary" />
+          <span className="text-sm font-bold tabular-nums">
+            {String(hour).padStart(2, "0")}:{String(minute).padStart(2, "0")}
+          </span>
+          <span className="text-xs font-medium text-muted-foreground">
+            {period === "AM" ? amLabel : pmLabel}
+          </span>
+        </div>
+
+        {/* AM / PM toggle */}
+        <div className="flex border-b border-border">
+          <button
+            type="button"
+            onClick={() => selectPeriod("AM")}
+            className={cn(
+              "flex-1 py-2 text-xs font-bold transition-colors",
+              period === "AM"
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            )}
+          >
+            {amLabel}
           </button>
-          <div className="w-10 h-9 rounded-lg border border-border bg-card flex items-center justify-center text-sm font-semibold tabular-nums">
-            {String(hour).padStart(2, "0")}
-          </div>
-          <button type="button" onClick={decHour} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <ChevronDown className="w-4 h-4" />
+          <button
+            type="button"
+            onClick={() => selectPeriod("PM")}
+            className={cn(
+              "flex-1 py-2 text-xs font-bold transition-colors",
+              period === "PM"
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+            )}
+          >
+            {pmLabel}
           </button>
         </div>
 
-        <span className="text-lg font-bold text-muted-foreground pb-0.5">:</span>
-
-        {/* Minute spinner */}
-        <div className="flex flex-col items-center">
-          <button type="button" onClick={incMinute} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <ChevronUp className="w-4 h-4" />
-          </button>
-          <div className="w-10 h-9 rounded-lg border border-border bg-card flex items-center justify-center text-sm font-semibold tabular-nums">
-            {String(minute).padStart(2, "0")}
-          </div>
-          <button type="button" onClick={decMinute} className="p-0.5 text-muted-foreground hover:text-foreground transition-colors">
-            <ChevronDown className="w-4 h-4" />
-          </button>
+        {/* Scroll columns */}
+        <div className="flex divide-x divide-border">
+          <ScrollColumn items={HOURS} selected={hour} onSelect={selectHour} />
+          <ScrollColumn items={MINUTES} selected={minute} onSelect={selectMinute} />
         </div>
-
-        {/* AM/PM toggle */}
-        <button
-          type="button"
-          onClick={togglePeriod}
-          className={cn(
-            "ms-1 h-9 px-2.5 rounded-lg text-xs font-bold transition-colors self-center",
-            period === "AM"
-              ? "bg-primary/10 text-primary"
-              : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
-          )}
-        >
-          {period}
-        </button>
       </div>
     </div>
   );
@@ -682,7 +737,7 @@ export default function AttendancePage() {
 
       {/* ───── Attendance Adjustment Dialog ───── */}
       <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t.clock.requestAdjustment}</DialogTitle>
             <DialogDescription>
@@ -712,11 +767,13 @@ export default function AttendancePage() {
                 label={`${t.clock.originalTime} (${t.att.checkIn})`}
                 value={adjOriginalIn}
                 onChange={setAdjOriginalIn}
+                isAr={isAr}
               />
               <TimePicker
                 label={`${t.clock.requestedTime} (${t.att.checkIn})`}
                 value={adjRequestedIn}
                 onChange={setAdjRequestedIn}
+                isAr={isAr}
               />
             </div>
 
@@ -726,11 +783,13 @@ export default function AttendancePage() {
                 label={`${t.clock.originalTime} (${t.att.checkOut})`}
                 value={adjOriginalOut}
                 onChange={setAdjOriginalOut}
+                isAr={isAr}
               />
               <TimePicker
                 label={`${t.clock.requestedTime} (${t.att.checkOut})`}
                 value={adjRequestedOut}
                 onChange={setAdjRequestedOut}
+                isAr={isAr}
               />
             </div>
 
