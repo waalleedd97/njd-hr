@@ -152,8 +152,7 @@ export default function ProfilePage() {
     return t.profile[key] ?? v;
   };
 
-  const natLabel = (v: string) =>
-    v === "saudi" ? t.profile.saudi : v === "non-saudi" ? t.profile.nonSaudi : v;
+  const natLabel = (v: string) => v || "—";
 
   // Field renderer
   const Field = ({ icon: Icon, label, value, dir }: { icon: typeof Hash; label: string; value: string | undefined | null; dir?: string }) => (
@@ -314,8 +313,28 @@ export default function ProfilePage() {
             <>
               <EditField icon={Hash} label={t.profile.nationalId} value={nationalId} onChange={setNationalId} dir="ltr" />
               <SelectField icon={Globe} label={t.profile.nationality} value={nationality} onChange={setNationality} options={[
-                { value: "saudi", label: t.profile.saudi },
-                { value: "non-saudi", label: t.profile.nonSaudi },
+                { value: "سعودي", label: isAr ? "سعودي" : "Saudi" },
+                { value: "إماراتي", label: isAr ? "إماراتي" : "Emirati" },
+                { value: "كويتي", label: isAr ? "كويتي" : "Kuwaiti" },
+                { value: "بحريني", label: isAr ? "بحريني" : "Bahraini" },
+                { value: "قطري", label: isAr ? "قطري" : "Qatari" },
+                { value: "عماني", label: isAr ? "عماني" : "Omani" },
+                { value: "عراقي", label: isAr ? "عراقي" : "Iraqi" },
+                { value: "أردني", label: isAr ? "أردني" : "Jordanian" },
+                { value: "لبناني", label: isAr ? "لبناني" : "Lebanese" },
+                { value: "سوري", label: isAr ? "سوري" : "Syrian" },
+                { value: "فلسطيني", label: isAr ? "فلسطيني" : "Palestinian" },
+                { value: "مصري", label: isAr ? "مصري" : "Egyptian" },
+                { value: "سوداني", label: isAr ? "سوداني" : "Sudanese" },
+                { value: "ليبي", label: isAr ? "ليبي" : "Libyan" },
+                { value: "تونسي", label: isAr ? "تونسي" : "Tunisian" },
+                { value: "جزائري", label: isAr ? "جزائري" : "Algerian" },
+                { value: "مغربي", label: isAr ? "مغربي" : "Moroccan" },
+                { value: "موريتاني", label: isAr ? "موريتاني" : "Mauritanian" },
+                { value: "يمني", label: isAr ? "يمني" : "Yemeni" },
+                { value: "صومالي", label: isAr ? "صومالي" : "Somali" },
+                { value: "جيبوتي", label: isAr ? "جيبوتي" : "Djiboutian" },
+                { value: "قمري", label: isAr ? "قمري" : "Comorian" },
               ]} />
               <EditField icon={Cake} label={t.profile.dateOfBirth} value={dateOfBirth} onChange={setDateOfBirth} type="date" />
               <SelectField icon={Heart} label={t.profile.maritalStatus} value={maritalStatus} onChange={setMaritalStatus} options={[

@@ -32,7 +32,7 @@ export default function CompleteProfilePage() {
   const [bankName, setBankName] = useState("");
   const [iban, setIban] = useState("");
   const [salary, setSalary] = useState("");
-  const [nationality, setNationality] = useState("saudi");
+  const [nationality, setNationality] = useState("سعودي");
   const [documents, setDocuments] = useState<Record<string, UploadedDocument | undefined>>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -70,7 +70,7 @@ export default function CompleteProfilePage() {
     { key: "nationalIdDoc", label: t.profile.nationalIdDoc, required: true },
     { key: "cv", label: t.profile.cv, required: true },
     { key: "qualification", label: t.profile.qualification, required: true },
-    { key: "passport", label: t.profile.passport, required: nationality !== "saudi" },
+    { key: "passport", label: t.profile.passport, required: nationality !== "سعودي" },
   ];
 
   const requiredFilled =
@@ -164,8 +164,31 @@ export default function CompleteProfilePage() {
           <div>
             <label className="text-sm font-medium block mb-1">{t.profile.nationality}</label>
             <select value={nationality} onChange={(e) => setNationality(e.target.value)} className={inputClass}>
-              <option value="saudi">{t.profile.saudi}</option>
-              <option value="non-saudi">{t.profile.nonSaudi}</option>
+              <option value="">--</option>
+              {[
+                { v: "سعودي", ar: "سعودي", en: "Saudi" },
+                { v: "إماراتي", ar: "إماراتي", en: "Emirati" },
+                { v: "كويتي", ar: "كويتي", en: "Kuwaiti" },
+                { v: "بحريني", ar: "بحريني", en: "Bahraini" },
+                { v: "قطري", ar: "قطري", en: "Qatari" },
+                { v: "عماني", ar: "عماني", en: "Omani" },
+                { v: "عراقي", ar: "عراقي", en: "Iraqi" },
+                { v: "أردني", ar: "أردني", en: "Jordanian" },
+                { v: "لبناني", ar: "لبناني", en: "Lebanese" },
+                { v: "سوري", ar: "سوري", en: "Syrian" },
+                { v: "فلسطيني", ar: "فلسطيني", en: "Palestinian" },
+                { v: "مصري", ar: "مصري", en: "Egyptian" },
+                { v: "سوداني", ar: "سوداني", en: "Sudanese" },
+                { v: "ليبي", ar: "ليبي", en: "Libyan" },
+                { v: "تونسي", ar: "تونسي", en: "Tunisian" },
+                { v: "جزائري", ar: "جزائري", en: "Algerian" },
+                { v: "مغربي", ar: "مغربي", en: "Moroccan" },
+                { v: "موريتاني", ar: "موريتاني", en: "Mauritanian" },
+                { v: "يمني", ar: "يمني", en: "Yemeni" },
+                { v: "صومالي", ar: "صومالي", en: "Somali" },
+                { v: "جيبوتي", ar: "جيبوتي", en: "Djiboutian" },
+                { v: "قمري", ar: "قمري", en: "Comorian" },
+              ].map((n) => <option key={n.v} value={n.v}>{isAr ? n.ar : n.en}</option>)}
             </select>
           </div>
           <div>
@@ -194,7 +217,7 @@ export default function CompleteProfilePage() {
       <div className="glass-card rounded-2xl p-6 space-y-4">
         <h2 className="text-lg font-bold">{t.profile.documents}</h2>
         <div className="grid gap-3 sm:grid-cols-2">
-          {docFields.filter((d) => d.required || nationality !== "saudi").map((doc) => {
+          {docFields.filter((d) => d.required || nationality !== "سعودي").map((doc) => {
             const uploaded = documents[doc.key];
             return (
               <button
