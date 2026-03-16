@@ -340,8 +340,6 @@ export default function ProfilePage() {
               <SelectField icon={Heart} label={t.profile.maritalStatus} value={maritalStatus} onChange={setMaritalStatus} options={[
                 { value: "single", label: t.profile.single },
                 { value: "married", label: t.profile.married },
-                { value: "divorced", label: t.profile.divorced },
-                { value: "widowed", label: t.profile.widowed },
               ]} />
               <EditField icon={Phone} label={t.profile.mobileNumber} value={mobileNumber} onChange={setMobileNumber} dir="ltr" />
             </>

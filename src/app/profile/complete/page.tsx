@@ -62,8 +62,6 @@ export default function CompleteProfilePage() {
   const maritalOptions = [
     { value: "single", label: t.profile.single },
     { value: "married", label: t.profile.married },
-    { value: "divorced", label: t.profile.divorced },
-    { value: "widowed", label: t.profile.widowed },
   ];
 
   const docFields: { key: DocKey; label: string; required: boolean }[] = [
