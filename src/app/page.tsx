@@ -49,9 +49,9 @@ export default function DashboardPage() {
   });
 
   const adminStats = [
-    { icon: EmployeesIcon, value: String(store.employees.length), label: t.stats.totalEmployees, trend: "+3" },
+    { icon: EmployeesIcon, value: String(store.employees.length), label: t.stats.totalEmployees, trend: null },
     { icon: LeavesIcon, value: String(store.employees.filter(e => e.status === "on-leave").length), label: t.stats.onLeave, trend: null },
-    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.status === "pending").length), label: t.stats.pendingRequests, trend: "+5" },
+    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.status === "pending").length), label: t.stats.pendingRequests, trend: null },
     { icon: PayrollIcon, value: isAr ? "28 مارس" : "Mar 28", label: t.stats.nextPayroll, trend: null },
   ];
 

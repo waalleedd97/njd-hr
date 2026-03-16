@@ -66,16 +66,14 @@ export const leaveRequests: { id: string; employeeId: string; typeKey: string; s
 export const employeeRequests: { id: string; employeeId: string; typeKey: string; date: string; status: "pending" | "in-review" | "approved" | "rejected"; detailsAr: string; detailsEn: string }[] = [];
 
 export const branches = [
-  { id: "BR001", nameAr: "المقر الرئيسي", nameEn: "Headquarters", cityAr: "الرياض", cityEn: "Riyadh", employeeCount: 85, isMain: true },
-  { id: "BR002", nameAr: "فرع جدة", nameEn: "Jeddah Branch", cityAr: "جدة", cityEn: "Jeddah", employeeCount: 28, isMain: false },
-  { id: "BR003", nameAr: "فرع الدمام", nameEn: "Dammam Branch", cityAr: "الدمام", cityEn: "Dammam", employeeCount: 14, isMain: false },
+  { id: "BR001", nameAr: "المقر الرئيسي", nameEn: "Headquarters", cityAr: "الرياض", cityEn: "Riyadh", employeeCount: 1, isMain: true },
 ];
 
 export const roles = [
-  { id: "R001", nameAr: "مدير النظام", nameEn: "System Admin", users: 2, permissions: ["all"] },
-  { id: "R002", nameAr: "مدير الموارد البشرية", nameEn: "HR Manager", users: 3, permissions: ["employees", "attendance", "leaves", "payroll", "requests", "reports"] },
-  { id: "R003", nameAr: "مشرف", nameEn: "Supervisor", users: 5, permissions: ["attendance", "leaves", "requests"] },
-  { id: "R004", nameAr: "موظف", nameEn: "Employee", users: 118, permissions: ["self-service"] },
+  { id: "R001", nameAr: "مدير النظام", nameEn: "System Admin", users: 1, permissions: ["all"] },
+  { id: "R002", nameAr: "مدير الموارد البشرية", nameEn: "HR Manager", users: 0, permissions: ["employees", "attendance", "leaves", "payroll", "requests", "reports"] },
+  { id: "R003", nameAr: "مشرف", nameEn: "Supervisor", users: 0, permissions: ["attendance", "leaves", "requests"] },
+  { id: "R004", nameAr: "موظف", nameEn: "Employee", users: 0, permissions: ["self-service"] },
 ];
 
 export const complianceItems = [
