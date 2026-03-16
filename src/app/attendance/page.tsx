@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData, haversineDistance } from "@/lib/data-store";
 import {
@@ -36,11 +36,10 @@ import {
   Info,
 } from "lucide-react";
 
-// ─── Scroll-style 12-hour Time Picker ─────────────────────────────────
+// ─── Dropdown 12-hour Time Picker ─────────────────────────────────────
 
 const HOURS = Array.from({ length: 12 }, (_, i) => i + 1);
 const MINUTES = Array.from({ length: 60 }, (_, i) => i);
-const ITEM_H = 36; // px per row
 
 function to12h(time24: string): { hour: number; minute: number; period: "AM" | "PM" } {
   if (!time24) return { hour: 12, minute: 0, period: "AM" };
@@ -57,49 +56,74 @@ function to24h(hour: number, minute: number, period: "AM" | "PM"): string {
   return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-function ScrollColumn({
+function TimeDropdown({
   items,
   selected,
   onSelect,
+  open,
+  onToggle,
 }: {
   items: number[];
   selected: number;
   onSelect: (v: number) => void;
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const didMount = useRef(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
-  // Scroll selected item into view
   useEffect(() => {
-    const idx = items.indexOf(selected);
-    if (idx < 0 || !containerRef.current) return;
-    const top = idx * ITEM_H;
-    containerRef.current.scrollTo({ top, behavior: didMount.current ? "smooth" : "instant" });
-    didMount.current = true;
-  }, [selected, items]);
+    if (!open) return;
+    function handleClick(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) onToggle();
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [open, onToggle]);
+
+  // Scroll selected into view when dropdown opens
+  useEffect(() => {
+    if (open && listRef.current) {
+      const idx = items.indexOf(selected);
+      if (idx >= 0) listRef.current.scrollTop = idx * 32 - 48;
+    }
+  }, [open, selected, items]);
 
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 overflow-y-auto h-[180px] scrollbar-thin"
-      style={{ scrollbarWidth: "thin" }}
-    >
-      {items.map((v) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onSelect(v)}
-          className={cn(
-            "w-full text-center text-sm tabular-nums transition-colors",
-            v === selected
-              ? "text-primary font-bold"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-          style={{ height: ITEM_H }}
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        className={cn(
+          "h-9 w-full rounded-lg border bg-card px-2 text-sm font-semibold tabular-nums text-center transition-colors cursor-pointer",
+          open ? "border-primary ring-2 ring-primary/20" : "border-border hover:border-primary/50"
+        )}
+      >
+        {String(selected).padStart(2, "0")}
+      </button>
+      {open && (
+        <div
+          ref={listRef}
+          className="absolute z-50 mt-1 w-full max-h-[160px] overflow-y-auto rounded-lg border border-border bg-popover shadow-lg"
+          style={{ scrollbarWidth: "thin" }}
         >
-          {String(v).padStart(2, "0")}
-        </button>
-      ))}
+          {items.map((v) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => { onSelect(v); onToggle(); }}
+              className={cn(
+                "w-full h-8 text-center text-sm tabular-nums transition-colors cursor-pointer",
+                v === selected
+                  ? "bg-primary/10 text-primary font-bold"
+                  : "text-foreground hover:bg-accent"
+              )}
+            >
+              {String(v).padStart(2, "0")}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -119,6 +143,7 @@ function TimePicker({
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState<"AM" | "PM">(parsed.period);
+  const [openField, setOpenField] = useState<"hour" | "minute" | null>(null);
 
   useEffect(() => {
     const p = to12h(value);
@@ -127,65 +152,56 @@ function TimePicker({
     setPeriod(p.period);
   }, [value]);
 
-  const emit = useCallback((h: number, m: number, p: "AM" | "PM") => {
-    onChange(to24h(h, m, p));
-  }, [onChange]);
+  const emit = (h: number, m: number, p: "AM" | "PM") => onChange(to24h(h, m, p));
 
-  const selectHour = (h: number) => { setHour(h); emit(h, minute, period); };
-  const selectMinute = (m: number) => { setMinute(m); emit(hour, m, period); };
-  const selectPeriod = (p: "AM" | "PM") => { setPeriod(p); emit(hour, minute, p); };
-
-  const amLabel = isAr ? "صباحاً" : "AM";
-  const pmLabel = isAr ? "مساءً" : "PM";
+  const amLabel = isAr ? "ص" : "AM";
+  const pmLabel = isAr ? "م" : "PM";
 
   return (
     <div>
       <label className="text-sm font-medium text-foreground block mb-1.5">{label}</label>
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        {/* Display header */}
-        <div className="flex items-center justify-center gap-2 py-2.5 px-3 border-b border-border bg-muted/30">
-          <Clock className="w-4 h-4 text-primary" />
-          <span className="text-sm font-bold tabular-nums">
-            {String(hour).padStart(2, "0")}:{String(minute).padStart(2, "0")}
-          </span>
-          <span className="text-xs font-medium text-muted-foreground">
-            {period === "AM" ? amLabel : pmLabel}
-          </span>
+      <div className="flex items-center gap-1.5">
+        {/* Hour dropdown */}
+        <div className="w-12">
+          <TimeDropdown
+            items={HOURS}
+            selected={hour}
+            onSelect={(h) => { setHour(h); emit(h, minute, period); }}
+            open={openField === "hour"}
+            onToggle={() => setOpenField(openField === "hour" ? null : "hour")}
+          />
         </div>
 
-        {/* AM / PM toggle */}
-        <div className="flex border-b border-border">
-          <button
-            type="button"
-            onClick={() => selectPeriod("AM")}
-            className={cn(
-              "flex-1 py-2 text-xs font-bold transition-colors",
-              period === "AM"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            )}
-          >
-            {amLabel}
-          </button>
-          <button
-            type="button"
-            onClick={() => selectPeriod("PM")}
-            className={cn(
-              "flex-1 py-2 text-xs font-bold transition-colors",
-              period === "PM"
-                ? "bg-primary/10 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            )}
-          >
-            {pmLabel}
-          </button>
+        <span className="text-base font-bold text-muted-foreground">:</span>
+
+        {/* Minute dropdown */}
+        <div className="w-12">
+          <TimeDropdown
+            items={MINUTES}
+            selected={minute}
+            onSelect={(m) => { setMinute(m); emit(hour, m, period); }}
+            open={openField === "minute"}
+            onToggle={() => setOpenField(openField === "minute" ? null : "minute")}
+          />
         </div>
 
-        {/* Scroll columns */}
-        <div className="flex divide-x divide-border">
-          <ScrollColumn items={HOURS} selected={hour} onSelect={selectHour} />
-          <ScrollColumn items={MINUTES} selected={minute} onSelect={selectMinute} />
-        </div>
+        {/* AM/PM toggle */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = period === "AM" ? "PM" : "AM";
+            setPeriod(next);
+            emit(hour, minute, next);
+          }}
+          className={cn(
+            "h-9 px-2 rounded-lg text-xs font-bold transition-colors cursor-pointer",
+            period === "AM"
+              ? "bg-primary/10 text-primary"
+              : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-400"
+          )}
+        >
+          {period === "AM" ? amLabel : pmLabel}
+        </button>
       </div>
     </div>
   );
@@ -737,7 +753,7 @@ export default function AttendancePage() {
 
       {/* ───── Attendance Adjustment Dialog ───── */}
       <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
-        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t.clock.requestAdjustment}</DialogTitle>
             <DialogDescription>
