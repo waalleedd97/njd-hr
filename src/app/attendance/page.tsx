@@ -230,7 +230,7 @@ const statusLabels: Record<string, (t: ReturnType<typeof useLanguage>["t"]) => s
 
 export default function AttendancePage() {
   const { t, lang } = useLanguage();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const store = useData();
   const departments = store.departments;
   const isAr = lang === "ar";
@@ -287,7 +287,7 @@ export default function AttendancePage() {
   };
 
   // Handle clock in
-  const currentUserId = isAdmin ? null : "EMP003";
+  const currentUserId = isAdmin ? null : user.id;
   const handleClockIn = () => {
     if (clockMethod === "geofence" && !isInsideGeofence) return;
     const time = getCurrentTime();

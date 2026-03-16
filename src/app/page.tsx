@@ -13,90 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn, formatDate } from "@/lib/utils";
 import { useAuth } from "@/components/providers";
-import { employees as allEmployees } from "@/lib/mock-data";
 import { UserPlus, FilePlus, BarChart3, Banknote, CalendarDays, Clock } from "lucide-react";
-
-// Mock data
-const mockRequests = [
-  {
-    nameAr: "فاطمة العتيبي",
-    nameEn: "Fatima Al-Otaibi",
-    typeKey: "leaveRequest" as const,
-    dateAr: "14 مارس",
-    dateEn: "Mar 14",
-    statusKey: "pending" as const,
-    initialsAr: "فع",
-  },
-  {
-    nameAr: "محمد الشهري",
-    nameEn: "Mohammed Al-Shahri",
-    typeKey: "salaryCert" as const,
-    dateAr: "13 مارس",
-    dateEn: "Mar 13",
-    statusKey: "inReview" as const,
-    initialsAr: "مش",
-  },
-  {
-    nameAr: "نورة القحطاني",
-    nameEn: "Noura Al-Qahtani",
-    typeKey: "permission" as const,
-    dateAr: "13 مارس",
-    dateEn: "Mar 13",
-    statusKey: "approved" as const,
-    initialsAr: "نق",
-  },
-  {
-    nameAr: "خالد الدوسري",
-    nameEn: "Khaled Al-Dosari",
-    typeKey: "docRequest" as const,
-    dateAr: "12 مارس",
-    dateEn: "Mar 12",
-    statusKey: "pending" as const,
-    initialsAr: "خد",
-  },
-  {
-    nameAr: "سارة الحربي",
-    nameEn: "Sarah Al-Harbi",
-    typeKey: "leaveRequest" as const,
-    dateAr: "11 مارس",
-    dateEn: "Mar 11",
-    statusKey: "pending" as const,
-    initialsAr: "سح",
-  },
-];
-
-const teamOnLeave = [
-  {
-    nameAr: "عبدالله المطيري",
-    nameEn: "Abdullah Al-Mutairi",
-    deptAr: "تطوير البرمجيات",
-    deptEn: "Software Dev",
-    returnAr: "17 مارس",
-    returnEn: "Mar 17",
-    initialsAr: "عم",
-    color: "bg-blue-500",
-  },
-  {
-    nameAr: "هند الزهراني",
-    nameEn: "Hind Al-Zahrani",
-    deptAr: "التصميم",
-    deptEn: "Design",
-    returnAr: "16 مارس",
-    returnEn: "Mar 16",
-    initialsAr: "هز",
-    color: "bg-emerald-500",
-  },
-  {
-    nameAr: "يوسف العمري",
-    nameEn: "Yousef Al-Amri",
-    deptAr: "التسويق",
-    deptEn: "Marketing",
-    returnAr: "18 مارس",
-    returnEn: "Mar 18",
-    initialsAr: "يع",
-    color: "bg-amber-500",
-  },
-];
 
 const statusStyles: Record<string, string> = {
   pending:
@@ -234,24 +151,21 @@ export default function DashboardPage() {
             )}
           </div>
           {(() => {
-            // Admin: show all from mock, Employee: show own from store
-            const displayRequests = isAdmin
-              ? mockRequests
-              : store.employeeRequests
-                  .filter((r) => r.employeeId === user.id)
-                  .slice(0, 5)
-                  .map((r) => {
-                    const emp = allEmployees.find((e) => e.id === r.employeeId);
-                    return {
-                      nameAr: emp?.nameAr ?? "",
-                      nameEn: emp?.nameEn ?? "",
-                      typeKey: r.typeKey as "leaveRequest" | "salaryCert" | "permission" | "docRequest",
-                      dateAr: formatDate(r.date, "ar", { month: "short", day: "numeric" }),
-                      dateEn: formatDate(r.date, "en", { month: "short", day: "numeric" }),
-                      statusKey: (r.status === "in-review" ? "inReview" : r.status) as "pending" | "inReview" | "approved" | "rejected",
-                      initialsAr: emp?.initials ?? "",
-                    };
-                  });
+            const sourceRequests = isAdmin
+              ? store.employeeRequests.slice(0, 5)
+              : store.employeeRequests.filter((r) => r.employeeId === user.id).slice(0, 5);
+            const displayRequests = sourceRequests.map((r) => {
+              const emp = store.employees.find((e) => e.id === r.employeeId);
+              return {
+                nameAr: emp?.nameAr ?? "",
+                nameEn: emp?.nameEn ?? "",
+                typeKey: r.typeKey as "leaveRequest" | "salaryCert" | "permission" | "docRequest",
+                dateAr: formatDate(r.date, "ar", { month: "short", day: "numeric" }),
+                dateEn: formatDate(r.date, "en", { month: "short", day: "numeric" }),
+                statusKey: (r.status === "in-review" ? "inReview" : r.status) as "pending" | "inReview" | "approved" | "rejected",
+                initialsAr: emp?.initials ?? "",
+              };
+            });
 
             if (displayRequests.length === 0) {
               return (
@@ -314,24 +228,27 @@ export default function DashboardPage() {
             <div className="glass-card rounded-xl p-5">
               <h3 className="font-bold mb-4">{t.teamOnLeave}</h3>
               <div className="space-y-3">
-                {teamOnLeave.map((person, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30 transition-colors">
-                    <Avatar className="w-9 h-9">
-                      <AvatarFallback className={cn("text-white text-xs font-bold", person.color)}>
-                        {person.initialsAr}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">
-                        {isAr ? person.nameAr : person.nameEn}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {isAr ? person.deptAr : person.deptEn} ·{" "}
-                        {isAr ? `العودة ${person.returnAr}` : `Returns ${person.returnEn}`}
-                      </p>
+                {store.employees.filter((e) => e.status === "on-leave").length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">{t.common.noData}</p>
+                ) : (
+                  store.employees.filter((e) => e.status === "on-leave").map((person) => (
+                    <div key={person.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-accent/30 transition-colors">
+                      <Avatar className="w-9 h-9">
+                        <AvatarFallback className={cn("text-white text-xs font-bold", person.color)}>
+                          {person.initials}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium truncate">
+                          {isAr ? person.nameAr : person.nameEn}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">
+                          {isAr ? person.positionAr : person.positionEn}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </div>
           ) : (

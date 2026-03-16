@@ -9,7 +9,6 @@ import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { MobileNav } from "./mobile-nav";
 import { Shield, LogIn, Eye, EyeOff } from "lucide-react";
-import { employees } from "@/lib/mock-data";
 
 // ─── Login Screen ────────────────────────────────────────────────────
 
@@ -34,15 +33,7 @@ function LoginScreen() {
     if (!ok) setError(true);
   }
 
-  function fillDemo(demoEmail: string) {
-    setEmail(demoEmail);
-    setPassword("demo123");
-    setError(false);
-  }
-
-  // Demo accounts: first 2 HR (admins) + first 3 non-HR (employees)
-  const adminEmps = employees.filter((e) => e.department === "hr").slice(0, 2);
-  const regularEmps = employees.filter((e) => e.department !== "hr").slice(0, 3);
+  // removed demo accounts
 
   return (
     <div
@@ -128,50 +119,6 @@ function LoginScreen() {
             </button>
           </form>
 
-          {/* Demo accounts */}
-          <div className="mt-6 pt-4 border-t border-border">
-            <p className="text-xs text-muted-foreground mb-3 font-medium">
-              {t.login.demo}
-            </p>
-
-            {/* Admin accounts */}
-            <p className="text-[10px] font-bold text-primary mb-1.5 uppercase tracking-wider">
-              {t.role.admin}
-            </p>
-            <div className="space-y-1.5 mb-3">
-              {adminEmps.map((emp) => (
-                <button
-                  key={emp.id}
-                  onClick={() => fillDemo(emp.email)}
-                  className="w-full text-xs text-start p-2 rounded-lg border border-border hover:bg-accent/50 transition-colors flex items-center justify-between"
-                >
-                  <span className="font-semibold text-foreground">
-                    {isAr ? emp.nameAr : emp.nameEn}
-                  </span>
-                  <span className="text-muted-foreground">{emp.email}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Employee accounts */}
-            <p className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mb-1.5 uppercase tracking-wider">
-              {t.role.employee}
-            </p>
-            <div className="space-y-1.5">
-              {regularEmps.map((emp) => (
-                <button
-                  key={emp.id}
-                  onClick={() => fillDemo(emp.email)}
-                  className="w-full text-xs text-start p-2 rounded-lg border border-border hover:bg-accent/50 transition-colors flex items-center justify-between"
-                >
-                  <span className="font-semibold text-foreground">
-                    {isAr ? emp.nameAr : emp.nameEn}
-                  </span>
-                  <span className="text-muted-foreground">{emp.email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </div>

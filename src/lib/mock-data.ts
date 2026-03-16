@@ -49,65 +49,21 @@ export const departments: Record<string, { ar: string; en: string }> = {
 };
 
 export const employees: Employee[] = [
-  { id: "EMP001", nameAr: "أحمد الغامدي", nameEn: "Ahmed Al-Ghamdi", positionAr: "مدير الموارد البشرية", positionEn: "HR Manager", department: "hr", email: "ahmed@njdgames.com", phone: "+966 50 123 4567", status: "active", joinDate: "2022-01-15", salary: { basic: 15000, housing: 3750, transport: 1500, other: 500 }, initials: "أغ", color: "bg-blue-500" },
-  { id: "EMP002", nameAr: "فاطمة العتيبي", nameEn: "Fatima Al-Otaibi", positionAr: "محاسبة أولى", positionEn: "Senior Accountant", department: "finance", email: "fatima@njdgames.com", phone: "+966 50 234 5678", status: "active", joinDate: "2022-03-20", salary: { basic: 12000, housing: 3000, transport: 1500, other: 300 }, initials: "فع", color: "bg-emerald-500" },
-  { id: "EMP003", nameAr: "محمد الشهري", nameEn: "Mohammed Al-Shahri", positionAr: "مطور برمجيات أول", positionEn: "Senior Developer", department: "software-dev", email: "mohammed@njdgames.com", phone: "+966 55 345 6789", status: "active", joinDate: "2021-08-10", salary: { basic: 18000, housing: 4500, transport: 1500, other: 1000 }, initials: "مش", color: "bg-amber-500" },
-  { id: "EMP004", nameAr: "نورة القحطاني", nameEn: "Noura Al-Qahtani", positionAr: "مصممة UI/UX", positionEn: "UI/UX Designer", department: "design", email: "noura@njdgames.com", phone: "+966 54 456 7890", status: "active", joinDate: "2023-02-01", salary: { basic: 13000, housing: 3250, transport: 1500, other: 500 }, initials: "نق", color: "bg-rose-500" },
-  { id: "EMP005", nameAr: "خالد الدوسري", nameEn: "Khaled Al-Dosari", positionAr: "محلل بيانات", positionEn: "Data Analyst", department: "software-dev", email: "khaled@njdgames.com", phone: "+966 56 567 8901", status: "active", joinDate: "2023-06-15", salary: { basic: 11000, housing: 2750, transport: 1500, other: 300 }, initials: "خد", color: "bg-purple-500" },
-  { id: "EMP006", nameAr: "سارة الحربي", nameEn: "Sarah Al-Harbi", positionAr: "أخصائية تسويق", positionEn: "Marketing Specialist", department: "marketing", email: "sarah@njdgames.com", phone: "+966 50 678 9012", status: "active", joinDate: "2023-09-01", salary: { basic: 10000, housing: 2500, transport: 1500, other: 200 }, initials: "سح", color: "bg-cyan-500" },
-  { id: "EMP007", nameAr: "عبدالله المطيري", nameEn: "Abdullah Al-Mutairi", positionAr: "مطور ألعاب", positionEn: "Game Developer", department: "game-dev", email: "abdullah@njdgames.com", phone: "+966 55 789 0123", status: "on-leave", joinDate: "2022-05-20", salary: { basic: 16000, housing: 4000, transport: 1500, other: 800 }, initials: "عم", color: "bg-orange-500" },
-  { id: "EMP008", nameAr: "هند الزهراني", nameEn: "Hind Al-Zahrani", positionAr: "أخصائية موارد بشرية", positionEn: "HR Specialist", department: "hr", email: "hind@njdgames.com", phone: "+966 54 890 1234", status: "on-leave", joinDate: "2023-01-10", salary: { basic: 9000, housing: 2250, transport: 1500, other: 200 }, initials: "هز", color: "bg-teal-500" },
-  { id: "EMP009", nameAr: "يوسف العمري", nameEn: "Yousef Al-Amri", positionAr: "مصمم جرافيك", positionEn: "Graphic Designer", department: "design", email: "yousef@njdgames.com", phone: "+966 56 901 2345", status: "on-leave", joinDate: "2023-04-15", salary: { basic: 10000, housing: 2500, transport: 1500, other: 300 }, initials: "يع", color: "bg-pink-500" },
-  { id: "EMP010", nameAr: "ريم السبيعي", nameEn: "Reem Al-Subaie", positionAr: "مديرة مشاريع", positionEn: "Project Manager", department: "project-mgmt", email: "reem@njdgames.com", phone: "+966 50 012 3456", status: "active", joinDate: "2022-11-01", salary: { basic: 14000, housing: 3500, transport: 1500, other: 600 }, initials: "رس", color: "bg-indigo-500" },
-  { id: "EMP011", nameAr: "عمر الحازمي", nameEn: "Omar Al-Hazmi", positionAr: "مهندس DevOps", positionEn: "DevOps Engineer", department: "software-dev", email: "omar@njdgames.com", phone: "+966 55 123 4567", status: "active", joinDate: "2023-07-20", salary: { basic: 17000, housing: 4250, transport: 1500, other: 900 }, initials: "عح", color: "bg-lime-600" },
-  { id: "EMP012", nameAr: "لمى الراشد", nameEn: "Lama Al-Rashed", positionAr: "محللة أعمال", positionEn: "Business Analyst", department: "project-mgmt", email: "lama@njdgames.com", phone: "+966 54 234 5678", status: "active", joinDate: "2024-01-05", salary: { basic: 11000, housing: 2750, transport: 1500, other: 400 }, initials: "لر", color: "bg-red-500" },
-  { id: "EMP013", nameAr: "تركي المالكي", nameEn: "Turki Al-Malki", positionAr: "مطور واجهات أمامية", positionEn: "Frontend Developer", department: "software-dev", email: "turki@njdgames.com", phone: "+966 56 345 6789", status: "active", joinDate: "2024-02-15", salary: { basic: 14000, housing: 3500, transport: 1500, other: 500 }, initials: "تم", color: "bg-violet-500" },
+  { id: "EMP001", nameAr: "وليد", nameEn: "Waleed", positionAr: "مدير النظام", positionEn: "System Administrator", department: "hr", email: "waleed@njdstudio.net", phone: "", status: "active", joinDate: "2025-01-01", salary: { basic: 0, housing: 0, transport: 0, other: 0 }, initials: "و", color: "bg-primary", profileCompleted: true },
 ];
 
-export const todayAttendance = [
-  { employeeId: "EMP001", checkIn: "08:02", checkOut: "17:05", status: "present" as const },
-  { employeeId: "EMP002", checkIn: "07:55", checkOut: "17:00", status: "present" as const },
-  { employeeId: "EMP003", checkIn: "08:35", checkOut: "17:30", status: "late" as const },
-  { employeeId: "EMP004", checkIn: "08:00", checkOut: "17:10", status: "present" as const },
-  { employeeId: "EMP005", checkIn: "09:10", checkOut: "17:00", status: "late" as const },
-  { employeeId: "EMP006", checkIn: "08:05", checkOut: null, status: "present" as const },
-  { employeeId: "EMP007", checkIn: null, checkOut: null, status: "on-leave" as const },
-  { employeeId: "EMP008", checkIn: null, checkOut: null, status: "on-leave" as const },
-  { employeeId: "EMP009", checkIn: null, checkOut: null, status: "on-leave" as const },
-  { employeeId: "EMP010", checkIn: "08:00", checkOut: "17:15", status: "present" as const },
-  { employeeId: "EMP011", checkIn: null, checkOut: null, status: "absent" as const },
-  { employeeId: "EMP012", checkIn: "07:50", checkOut: "12:00", status: "half-day" as const },
-  { employeeId: "EMP013", checkIn: "08:10", checkOut: "17:00", status: "present" as const },
-];
+export const todayAttendance: { employeeId: string; checkIn: string | null; checkOut: string | null; status: "present" | "absent" | "late" | "on-leave" | "half-day" }[] = [];
 
 export const leaveBalances = [
-  { typeKey: "annual", total: 21, used: 8, remaining: 13 },
-  { typeKey: "sick", total: 10, used: 2, remaining: 8 },
-  { typeKey: "personal", total: 5, used: 1, remaining: 4 },
+  { typeKey: "annual", total: 21, used: 0, remaining: 21 },
+  { typeKey: "sick", total: 10, used: 0, remaining: 10 },
+  { typeKey: "personal", total: 5, used: 0, remaining: 5 },
   { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
-  { typeKey: "marriage", total: 5, used: 0, remaining: 5 },
-  { typeKey: "paternity", total: 3, used: 0, remaining: 3 },
 ];
 
-export const leaveRequests = [
-  { id: "LR001", employeeId: "EMP007", typeKey: "annual", startDate: "2026-03-14", endDate: "2026-03-17", days: 4, status: "approved" as const, reasonAr: "إجازة عائلية", reasonEn: "Family vacation" },
-  { id: "LR002", employeeId: "EMP008", typeKey: "sick", startDate: "2026-03-15", endDate: "2026-03-16", days: 2, status: "approved" as const, reasonAr: "مراجعة طبية", reasonEn: "Medical appointment" },
-  { id: "LR003", employeeId: "EMP002", typeKey: "annual", startDate: "2026-03-20", endDate: "2026-03-22", days: 3, status: "pending" as const, reasonAr: "سفر شخصي", reasonEn: "Personal travel" },
-  { id: "LR004", employeeId: "EMP009", typeKey: "personal", startDate: "2026-03-15", endDate: "2026-03-18", days: 4, status: "approved" as const, reasonAr: "ظروف شخصية", reasonEn: "Personal matters" },
-  { id: "LR005", employeeId: "EMP006", typeKey: "annual", startDate: "2026-03-25", endDate: "2026-03-27", days: 3, status: "pending" as const, reasonAr: "إجازة قصيرة", reasonEn: "Short break" },
-  { id: "LR006", employeeId: "EMP013", typeKey: "sick", startDate: "2026-03-28", endDate: "2026-03-28", days: 1, status: "pending" as const, reasonAr: "كشف طبي", reasonEn: "Medical check-up" },
-];
+export const leaveRequests: { id: string; employeeId: string; typeKey: string; startDate: string; endDate: string; days: number; status: "pending" | "approved" | "rejected"; reasonAr: string; reasonEn: string }[] = [];
 
-export const employeeRequests = [
-  { id: "REQ001", employeeId: "EMP002", typeKey: "leaveRequest", date: "2026-03-14", status: "pending" as const, detailsAr: "طلب إجازة سنوية لمدة 3 أيام", detailsEn: "3-day annual leave request" },
-  { id: "REQ002", employeeId: "EMP003", typeKey: "salaryCert", date: "2026-03-13", status: "in-review" as const, detailsAr: "شهادة راتب لتقديم طلب تمويل", detailsEn: "Salary cert for loan application" },
-  { id: "REQ003", employeeId: "EMP004", typeKey: "permission", date: "2026-03-13", status: "approved" as const, detailsAr: "إذن خروج مبكر الساعة 3 عصراً", detailsEn: "Early leave at 3 PM" },
-  { id: "REQ004", employeeId: "EMP005", typeKey: "docRequest", date: "2026-03-12", status: "pending" as const, detailsAr: "طلب خطاب تعريف بالراتب", detailsEn: "Salary introduction letter" },
-  { id: "REQ005", employeeId: "EMP006", typeKey: "leaveRequest", date: "2026-03-11", status: "pending" as const, detailsAr: "طلب إجازة سنوية لمدة 3 أيام", detailsEn: "3-day annual leave request" },
-  { id: "REQ006", employeeId: "EMP010", typeKey: "salaryCert", date: "2026-03-10", status: "approved" as const, detailsAr: "شهادة راتب للسفارة", detailsEn: "Salary cert for embassy" },
-  { id: "REQ007", employeeId: "EMP001", typeKey: "permission", date: "2026-03-09", status: "approved" as const, detailsAr: "إذن تأخر صباحي", detailsEn: "Late arrival permission" },
-  { id: "REQ008", employeeId: "EMP013", typeKey: "leaveRequest", date: "2026-03-08", status: "rejected" as const, detailsAr: "طلب إجازة مرضية يوم واحد", detailsEn: "1-day sick leave" },
-];
+export const employeeRequests: { id: string; employeeId: string; typeKey: string; date: string; status: "pending" | "in-review" | "approved" | "rejected"; detailsAr: string; detailsEn: string }[] = [];
 
 export const branches = [
   { id: "BR001", nameAr: "المقر الرئيسي", nameEn: "Headquarters", cityAr: "الرياض", cityEn: "Riyadh", employeeCount: 85, isMain: true },
@@ -163,15 +119,7 @@ export interface Notification {
   href?: string;
 }
 
-export const notifications: Notification[] = [
-  { id: "N001", type: "leave", titleAr: "إجازة موافق عليها", titleEn: "Leave Approved", descAr: "تمت الموافقة على طلب إجازة فاطمة العتيبي (3 أيام)", descEn: "Fatima Al-Otaibi's leave request approved (3 days)", time: 5, read: false, href: "/leaves" },
-  { id: "N002", type: "request", titleAr: "طلب جديد", titleEn: "New Request", descAr: "طلب شهادة راتب جديد من محمد الشهري", descEn: "New salary certificate request from Mohammed Al-Shahri", time: 18, read: false, href: "/requests" },
-  { id: "N003", type: "payroll", titleAr: "تحويل الرواتب", titleEn: "Payroll Transfer", descAr: "تم تحويل رواتب شهر مارس بنجاح عبر نظام حماية الأجور", descEn: "March salaries transferred successfully via WPS", time: 45, read: false, href: "/payroll" },
-  { id: "N004", type: "attendance", titleAr: "تنبيه حضور", titleEn: "Attendance Alert", descAr: "تأخر خالد الدوسري عن الحضور اليوم 70 دقيقة", descEn: "Khaled Al-Dosari was 70 minutes late today", time: 90, read: false, href: "/attendance" },
-  { id: "N005", type: "request", titleAr: "طلب جديد", titleEn: "New Request", descAr: "طلب إذن خروج مبكر من نورة القحطاني", descEn: "Early leave permission request from Noura Al-Qahtani", time: 120, read: true, href: "/requests" },
-  { id: "N006", type: "system", titleAr: "تنبيه النظام", titleEn: "System Alert", descAr: "اقتراب موعد انتهاء عقد عمر الحازمي — 15 أبريل 2026", descEn: "Omar Al-Hazmi's contract expiring — April 15, 2026", time: 180, read: true, href: "/employees" },
-  { id: "N007", type: "system", titleAr: "تحديث السياسات", titleEn: "Policy Update", descAr: "تم تحديث سياسة الإجازات السنوية — يرجى المراجعة", descEn: "Annual leave policy updated — please review", time: 300, read: true, href: "/settings" },
-];
+export const notifications: Notification[] = [];
 
 // ─── Saudi Public Holidays 2026 ──────────────────────────────────────
 
@@ -252,10 +200,7 @@ export interface SalaryAdvance {
   paidMonths: number;
 }
 
-export const salaryAdvances: SalaryAdvance[] = [
-  { id: "ADV001", employeeId: "EMP003", amount: 10000, reasonAr: "ظروف شخصية", reasonEn: "Personal circumstances", requestDate: "2026-02-15", status: "approved", repaymentMonths: 3, monthlyDeduction: 3334, remainingBalance: 6666, paidMonths: 1 },
-  { id: "ADV002", employeeId: "EMP006", amount: 5000, reasonAr: "حالة طارئة", reasonEn: "Emergency", requestDate: "2026-03-10", status: "pending", repaymentMonths: 2, monthlyDeduction: 2500, remainingBalance: 5000, paidMonths: 0 },
-];
+export const salaryAdvances: SalaryAdvance[] = [];
 
 // ─── Attendance Adjustment Requests ──────────────────────────────────
 
@@ -272,10 +217,7 @@ export interface AttendanceAdjustment {
   status: "pending" | "approved" | "rejected";
 }
 
-export const attendanceAdjustments: AttendanceAdjustment[] = [
-  { id: "ADJ001", employeeId: "EMP003", date: "2026-03-14", originalIn: "08:35", requestedIn: "08:05", originalOut: "17:30", requestedOut: "17:30", reasonAr: "خطأ في تسجيل البصمة", reasonEn: "Fingerprint registration error", status: "pending" },
-  { id: "ADJ002", employeeId: "EMP005", date: "2026-03-13", originalIn: "09:10", requestedIn: "08:00", originalOut: "17:00", requestedOut: "17:00", reasonAr: "نسيت تسجيل الحضور", reasonEn: "Forgot to clock in", status: "approved" },
-];
+export const attendanceAdjustments: AttendanceAdjustment[] = [];
 
 // ─── Pending Employee Invitations ────────────────────────────────────
 
@@ -291,7 +233,4 @@ export interface PendingInvitation {
   status: "pending" | "expired";
 }
 
-export const pendingInvitations: PendingInvitation[] = [
-  { id: "INV001", email: "ali.ahmed@njdgames.com", nameAr: "علي أحمد", nameEn: "Ali Ahmed", department: "game-dev", positionAr: "مطور ألعاب مبتدئ", positionEn: "Junior Game Developer", sentDate: "2026-03-13", status: "pending" },
-  { id: "INV002", email: "maha.saeed@njdgames.com", nameAr: "مها سعيد", nameEn: "Maha Saeed", department: "marketing", positionAr: "منسقة تسويق", positionEn: "Marketing Coordinator", sentDate: "2026-03-10", status: "expired" },
-];
+export const pendingInvitations: PendingInvitation[] = [];

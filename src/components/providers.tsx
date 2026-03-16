@@ -101,12 +101,12 @@ function resolveUser(email: string): { profile: UserProfile; role: UserRole } | 
 
 const fallbackUser: UserProfile = {
   id: "EMP001",
-  nameAr: "أحمد الغامدي",
-  nameEn: "Ahmed Al-Ghamdi",
-  positionAr: "مدير الموارد البشرية",
-  positionEn: "HR Manager",
-  initials: "أح",
-  email: "ahmed@njdgames.com",
+  nameAr: "وليد",
+  nameEn: "Waleed",
+  positionAr: "مدير النظام",
+  positionEn: "System Administrator",
+  initials: "و",
+  email: "waleed@njdstudio.net",
 };
 
 interface AuthContextType {
