@@ -18,6 +18,14 @@ import {
   Send,
   X,
   Info,
+  CreditCard,
+  Landmark,
+  Globe,
+  Heart,
+  Cake,
+  FileText,
+  CheckCircle,
+  FileWarning,
 } from "lucide-react";
 
 export default function ProfilePage() {
@@ -211,6 +219,142 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Extended Personal Details */}
+      {(emp.nationalId || emp.dateOfBirth || emp.maritalStatus || emp.nationality || emp.mobileNumber) && (
+        <div className="glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <CreditCard className="w-5 h-5 text-primary" />
+            {t.profile.nationalId}
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {emp.nationalId && (
+              <div className="flex items-start gap-3">
+                <Hash className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.nationalId}</p>
+                  <p className="text-sm font-medium" dir="ltr">{emp.nationalId}</p>
+                </div>
+              </div>
+            )}
+            {emp.nationality && (
+              <div className="flex items-start gap-3">
+                <Globe className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.nationality}</p>
+                  <p className="text-sm font-medium">
+                    {emp.nationality === "saudi" ? t.profile.saudi : emp.nationality === "non-saudi" ? t.profile.nonSaudi : emp.nationality}
+                  </p>
+                </div>
+              </div>
+            )}
+            {emp.dateOfBirth && (
+              <div className="flex items-start gap-3">
+                <Cake className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.dateOfBirth}</p>
+                  <p className="text-sm font-medium">{emp.dateOfBirth}</p>
+                </div>
+              </div>
+            )}
+            {emp.maritalStatus && (
+              <div className="flex items-start gap-3">
+                <Heart className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.maritalStatus}</p>
+                  <p className="text-sm font-medium">
+                    {t.profile[emp.maritalStatus as keyof typeof t.profile] ?? emp.maritalStatus}
+                  </p>
+                </div>
+              </div>
+            )}
+            {emp.mobileNumber && (
+              <div className="flex items-start gap-3">
+                <Phone className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.mobileNumber}</p>
+                  <p className="text-sm font-medium" dir="ltr">{emp.mobileNumber}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Bank / IBAN */}
+      {(emp.bankName || emp.iban) && (
+        <div className="glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <Landmark className="w-5 h-5 text-primary" />
+            {t.profile.bankName}
+          </h2>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {emp.bankName && (
+              <div className="flex items-start gap-3">
+                <Landmark className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.bankName}</p>
+                  <p className="text-sm font-medium">{emp.bankName}</p>
+                </div>
+              </div>
+            )}
+            {emp.iban && (
+              <div className="flex items-start gap-3">
+                <CreditCard className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">{t.profile.iban}</p>
+                  <p className="text-sm font-medium font-mono" dir="ltr">{emp.iban}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Documents */}
+      {emp.documents && (
+        <div className="glass-card rounded-2xl p-6">
+          <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-primary" />
+            {t.profile.documents}
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {([
+              { key: "nationalIdDoc" as const, label: t.profile.nationalIdDoc },
+              { key: "cv" as const, label: t.profile.cv },
+              { key: "qualification" as const, label: t.profile.qualification },
+              { key: "passport" as const, label: t.profile.passport },
+            ]).map((doc) => {
+              const file = emp.documents?.[doc.key];
+              return (
+                <div
+                  key={doc.key}
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-xl border",
+                    file
+                      ? "border-emerald-200 bg-emerald-50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
+                      : "border-border bg-muted/30"
+                  )}
+                >
+                  {file ? (
+                    <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  ) : (
+                    <FileWarning className="w-5 h-5 text-muted-foreground shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{doc.label}</p>
+                    {file ? (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 truncate">{file.name}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{isAr ? "لم يتم الرفع" : "Not uploaded"}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Edit action bar */}
       {editing && (
