@@ -160,31 +160,7 @@ function TimePicker({
   return (
     <div>
       <label className="text-sm font-medium text-foreground block mb-1.5">{label}</label>
-      <div className="flex items-center gap-1.5">
-        {/* Hour dropdown */}
-        <div className="w-12">
-          <TimeDropdown
-            items={HOURS}
-            selected={hour}
-            onSelect={(h) => { setHour(h); emit(h, minute, period); }}
-            open={openField === "hour"}
-            onToggle={() => setOpenField(openField === "hour" ? null : "hour")}
-          />
-        </div>
-
-        <span className="text-base font-bold text-muted-foreground">:</span>
-
-        {/* Minute dropdown */}
-        <div className="w-12">
-          <TimeDropdown
-            items={MINUTES}
-            selected={minute}
-            onSelect={(m) => { setMinute(m); emit(hour, m, period); }}
-            open={openField === "minute"}
-            onToggle={() => setOpenField(openField === "minute" ? null : "minute")}
-          />
-        </div>
-
+      <div className="flex flex-row-reverse items-center gap-1.5">
         {/* AM/PM toggle */}
         <button
           type="button"
@@ -202,6 +178,30 @@ function TimePicker({
         >
           {period === "AM" ? amLabel : pmLabel}
         </button>
+
+        {/* Minute dropdown */}
+        <div className="w-12">
+          <TimeDropdown
+            items={MINUTES}
+            selected={minute}
+            onSelect={(m) => { setMinute(m); emit(hour, m, period); }}
+            open={openField === "minute"}
+            onToggle={() => setOpenField(openField === "minute" ? null : "minute")}
+          />
+        </div>
+
+        <span className="text-base font-bold text-muted-foreground">:</span>
+
+        {/* Hour dropdown */}
+        <div className="w-12">
+          <TimeDropdown
+            items={HOURS}
+            selected={hour}
+            onSelect={(h) => { setHour(h); emit(h, minute, period); }}
+            open={openField === "hour"}
+            onToggle={() => setOpenField(openField === "hour" ? null : "hour")}
+          />
+        </div>
       </div>
     </div>
   );
