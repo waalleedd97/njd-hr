@@ -85,6 +85,7 @@ interface DataState {
   settings: AppSettings;
   payrollProcessed: boolean;
   departments: Record<string, { ar: string; en: string }>;
+  passwords: Record<string, string>; // email (lowercase) → password
 }
 
 // ─── Default State ───────────────────────────────────────────────────
@@ -109,6 +110,7 @@ function getDefaultState(): DataState {
     },
     payrollProcessed: false,
     departments: { ...defaultDepartments },
+    passwords: { "waleed@njdstudio.net": "admin123" },
   };
 }
 
@@ -197,6 +199,10 @@ interface DataContextType extends DataState {
   // Profile completion (for invited employees)
   acceptInvitation: (email: string) => void;
   completeProfile: (id: string, data: Partial<Employee>) => void;
+
+  // Passwords
+  changePassword: (email: string, newPassword: string) => void;
+  verifyPassword: (email: string, password: string) => boolean;
 
   // Payroll
   processPayroll: () => void;
@@ -549,6 +555,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         pendingInvitations: p.pendingInvitations.map((i) =>
           i.id === inv.id ? { ...i, status: "expired" as const } : i
         ),
+        passwords: { ...p.passwords, [inv.email.toLowerCase()]: "demo123" },
       };
     });
   }, []);
@@ -564,6 +571,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     []
   );
+
+  const changePassword = useCallback((email: string, newPassword: string) => {
+    setState((p) => ({
+      ...p,
+      passwords: { ...p.passwords, [email.toLowerCase()]: newPassword },
+    }));
+  }, []);
+
+  const verifyPassword = useCallback((email: string, password: string): boolean => {
+    const stored = state.passwords[email.toLowerCase()];
+    if (!stored) return password === "demo123"; // Default for invited employees
+    return stored === password;
+  }, [state.passwords]);
 
   const resetStore = useCallback(() => {
     const fresh = getDefaultState();
@@ -593,6 +613,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     removeDepartment,
     acceptInvitation,
     completeProfile,
+    changePassword,
+    verifyPassword,
     processPayroll,
     resetStore,
   };

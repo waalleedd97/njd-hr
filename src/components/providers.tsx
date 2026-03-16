@@ -162,20 +162,25 @@ function AuthProvider({ children }: { children: ReactNode }) {
   }, [role, isAuthenticated, user, hydrated]);
 
   const login = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    (email: string, _password: string): boolean => {
-      if (!email) return false;
-      // Check if this email has a pending invitation — accept it first
+    (email: string, password: string): boolean => {
+      if (!email || !password) return false;
+      // Verify password from data store
       try {
         const saved = localStorage.getItem("njd-hr-data");
         if (saved) {
           const data = JSON.parse(saved);
+          const passwords: Record<string, string> = data.passwords || {};
+          const storedPw = passwords[email.toLowerCase()];
+          // If password exists in store, it must match. Otherwise accept "demo123" for invited users.
+          if (storedPw && storedPw !== password) return false;
+          if (!storedPw && password !== "demo123") return false;
+
+          // Check if this email has a pending invitation — accept it first
           const hasInvitation = (data.pendingInvitations || []).some(
             (i: { email: string; status: string }) =>
               i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
           );
           if (hasInvitation) {
-            // Trigger acceptInvitation via a custom event (picked up by DataProvider)
             window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
           }
         }

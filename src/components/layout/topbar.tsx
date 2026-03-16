@@ -9,7 +9,17 @@ import { useLanguage, useAuth } from "@/components/providers";
 import { moduleIcons } from "@/components/icons/module-icons";
 import { navItems, getNavForRole } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
-import { Menu, Sun, Moon, Shield, User } from "lucide-react";
+import { Menu, Sun, Moon, Shield, User, KeyRound } from "lucide-react";
+import { useData } from "@/lib/data-store";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { LanguageToggle } from "./language-toggle";
 import { NotificationsPanel } from "./notifications-panel";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -34,8 +44,15 @@ export function Topbar() {
   const { t, lang, dir } = useLanguage();
   const { theme, setTheme } = useTheme();
   const { role, user, isAdmin, logout } = useAuth();
+  const store = useData();
   const [mounted, setMounted] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [pwDialogOpen, setPwDialogOpen] = useState(false);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwError, setPwError] = useState("");
+  const [pwSuccess, setPwSuccess] = useState(false);
   const isRTL = dir === "rtl";
   const isAr = lang === "ar";
 
@@ -212,6 +229,10 @@ export function Topbar() {
                   {t.common.settings}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuItem onClick={() => { setPwDialogOpen(true); setPwError(""); setPwSuccess(false); setCurrentPw(""); setNewPw(""); setConfirmPw(""); }}>
+                <KeyRound className="w-3.5 h-3.5 me-1.5" />
+                {t.profile.changePassword}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={handleLogout}>
                 {t.common.logout}
@@ -220,6 +241,46 @@ export function Topbar() {
           </DropdownMenu>
         </div>
       </div>
+
+      {/* Change Password Dialog */}
+      <Dialog open={pwDialogOpen} onOpenChange={setPwDialogOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-primary" />
+              {t.profile.changePassword}
+            </DialogTitle>
+            <DialogDescription className="sr-only">{t.profile.changePassword}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium block mb-1">{t.profile.currentPassword}</label>
+              <input type="password" value={currentPw} onChange={(e) => { setCurrentPw(e.target.value); setPwError(""); }} className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{t.profile.newPassword}</label>
+              <input type="password" value={newPw} onChange={(e) => { setNewPw(e.target.value); setPwError(""); }} className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary" />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{t.profile.confirmPassword}</label>
+              <input type="password" value={confirmPw} onChange={(e) => { setConfirmPw(e.target.value); setPwError(""); }} className="h-9 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary" />
+            </div>
+            {pwError && <p className="text-sm text-red-500 font-medium">{pwError}</p>}
+            {pwSuccess && <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">{t.profile.passwordChanged}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPwDialogOpen(false)}>{t.common.cancel}</Button>
+            <Button disabled={pwSuccess} onClick={() => {
+              if (!store.verifyPassword(user.email, currentPw)) { setPwError(t.profile.wrongPassword); return; }
+              if (newPw.length < 6) { setPwError(t.profile.passwordTooShort); return; }
+              if (newPw !== confirmPw) { setPwError(t.profile.passwordMismatch); return; }
+              store.changePassword(user.email, newPw);
+              setPwSuccess(true);
+              setTimeout(() => setPwDialogOpen(false), 1500);
+            }}>{t.common.save}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }
