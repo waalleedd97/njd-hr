@@ -8,13 +8,15 @@ import { adminOnlyPaths } from "@/lib/navigation";
 import { Sidebar } from "./sidebar";
 import { Topbar } from "./topbar";
 import { MobileNav } from "./mobile-nav";
-import { Shield, LogIn, Eye, EyeOff } from "lucide-react";
+import { Shield, LogIn, Eye, EyeOff, Sun, Moon } from "lucide-react";
+import { useTheme } from "next-themes";
 
 // ─── Login Screen ────────────────────────────────────────────────────
 
 function LoginScreen() {
   const { t, lang, dir } = useLanguage();
   const { login } = useAuth();
+  const { theme, setTheme } = useTheme();
   const isAr = lang === "ar";
 
   const [email, setEmail] = useState("");
@@ -38,8 +40,20 @@ function LoginScreen() {
   return (
     <div
       dir={dir}
-      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#F3EEFF] via-background to-[#E8DAFF] dark:from-[#0F0D1A] dark:via-[#1C1828] dark:to-[#0F0D1A] p-4"
+      className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#F3EEFF] via-background to-[#E8DAFF] dark:from-[#0F0D1A] dark:via-[#1C1828] dark:to-[#0F0D1A] p-4 relative"
     >
+      {/* Theme toggle */}
+      <button
+        onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+        className="absolute top-4 end-4 w-10 h-10 rounded-xl glass-card flex items-center justify-center hover:scale-105 transition-all"
+      >
+        {theme === "dark" ? (
+          <Sun className="w-5 h-5 text-muted-foreground" />
+        ) : (
+          <Moon className="w-5 h-5 text-muted-foreground" />
+        )}
+      </button>
+
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
