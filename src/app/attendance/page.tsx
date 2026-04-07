@@ -583,8 +583,8 @@ export default function AttendancePage() {
             {clockOutTime && !clockedIn ? (
               /* Already checked out — disabled neutral button */
               <div className="flex flex-col items-center gap-3">
-                <div className="w-36 h-36 rounded-full flex flex-col items-center justify-center gap-1 font-bold text-lg bg-muted text-muted-foreground shadow-none cursor-not-allowed">
-                  <CheckCircle className="w-8 h-8" />
+                <div className="w-36 h-36 rounded-full flex flex-col items-center justify-center gap-1 font-bold text-sm leading-tight text-center bg-muted text-muted-foreground shadow-none cursor-not-allowed px-3">
+                  <CheckCircle className="w-8 h-8 shrink-0" />
                   {t.clock.alreadyCheckedOut}
                 </div>
                 <p className="text-xs text-muted-foreground text-center max-w-[280px]">
