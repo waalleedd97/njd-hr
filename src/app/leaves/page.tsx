@@ -208,7 +208,7 @@ export default function LeavesPage() {
       reasonEn: formReason,
     });
 
-    // Show success, then auto-close after 2s
+    // Show success, then auto-close after 5s
     setSubmitSuccess(true);
     setTimeout(() => {
       setSubmitSuccess(false);
@@ -217,7 +217,7 @@ export default function LeavesPage() {
       setFormStart("");
       setFormEnd("");
       setFormReason("");
-    }, 2000);
+    }, 5000);
   }
 
   /** Format a holiday date range for display */
