@@ -29,6 +29,7 @@ import {
   Star,
   Check,
   X,
+  CheckCircle,
 } from "lucide-react";
 
 // ---------- constants ----------
@@ -153,6 +154,7 @@ export default function LeavesPage() {
   const [formStart, setFormStart] = useState("");
   const [formEnd, setFormEnd] = useState("");
   const [formReason, setFormReason] = useState("");
+  const [submitSuccess, setSubmitSuccess] = useState(false);
 
   const weekDays = useMemo(() => getWeekDays(new Date()), []);
 
@@ -186,9 +188,12 @@ export default function LeavesPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!formStart || !formEnd) return;
+
     // Calculate days between start and end
     const start = new Date(formStart + "T00:00:00");
     const end = new Date(formEnd + "T00:00:00");
+    if (end < start) return;
     const diffMs = end.getTime() - start.getTime();
     const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
 
@@ -203,11 +208,16 @@ export default function LeavesPage() {
       reasonEn: formReason,
     });
 
-    setDialogOpen(false);
-    setFormType("annual");
-    setFormStart("");
-    setFormEnd("");
-    setFormReason("");
+    // Show success, then auto-close after 2s
+    setSubmitSuccess(true);
+    setTimeout(() => {
+      setSubmitSuccess(false);
+      setDialogOpen(false);
+      setFormType("annual");
+      setFormStart("");
+      setFormEnd("");
+      setFormReason("");
+    }, 2000);
   }
 
   /** Format a holiday date range for display */
@@ -630,8 +640,24 @@ export default function LeavesPage() {
       )}
 
       {/* ==================== APPLY LEAVE DIALOG ==================== */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={dialogOpen} onOpenChange={(v) => { if (!submitSuccess) setDialogOpen(v); }}>
         <DialogContent className="sm:max-w-md">
+          {submitSuccess ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-4">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center">
+                <CheckCircle className="w-8 h-8 text-emerald-500" />
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-bold text-foreground">
+                  {isAr ? "تم إرسال الطلب بنجاح" : "Request Submitted Successfully"}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {isAr ? "سيتم مراجعة طلبك من قبل المسؤول" : "Your request will be reviewed by the administrator"}
+                </p>
+              </div>
+            </div>
+          ) : (
+          <>
           <DialogHeader>
             <DialogTitle>{t.lev.applyLeave}</DialogTitle>
             <DialogDescription>
@@ -710,6 +736,8 @@ export default function LeavesPage() {
               <Button type="submit">{t.common.submit}</Button>
             </DialogFooter>
           </form>
+          </>
+          )}
         </DialogContent>
       </Dialog>
     </div>
