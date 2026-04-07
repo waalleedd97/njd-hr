@@ -104,7 +104,7 @@ interface UnifiedRequest {
 
 export default function RequestsPage() {
   const { t, lang } = useLanguage();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const store = useData();
   const isAr = lang === "ar";
 
@@ -164,10 +164,20 @@ export default function RequestsPage() {
       detailsEn: s.amount.toLocaleString() + " SAR",
     }));
 
-    const combined = [...base, ...adjMapped, ...advMapped];
+    const leaveMapped: UnifiedRequest[] = store.leaveRequests.map((lr) => ({
+      id: lr.id,
+      employeeId: lr.employeeId,
+      typeKey: "leaveRequest",
+      date: lr.startDate,
+      status: lr.status,
+      detailsAr: lr.reasonAr || (lr.startDate + " → " + lr.endDate + " (" + lr.days + " أيام)"),
+      detailsEn: lr.reasonEn || (lr.startDate + " → " + lr.endDate + " (" + lr.days + " days)"),
+    }));
+
+    const combined = [...base, ...adjMapped, ...advMapped, ...leaveMapped];
     combined.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
     return combined;
-  }, [store.employeeRequests, store.attendanceAdjustments, store.salaryAdvances]);
+  }, [store.employeeRequests, store.attendanceAdjustments, store.salaryAdvances, store.leaveRequests]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -182,7 +192,7 @@ export default function RequestsPage() {
 
     // Role-based filtering: non-admin sees only their own requests (EMP003 as mock)
     if (!isAdmin) {
-      list = list.filter((req) => req.employeeId === "EMP003");
+      list = list.filter((req) => req.employeeId === user.id);
     }
 
     return list.filter((req) => {
@@ -209,7 +219,7 @@ export default function RequestsPage() {
 
     if (newReqType === "attendanceAdjust") {
       store.submitAdjustment({
-        employeeId: "EMP001",
+        employeeId: user.id,
         date: adjDate || today,
         originalIn: adjOriginalIn,
         requestedIn: adjRequestedIn,
@@ -221,7 +231,7 @@ export default function RequestsPage() {
       });
     } else if (newReqType === "salaryAdvance") {
       store.submitAdvance({
-        employeeId: "EMP001",
+        employeeId: user.id,
         amount: advAmount,
         reasonAr: newReqDesc,
         reasonEn: newReqDesc,
@@ -234,7 +244,7 @@ export default function RequestsPage() {
       });
     } else {
       store.submitEmployeeRequest({
-        employeeId: "EMP001",
+        employeeId: user.id,
         typeKey: newReqType,
         date: today,
         status: "pending",
@@ -428,7 +438,9 @@ export default function RequestsPage() {
                                       ? "attendanceAdjustments"
                                       : req.typeKey === "salaryAdvance"
                                         ? "salaryAdvances"
-                                        : "employeeRequests";
+                                        : req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)
+                                          ? "leaveRequests"
+                                          : "employeeRequests";
                                   store.approveItem(collection, req.id);
                                 }}
                               >
@@ -444,7 +456,9 @@ export default function RequestsPage() {
                                       ? "attendanceAdjustments"
                                       : req.typeKey === "salaryAdvance"
                                         ? "salaryAdvances"
-                                        : "employeeRequests";
+                                        : req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)
+                                          ? "leaveRequests"
+                                          : "employeeRequests";
                                   store.rejectItem(collection, req.id);
                                 }}
                               >

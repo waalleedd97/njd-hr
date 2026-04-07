@@ -123,15 +123,15 @@ export default function DashboardPage() {
   const adminStats = [
     { icon: EmployeesIcon, value: String(store.employees.length), label: t.stats.totalEmployees, trend: null, color: "#8B5CF6" },
     { icon: LeavesIcon, value: String(store.employees.filter(e => e.status === "on-leave").length), label: t.stats.onLeave, trend: null, color: "#10B981" },
-    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.status === "pending").length), label: t.stats.pendingRequests, trend: null, color: "#F59E0B" },
+    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.status === "pending").length + store.leaveRequests.filter(r => r.status === "pending").length), label: t.stats.pendingRequests, trend: null, color: "#F59E0B" },
     { icon: PayrollIcon, value: nextPayroll, label: t.stats.nextPayroll, trend: null, color: "#3B82F6" },
   ];
 
   const employeeStats = [
     { icon: LeavesIcon, value: String(store.leaveBalances.find(b => b.typeKey === "annual")?.remaining ?? 0), label: isAr ? "أيام إجازة متبقية" : "Leave Days Left", trend: null, color: "#10B981" },
-    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.employeeId === user.id && r.status === "pending").length), label: isAr ? "طلباتي المعلقة" : "My Pending Requests", trend: null, color: "#F59E0B" },
+    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.employeeId === user.id && r.status === "pending").length + store.leaveRequests.filter(r => r.employeeId === user.id && r.status === "pending").length), label: isAr ? "طلباتي المعلقة" : "My Pending Requests", trend: null, color: "#F59E0B" },
     { icon: PayrollIcon, value: nextPayroll, label: t.stats.nextPayroll, trend: null, color: "#3B82F6" },
-    { icon: EmployeesIcon, value: isAr ? "08:02" : "08:02", label: isAr ? "وقت الحضور اليوم" : "Today's Check-in", trend: null, color: "#8B5CF6" },
+    { icon: EmployeesIcon, value: myAttendance?.checkIn ?? "-", label: isAr ? "وقت الحضور اليوم" : "Today's Check-in", trend: null, color: "#8B5CF6" },
   ];
 
   const stats = isAdmin ? adminStats : employeeStats;

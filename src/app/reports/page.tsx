@@ -1,7 +1,7 @@
 "use client";
 
 import { useLanguage } from "@/components/providers";
-import { employees, todayAttendance, leaveBalances } from "@/lib/mock-data";
+import { GOSI_RATE } from "@/lib/mock-data";
 import { useData } from "@/lib/data-store";
 import { cn } from "@/lib/utils";
 import { Users, TrendingDown, Clock, CheckCircle } from "lucide-react";
@@ -36,7 +36,11 @@ const leaveTrackMap: Record<string, string> = {
 
 export default function ReportsPage() {
   const { t, lang } = useLanguage();
-  const departments = useData().departments;
+  const store = useData();
+  const departments = store.departments;
+  const employees = store.employees;
+  const todayAttendance = store.todayAttendance;
+  const leaveBalances = store.leaveBalances;
   const isAr = lang === "ar";
 
   // --- KPI Calculations ---
@@ -54,10 +58,11 @@ export default function ReportsPage() {
   })();
 
   const attendanceRate = (() => {
+    if (employees.length === 0) return 0;
     const counted = todayAttendance.filter(
       (r) => r.status === "present" || r.status === "late" || r.status === "half-day"
     ).length;
-    return Math.round((counted / todayAttendance.length) * 100);
+    return Math.round((counted / employees.length) * 100);
   })();
 
   // --- KPI Card Definitions ---
@@ -73,7 +78,7 @@ export default function ReportsPage() {
     {
       icon: TrendingDown,
       label: t.rep.turnoverRate,
-      value: "4.2%",
+      value: headcount > 0 ? ((employees.filter(e => e.status === "inactive").length / headcount) * 100).toFixed(1) + "%" : "0%",
       color: "text-amber-600 dark:text-amber-400",
       bg: "bg-amber-500/10",
     },
@@ -95,7 +100,11 @@ export default function ReportsPage() {
 
   // --- Weekly Attendance Data ---
 
-  const weeklyData = [85, 92, 78, 95, 88];
+  const weeklyData = (() => {
+    if (employees.length === 0) return [0, 0, 0, 0, 0];
+    const todayRate = Math.round((todayAttendance.filter(r => r.status === "present" || r.status === "late" || r.status === "half-day").length / employees.length) * 100);
+    return [0, 0, 0, 0, todayRate]; // Only today (Thu) has real data — no historical data
+  })();
   const dayKeys: Array<keyof typeof t.days> = ["sun", "mon", "tue", "wed", "thu"];
   const maxBarHeight = 120;
 
@@ -118,11 +127,18 @@ export default function ReportsPage() {
 
   // --- Payroll Trend ---
 
-  const payrollData = [245000, 248000, 252000, 250000, 255000, 258000];
-  const monthLabelsAr = ["أكتوبر", "نوفمبر", "ديسمبر", "يناير", "فبراير", "مارس"];
-  const monthLabelsEn = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar"];
-  const monthLabels = isAr ? monthLabelsAr : monthLabelsEn;
-  const maxPayroll = Math.max(...payrollData);
+  const currentMonthlyPayroll = employees.reduce((sum, emp) => {
+    const gross = emp.salary.basic + emp.salary.housing + emp.salary.transport + emp.salary.other;
+    const gosi = emp.salary.basic * GOSI_RATE;
+    return sum + gross - gosi;
+  }, 0);
+  const payrollData = [currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll];
+  const now = new Date();
+  const monthLabels = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
+    return d.toLocaleDateString(isAr ? "ar-SA-u-nu-latn" : "en-US", { month: "short" });
+  });
+  const maxPayroll = Math.max(...payrollData, 1);
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
