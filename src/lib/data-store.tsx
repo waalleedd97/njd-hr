@@ -316,6 +316,43 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncEmployees();
   }, [hydrated]);
 
+  // Sync leave requests from Supabase (so admin sees requests from all devices)
+  useEffect(() => {
+    if (!hydrated) return;
+    async function syncLeaveRequests() {
+      try {
+        const { supabase } = await import("./supabase");
+        const { data, error } = await supabase
+          .from("leave_requests")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (error || !data) return;
+
+        setState((prev) => {
+          const existingIds = new Set(prev.leaveRequests.map((r) => r.id));
+          const newReqs: LeaveReq[] = [];
+          for (const row of data) {
+            if (existingIds.has(row.id)) continue;
+            newReqs.push({
+              id: row.id,
+              employeeId: row.employee_id,
+              typeKey: row.type_key,
+              startDate: row.start_date,
+              endDate: row.end_date,
+              days: row.days,
+              status: row.status,
+              reasonAr: row.reason_ar || "",
+              reasonEn: row.reason_en || "",
+            });
+          }
+          if (newReqs.length === 0) return prev;
+          return { ...prev, leaveRequests: [...newReqs, ...prev.leaveRequests] };
+        });
+      } catch { /* table may not exist */ }
+    }
+    syncLeaveRequests();
+  }, [hydrated]);
+
   // Listen for invitation acceptance from AuthProvider
   useEffect(() => {
     function handleAccept(e: Event) {
@@ -357,7 +394,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const submitLeaveRequest = useCallback((req: Omit<LeaveReq, "id">) => {
+  const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
     const newReq = { ...req, id: genId("LR") };
     setState((p) => ({
       ...p,
@@ -377,6 +414,26 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ...p.notifications,
       ],
     }));
+
+    // Persist to Supabase so admins on other devices can see it
+    try {
+      const { supabase } = await import("./supabase");
+      const { data: { session } } = await supabase.auth.getSession();
+      const supabaseUserId = session?.user?.id;
+      await supabase.from("leave_requests").insert({
+        id: newReq.id,
+        employee_id: newReq.employeeId,
+        type_key: newReq.typeKey,
+        start_date: newReq.startDate,
+        end_date: newReq.endDate,
+        days: newReq.days,
+        status: "pending",
+        reason_ar: newReq.reasonAr,
+        reason_en: newReq.reasonEn,
+        supabase_user_id: supabaseUserId || null,
+      });
+    } catch { /* Supabase insert may fail if table schema differs — fall back to localStorage */ }
+
     // Notify admins via Supabase
     notifyAdmins({
       type: "leave",
@@ -485,6 +542,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           ],
         };
       });
+      // Sync approval to Supabase
+      if (collection === "leaveRequests") {
+        import("./supabase").then(({ supabase }) => {
+          supabase.from("leave_requests").update({ status: "approved" }).eq("id", id);
+        }).catch(() => {});
+      }
     },
     []
   );
@@ -505,6 +568,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
           item.id === id ? { ...item, status: "rejected" } : item
         ),
       }));
+      // Sync rejection to Supabase
+      if (collection === "leaveRequests") {
+        import("./supabase").then(({ supabase }) => {
+          supabase.from("leave_requests").update({ status: "rejected" }).eq("id", id);
+        }).catch(() => {});
+      }
     },
     []
   );
