@@ -1,14 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useLanguage } from "@/components/providers";
+import { useState, useEffect, useCallback } from "react";
+import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
+import {
+  type NotificationPreferences,
+  fetchPreferences,
+  savePreferences,
+  requestPushPermission,
+} from "@/lib/notifications";
 import {
   branches,
   roles,
   complianceItems,
   saudiHolidays,
   penaltyRules,
+  earlyDepartureRules,
   geofenceConfig,
 } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +47,8 @@ import {
   Layers,
   Pencil,
   Trash2,
+  Bell,
+  Info,
 } from "lucide-react";
 
 const tabs = [
@@ -51,6 +60,7 @@ const tabs = [
   "holidays",
   "geofence",
   "penalties",
+  "notifications",
 ] as const;
 type Tab = (typeof tabs)[number];
 
@@ -63,13 +73,43 @@ const tabIcons: Record<Tab, React.ReactNode> = {
   holidays: <Calendar className="w-4 h-4" />,
   geofence: <Radar className="w-4 h-4" />,
   penalties: <AlertTriangle className="w-4 h-4" />,
+  notifications: <Bell className="w-4 h-4" />,
 };
 
 export default function SettingsPage() {
   const { t, lang } = useLanguage();
   const isAr = lang === "ar";
+  const { user } = useAuth();
   const store = useData();
   const { settings, updateSettings, addNotification } = store;
+
+  // Notification preferences
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
+    email_notifications: true,
+    push_notifications: true,
+    attendance_reminders: true,
+    leave_updates: true,
+    payroll_updates: true,
+  });
+  const [notifSaved, setNotifSaved] = useState(false);
+
+  useEffect(() => {
+    if (user.id) fetchPreferences(user.id).then(setNotifPrefs);
+  }, [user.id]);
+
+  const handleNotifToggle = useCallback((key: keyof NotificationPreferences) => {
+    setNotifPrefs((p) => ({ ...p, [key]: !p[key] }));
+    setNotifSaved(false);
+  }, []);
+
+  const handleSaveNotifPrefs = useCallback(async () => {
+    await savePreferences(user.id, notifPrefs);
+    if (notifPrefs.push_notifications) {
+      await requestPushPermission(user.id);
+    }
+    setNotifSaved(true);
+    setTimeout(() => setNotifSaved(false), 2000);
+  }, [user.id, notifPrefs]);
 
   const [activeTab, setActiveTab] = useState<Tab>("companyInfo");
   const [geofenceEnabled, setGeofenceEnabled] = useState(settings.geofenceEnabled);
@@ -133,6 +173,7 @@ export default function SettingsPage() {
     holidays: t.holiday.title,
     geofence: t.clock.geofence,
     penalties: t.penalty.title,
+    notifications: t.set.notifications,
   };
 
   const inputClass =
@@ -739,7 +780,7 @@ export default function SettingsPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {saudiHolidays.map((h, idx) => {
-              const isUpcoming = new Date(h.startDate) > now;
+              const isUpcoming = h.startDate ? new Date(h.startDate) > now : false;
               const color = holidayColors[idx % holidayColors.length];
 
               return (
@@ -789,15 +830,17 @@ export default function SettingsPage() {
                           </Badge>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(h.startDate, lang, { month: "long", day: "numeric" })}
-                        {h.startDate !== h.endDate && (
-                          <>
-                            {" — "}
-                            {formatDate(h.endDate, lang, { month: "long", day: "numeric" })}
-                          </>
-                        )}
-                      </p>
+                      {h.startDate && (
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(h.startDate, lang, { month: "long", day: "numeric" })}
+                          {h.endDate && h.startDate !== h.endDate && (
+                            <>
+                              {" — "}
+                              {formatDate(h.endDate, lang, { month: "long", day: "numeric" })}
+                            </>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -806,7 +849,7 @@ export default function SettingsPage() {
 
             {/* Custom Holidays */}
             {customHolidays.map((h, idx) => {
-              const isUpcoming = new Date(h.startDate) > now;
+              const isUpcoming = h.startDate ? new Date(h.startDate) > now : false;
               const color = holidayColors[(saudiHolidays.length + idx) % holidayColors.length];
 
               return (
@@ -854,15 +897,17 @@ export default function SettingsPage() {
                           </Badge>
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {formatDate(h.startDate, lang, { month: "long", day: "numeric" })}
-                        {h.startDate !== h.endDate && (
-                          <>
-                            {" — "}
-                            {formatDate(h.endDate, lang, { month: "long", day: "numeric" })}
-                          </>
-                        )}
-                      </p>
+                      {h.startDate && (
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(h.startDate, lang, { month: "long", day: "numeric" })}
+                          {h.endDate && h.startDate !== h.endDate && (
+                            <>
+                              {" — "}
+                              {formatDate(h.endDate, lang, { month: "long", day: "numeric" })}
+                            </>
+                          )}
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1146,12 +1191,127 @@ export default function SettingsPage() {
             </table>
           </div>
 
+          {/* Early Departure Rules */}
+          <div className="mt-8 flex items-center gap-3 mb-6">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center">
+              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                {isAr ? "جزاءات الانصراف المبكر" : "Early Departure Penalties"}
+              </h2>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
+            <table className="w-full min-w-[500px]">
+              <thead>
+                <tr className="text-xs text-muted-foreground border-b border-border">
+                  <th className="text-start pb-3 font-medium">
+                    {t.penalty.condition}
+                  </th>
+                  <th className="text-start pb-3 font-medium">
+                    {t.penalty.deduction}
+                  </th>
+                  <th className="text-start pb-3 font-medium">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {earlyDepartureRules.map((rule) => (
+                  <tr
+                    key={rule.id}
+                    className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
+                  >
+                    <td className="py-3">
+                      <span className="text-sm font-medium text-foreground">
+                        {isAr ? rule.conditionAr : rule.conditionEn}
+                      </span>
+                    </td>
+                    <td className="py-3 text-sm text-muted-foreground">
+                      {isAr ? rule.deductionAr : rule.deductionEn}
+                    </td>
+                    <td className="py-3">
+                      <Badge
+                        className={cn(
+                          "border-0 text-[11px]",
+                          getPenaltyBadgeClass(rule.percentage)
+                        )}
+                      >
+                        {rule.percentage === 0
+                          ? `0% (${t.penalty.warning})`
+                          : `${rule.percentage}%`}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Remote employee exemption note */}
+          <div className="mt-6 p-4 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 flex items-start gap-3">
+            <Info className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 shrink-0" />
+            <p className="text-sm font-medium text-blue-700 dark:text-blue-400">
+              {isAr ? "الموظفون عن بُعد معفيون من قواعد الجزاءات" : "Remote employees are exempt from penalty rules"}
+            </p>
+          </div>
+
           {/* Auto-calculated info box */}
-          <div className="mt-6 p-4 rounded-xl bg-muted/50 flex items-start gap-3">
+          <div className="mt-4 p-4 rounded-xl bg-muted/50 flex items-start gap-3">
             <AlertTriangle className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
             <p className="text-sm text-muted-foreground">
               {t.penalty.autoCalculated}
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Notifications Settings ──────────────────────────────────── */}
+      {activeTab === "notifications" && (
+        <div className="glass-card rounded-xl p-6">
+          <h3 className="font-bold text-lg mb-6">{t.set.notifications}</h3>
+          <div className="space-y-4">
+            {([
+              { key: "email_notifications" as const, label: t.set.emailNotifications },
+              { key: "push_notifications" as const, label: t.set.pushNotifications },
+              { key: "attendance_reminders" as const, label: t.set.attendanceReminders },
+              { key: "leave_updates" as const, label: t.set.leaveUpdates },
+              { key: "payroll_updates" as const, label: t.set.payrollUpdates },
+            ]).map((item) => (
+              <div
+                key={item.key}
+                className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-accent/30 transition-colors"
+              >
+                <span className="text-sm font-medium">{item.label}</span>
+                <button
+                  onClick={() => handleNotifToggle(item.key)}
+                  className={cn(
+                    "relative w-11 h-6 rounded-full transition-colors",
+                    notifPrefs[item.key] ? "bg-primary" : "bg-muted-foreground/30"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform",
+                      notifPrefs[item.key]
+                        ? (isAr ? "start-0.5" : "start-[22px]")
+                        : (isAr ? "start-[22px]" : "start-0.5")
+                    )}
+                  />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 flex items-center gap-3">
+            <Button onClick={handleSaveNotifPrefs}>
+              <Save className="w-4 h-4" />
+              {t.set.saveChanges}
+            </Button>
+            {notifSaved && (
+              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+                {t.set.notifSettingsSaved}
+              </span>
+            )}
           </div>
         </div>
       )}

@@ -25,6 +25,7 @@ import {
   type AttendanceAdjustment,
   type PendingInvitation,
 } from "./mock-data";
+import { createNotification, notifyAdmins } from "./notifications";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -248,6 +249,73 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [state, hydrated]);
 
+  // Sync employees from Supabase (all registered users)
+  useEffect(() => {
+    if (!hydrated) return;
+    async function syncEmployees() {
+      try {
+        const { supabase } = await import("./supabase");
+        // Try admin RPC first, fallback to profiles table
+        // eslint-disable-next-line prefer-const
+        let users: Array<{
+          user_id: string; email: string; created_at: string;
+          role_name: string; name_ar: string; name_en: string;
+          full_name_ar: string; full_name_en: string;
+          phone: string; department: string; job_title_ar: string;
+          profile_completed: boolean;
+        }> | null = null;
+
+        const rpcResult = await supabase.rpc("admin_list_users");
+        if (!rpcResult.error && rpcResult.data) {
+          users = rpcResult.data;
+        } else {
+          const res = await supabase.from("profiles").select("id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed");
+          if (res.error || !res.data) return;
+          users = res.data.map((p: Record<string, unknown>) => ({
+            user_id: p.id as string, email: "", created_at: "",
+            role_name: "employee", name_ar: p.name_ar as string, name_en: p.name_en as string,
+            full_name_ar: p.full_name_ar as string, full_name_en: p.full_name_en as string,
+            phone: p.phone as string, department: p.department as string,
+            job_title_ar: p.job_title_ar as string, profile_completed: p.profile_completed as boolean,
+          }));
+        }
+        if (!users) return;
+
+        setState((prev) => {
+          const existingEmails = new Set(prev.employees.map((e) => e.email.toLowerCase()));
+          const newEmployees: Employee[] = [];
+
+          for (const u of users) {
+            const email = (u.email || "").toLowerCase();
+            if (existingEmails.has(email)) continue;
+            newEmployees.push({
+              id: u.user_id.slice(0, 8).toUpperCase(),
+              nameAr: u.name_ar || u.full_name_ar || u.email.split("@")[0],
+              nameEn: u.name_en || u.full_name_en || u.email.split("@")[0],
+              positionAr: u.job_title_ar || (u.role_name === "super_admin" ? "مدير النظام" : "موظف"),
+              positionEn: u.role_name === "super_admin" ? "System Administrator" : "Employee",
+              department: u.department || "",
+              email: u.email,
+              phone: u.phone || "",
+              status: "active",
+              joinDate: u.created_at ? u.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
+              salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+              initials: (u.name_ar || u.name_en || u.email).charAt(0).toUpperCase(),
+              color: "bg-primary",
+              profileCompleted: u.profile_completed ?? false,
+            });
+          }
+
+          if (newEmployees.length === 0) return prev;
+          return { ...prev, employees: [...prev.employees, ...newEmployees] };
+        });
+      } catch {
+        // admin_list_users RPC may not be available for non-admins — silently ignore
+      }
+    }
+    syncEmployees();
+  }, [hydrated]);
+
   // Listen for invitation acceptance from AuthProvider
   useEffect(() => {
     function handleAccept(e: Event) {
@@ -307,6 +375,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ...p.notifications,
       ],
     }));
+    // Notify admins via Supabase
+    notifyAdmins({
+      type: "leave",
+      titleAr: "طلب إجازة جديد",
+      titleEn: "New Leave Request",
+      descAr: "طلب إجازة جديد بانتظار الموافقة",
+      descEn: "New leave request pending approval",
+      href: "/leaves",
+    });
   }, []);
 
   const submitEmployeeRequest = useCallback((req: Omit<EmpReq, "id">) => {
@@ -365,6 +442,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
                   }
                 : b
             );
+          }
+        }
+
+        // Notify the employee via Supabase
+        const item = p[collection] as { id: string; employeeId?: string }[];
+        const target = item.find((i) => i.id === id);
+        if (target?.employeeId) {
+          const emp = p.employees.find((e) => e.id === target.employeeId);
+          if (emp) {
+            createNotification({
+              userId: emp.id,
+              type: "leave",
+              titleAr: "تمت الموافقة",
+              titleEn: "Approved",
+              descAr: "تمت الموافقة على الطلب بنجاح",
+              descEn: "Request has been approved",
+              href: "/" + collection.replace("Requests", "").replace("Adjustments", ""),
+            });
           }
         }
 
@@ -480,24 +575,39 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const processPayroll = useCallback(() => {
-    setState((p) => ({
-      ...p,
-      payrollProcessed: true,
-      notifications: [
-        {
-          id: genId("N"),
-          type: "payroll" as const,
+    setState((p) => {
+      // Notify each employee via Supabase
+      p.employees.forEach((emp) => {
+        createNotification({
+          userId: emp.id,
+          type: "payroll",
           titleAr: "تم تشغيل الرواتب",
           titleEn: "Payroll Processed",
           descAr: "تم معالجة رواتب الشهر الحالي بنجاح",
           descEn: "Current month payroll has been processed successfully",
-          time: 0,
-          read: false,
           href: "/payroll",
-        },
-        ...p.notifications,
-      ],
-    }));
+        });
+      });
+
+      return {
+        ...p,
+        payrollProcessed: true,
+        notifications: [
+          {
+            id: genId("N"),
+            type: "payroll" as const,
+            titleAr: "تم تشغيل الرواتب",
+            titleEn: "Payroll Processed",
+            descAr: "تم معالجة رواتب الشهر الحالي بنجاح",
+            descEn: "Current month payroll has been processed successfully",
+            time: 0,
+            read: false,
+            href: "/payroll",
+          },
+          ...p.notifications,
+        ],
+      };
+    });
   }, []);
 
   const addDepartment = useCallback((key: string, ar: string, en: string) => {

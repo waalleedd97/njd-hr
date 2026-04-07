@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useLanguage } from "@/components/providers";
+import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import {
   employees,
@@ -10,6 +10,7 @@ import {
   calcPenalty,
   calcDailySalary,
   penaltyRules,
+  earlyDepartureRules,
   salaryAdvances,
 } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -33,10 +34,12 @@ import {
   AlertTriangle,
   Wallet,
   BookOpen,
+  Info,
 } from "lucide-react";
 
 export default function PayrollPage() {
   const { t, lang } = useLanguage();
+  const { isAdmin, user } = useAuth();
   const { processPayroll, payrollProcessed } = useData();
   const isAr = lang === "ar";
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
@@ -131,6 +134,12 @@ export default function PayrollPage() {
     };
   }, []);
 
+  // For employees: filter to only their own data
+  const visiblePayroll = useMemo(() => {
+    if (isAdmin) return employeePayroll;
+    return employeePayroll.filter((p) => p.employee.email === user.email || p.employee.id === user.id);
+  }, [isAdmin, employeePayroll, user.email, user.id]);
+
   const selectedPayroll = useMemo(() => {
     if (!selectedEmployeeId) return null;
     return (
@@ -182,24 +191,26 @@ export default function PayrollPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">{t.pay.title}</h1>
-        <Button
-          onClick={processPayroll}
-          disabled={payrollProcessed}
-          className={payrollProcessed ? "bg-emerald-600 hover:bg-emerald-600" : ""}
-        >
-          {payrollProcessed ? (
-            <CheckCircle className="w-4 h-4" />
-          ) : (
-            <DollarSign className="w-4 h-4" />
-          )}
-          {payrollProcessed
-            ? (isAr ? "✓ تمت المعالجة" : "✓ Processed")
-            : t.pay.runPayroll}
-        </Button>
+        {isAdmin && (
+          <Button
+            onClick={processPayroll}
+            disabled={payrollProcessed}
+            className={payrollProcessed ? "bg-emerald-600 hover:bg-emerald-600" : ""}
+          >
+            {payrollProcessed ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : (
+              <DollarSign className="w-4 h-4" />
+            )}
+            {payrollProcessed
+              ? (isAr ? "✓ تمت المعالجة" : "✓ Processed")
+              : t.pay.runPayroll}
+          </Button>
+        )}
       </div>
 
-      {/* Stats Row — 5 cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      {/* Stats Row — 5 cards (admin only) */}
+      {isAdmin && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         {stats.map((stat, i) => {
           const Icon = stat.icon;
           return (
@@ -228,12 +239,12 @@ export default function PayrollPage() {
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Salary Table */}
-        <div className="lg:col-span-2 glass-card rounded-xl p-5 lg:p-6">
+        <div className={cn("glass-card rounded-xl p-5 lg:p-6", isAdmin ? "lg:col-span-2" : "lg:col-span-3")}>
           <div className="flex items-center justify-between mb-5">
             <h3 className="font-bold text-lg">{t.pay.title}</h3>
             <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border-0 text-[11px] font-medium">
@@ -277,7 +288,7 @@ export default function PayrollPage() {
                 </tr>
               </thead>
               <tbody>
-                {employeePayroll.map((row) => {
+                {visiblePayroll.map((row) => {
                   const emp = row.employee;
                   const name = isAr ? emp.nameAr : emp.nameEn;
                   return (
@@ -347,8 +358,8 @@ export default function PayrollPage() {
           </div>
         </div>
 
-        {/* Right Column */}
-        <div className="space-y-6">
+        {/* Right Column — admin only */}
+        {isAdmin && <div className="space-y-6">
           {/* WPS Status Card */}
           <div className="glass-card rounded-xl p-5">
             <div className="flex items-center gap-2 mb-4">
@@ -453,46 +464,70 @@ export default function PayrollPage() {
             )}
           </div>
 
-          {/* Penalty Rules Card */}
-          <div className="glass-card rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <BookOpen className="w-5 h-5 text-red-600 dark:text-red-400" />
-              <h3 className="font-bold text-sm">{t.penalty.rules}</h3>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">
-              {t.penalty.autoCalculated}
-            </p>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-start pb-2 font-medium text-muted-foreground">
-                      {t.penalty.condition}
-                    </th>
-                    <th className="text-start pb-2 font-medium text-muted-foreground">
-                      {t.penalty.deduction}
-                    </th>
+        </div>}
+      </div>
+
+      {/* Penalty Rules — visible to all users */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Late Arrival */}
+        <div className="glass-card rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <BookOpen className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <h3 className="font-bold text-sm">{isAr ? "جزاءات التأخر" : "Late Arrival Penalties"}</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.condition}</th>
+                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.deduction}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {penaltyRules.map((r) => (
+                  <tr key={r.id} className="border-b border-border/50 last:border-0">
+                    <td className="py-1.5 text-foreground">{isAr ? r.conditionAr : r.conditionEn}</td>
+                    <td className={cn("py-1.5", r.percentage > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>{isAr ? r.deductionAr : r.deductionEn}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {penaltyRules.map((r) => (
-                    <tr
-                      key={r.id}
-                      className="border-b border-border/50 last:border-0"
-                    >
-                      <td className="py-1.5 text-foreground">
-                        {isAr ? r.conditionAr : r.conditionEn}
-                      </td>
-                      <td className="py-1.5 text-red-600 dark:text-red-400">
-                        {isAr ? r.deductionAr : r.deductionEn}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
+
+        {/* Early Departure */}
+        <div className="glass-card rounded-xl p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <BookOpen className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <h3 className="font-bold text-sm">{isAr ? "جزاءات الانصراف المبكر" : "Early Departure Penalties"}</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border">
+                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.condition}</th>
+                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.deduction}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {earlyDepartureRules.map((r) => (
+                  <tr key={r.id} className="border-b border-border/50 last:border-0">
+                    <td className="py-1.5 text-foreground">{isAr ? r.conditionAr : r.conditionEn}</td>
+                    <td className={cn("py-1.5", r.percentage > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>{isAr ? r.deductionAr : r.deductionEn}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Exemption note */}
+      <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+        <p className="text-xs font-medium text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+          <Info className="w-3.5 h-3.5 shrink-0" />
+          {isAr ? "الموظفون عن بُعد معفيون من قواعد الجزاءات" : "Remote employees are exempt from penalty rules"}
+        </p>
       </div>
 
       {/* Payslip Dialog */}

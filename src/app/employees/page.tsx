@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
+import { supabase } from "@/lib/supabase";
 import { GOSI_RATE } from "@/lib/mock-data";
 import type { Employee } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -50,6 +51,53 @@ export default function EmployeesPage() {
   const [inviteDept, setInviteDept] = useState("");
   const [invitePosition, setInvitePosition] = useState("");
   const [inviteSent, setInviteSent] = useState(false);
+
+  // Supabase email→UUID mapping for location_required toggle
+  const [userIdMap, setUserIdMap] = useState<Record<string, string>>({});
+  const [empLocationRequired, setEmpLocationRequired] = useState(true);
+
+  // Fetch email→UUID mapping from Supabase (admin only)
+  useEffect(() => {
+    if (!isAdmin) return;
+    async function fetchUserIds() {
+      try {
+        const { data: users } = await supabase.rpc("admin_list_users");
+        if (!users) return;
+        const map: Record<string, string> = {};
+        for (const u of users as Array<{ user_id: string; email: string }>) {
+          if (u.email) map[u.email.toLowerCase()] = u.user_id;
+        }
+        setUserIdMap(map);
+      } catch { /* RPC may not be available */ }
+    }
+    fetchUserIds();
+  }, [isAdmin]);
+
+  // Fetch fresh location_required from Supabase when employee dialog opens
+  useEffect(() => {
+    if (!dialogOpen || !selectedEmployee) return;
+    setEmpLocationRequired(true);
+    const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
+    if (!supabaseId) return;
+    supabase
+      .from("profiles")
+      .select("location_required")
+      .eq("id", supabaseId)
+      .single()
+      .then(({ data }) => {
+        if (data) setEmpLocationRequired(data.location_required ?? true);
+      });
+  }, [dialogOpen, selectedEmployee, userIdMap]);
+
+  // Toggle location_required in Supabase profiles table
+  const handleLocationToggle = async () => {
+    if (!selectedEmployee) return;
+    const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
+    if (!supabaseId) return;
+    const newValue = !empLocationRequired;
+    setEmpLocationRequired(newValue);
+    await supabase.from("profiles").update({ location_required: newValue }).eq("id", supabaseId);
+  };
 
   // Use store data
   const employees = store.employees;
@@ -530,6 +578,31 @@ export default function EmployeesPage() {
                       })}
                     </span>
                   </div>
+                </div>
+              </div>
+
+              {/* Location Requirement Toggle */}
+              <div className="pt-3 border-t border-border">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{t.emp.locationRequired}</span>
+                  <button
+                    onClick={handleLocationToggle}
+                    disabled={!userIdMap[selectedEmployee.email.toLowerCase()]}
+                    className={cn(
+                      "relative w-11 h-6 rounded-full transition-colors",
+                      !userIdMap[selectedEmployee.email.toLowerCase()] && "opacity-50 cursor-not-allowed",
+                      empLocationRequired ? "bg-primary" : "bg-muted-foreground/30"
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform",
+                        empLocationRequired
+                          ? (isAr ? "start-0.5" : "start-[22px]")
+                          : (isAr ? "start-[22px]" : "start-0.5")
+                      )}
+                    />
+                  </button>
                 </div>
               </div>
 

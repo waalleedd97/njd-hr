@@ -8,6 +8,7 @@ import {
   calcDuration,
   geofenceConfig,
   penaltyRules,
+  earlyDepartureRules,
 } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 import {
   Clock,
   UserCheck,
@@ -29,12 +31,26 @@ import {
   CalendarOff,
   MapPin,
   MapPinOff,
-  ToggleLeft,
-  ToggleRight,
   FileEdit,
   ShieldAlert,
   Info,
+  Upload,
+  X,
+  FileText,
+  Image as ImageIcon,
+  Film,
+  Loader2,
 } from "lucide-react";
+
+/** Get current time in KSA timezone (Asia/Riyadh, UTC+3) */
+function getKSATime(): Date {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
+}
+
+function isBeforeCheckinTime(): boolean {
+  const ksa = getKSATime();
+  return ksa.getHours() < 6;
+}
 
 // ─── Dropdown 12-hour Time Picker ─────────────────────────────────────
 
@@ -236,23 +252,59 @@ export default function AttendancePage() {
   const isAr = lang === "ar";
   const [selectedDept, setSelectedDept] = useState("all");
 
-  // Clock in/out state
-  const [clockedIn, setClockedIn] = useState(false);
-  const [clockInTime, setClockInTime] = useState<string | null>(null);
-  const [clockOutTime, setClockOutTime] = useState<string | null>(null);
+  // Clock in/out state — initialized from store so it survives navigation
+  const currentUserId = isAdmin ? null : user.id;
+  const existingRecord = currentUserId
+    ? store.todayAttendance.find((a) => a.employeeId === currentUserId)
+    : null;
+
+  const [clockedIn, setClockedIn] = useState(() => !!existingRecord?.checkIn && !existingRecord?.checkOut);
+  const [clockInTime, setClockInTime] = useState<string | null>(() => existingRecord?.checkIn ?? null);
+  const [clockOutTime, setClockOutTime] = useState<string | null>(() => existingRecord?.checkOut ?? null);
   const [clockMethod, setClockMethod] = useState<string>("geofence");
+
+  // Re-sync from store when navigating back to this page
+  useEffect(() => {
+    if (!currentUserId) return;
+    const record = store.todayAttendance.find((a) => a.employeeId === currentUserId);
+    if (record) {
+      setClockedIn(!!record.checkIn && !record.checkOut);
+      setClockInTime(record.checkIn ?? null);
+      setClockOutTime(record.checkOut ?? null);
+    }
+  }, [currentUserId, store.todayAttendance]);
 
   // Geofence state
   const [isInsideGeofence, setIsInsideGeofence] = useState(true);
-  const [geoChecked, setGeoChecked] = useState(false);
+  const [locationRequired, setLocationRequired] = useState(true);
+  const [locationLoaded, setLocationLoaded] = useState(false);
 
-  // Real geolocation check
+  // Fetch location_required from Supabase profiles table
   useEffect(() => {
-    if (clockMethod !== "geofence") return;
-    if (!navigator.geolocation) {
-      setGeoChecked(true);
-      return;
+    async function fetchLocationSetting() {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          const { data } = await supabase
+            .from("profiles")
+            .select("location_required")
+            .eq("id", session.user.id)
+            .single();
+          if (data) {
+            setLocationRequired(data.location_required ?? true);
+          }
+        }
+      } catch { /* profiles table may not exist */ }
+      setLocationLoaded(true);
     }
+    fetchLocationSetting();
+  }, []);
+
+  // Real geolocation check — only runs after location setting is loaded
+  useEffect(() => {
+    if (!locationLoaded || !locationRequired) return;
+    if (clockMethod !== "geofence") return;
+    if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const dist = haversineDistance(
@@ -262,14 +314,10 @@ export default function AttendancePage() {
           geofenceConfig.officeLng
         );
         setIsInsideGeofence(dist <= geofenceConfig.radiusMeters);
-        setGeoChecked(true);
       },
-      () => {
-        // Geolocation denied – fall back to demo toggle
-        setGeoChecked(true);
-      }
+      () => { /* Geolocation denied */ }
     );
-  }, [clockMethod]);
+  }, [clockMethod, locationLoaded, locationRequired]);
 
   // Adjustment dialog state
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -286,10 +334,28 @@ export default function AttendancePage() {
     return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   };
 
+  // 6:00 AM check-in restriction (KSA time)
+  const [tooEarly, setTooEarly] = useState(isBeforeCheckinTime());
+  useEffect(() => {
+    const id = setInterval(() => setTooEarly(isBeforeCheckinTime()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Checkout geofence verification state
+  const [checkoutOutside, setCheckoutOutside] = useState(false);
+  const [checkoutLocationLoading, setCheckoutLocationLoading] = useState(false);
+
+  // Daily report modal state
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportText, setReportText] = useState("");
+  const [reportFiles, setReportFiles] = useState<File[]>([]);
+  const [reportUploading, setReportUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Handle clock in
-  const currentUserId = isAdmin ? null : user.id;
   const handleClockIn = () => {
-    if (clockMethod === "geofence" && !isInsideGeofence) return;
+    if (tooEarly) return;
+    if (clockMethod === "geofence" && locationRequired && !isInsideGeofence) return;
     const time = getCurrentTime();
     setClockedIn(true);
     setClockInTime(time);
@@ -299,14 +365,97 @@ export default function AttendancePage() {
     }
   };
 
-  // Handle clock out
+  // Handle clock out — re-verify geofence, block if outside
   const handleClockOut = () => {
+    if (locationRequired && navigator.geolocation) {
+      setCheckoutLocationLoading(true);
+      setCheckoutOutside(false);
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const dist = haversineDistance(
+            pos.coords.latitude, pos.coords.longitude,
+            geofenceConfig.officeLat, geofenceConfig.officeLng
+          );
+          const outside = dist > geofenceConfig.radiusMeters;
+          setCheckoutOutside(outside);
+          setCheckoutLocationLoading(false);
+          if (!outside) setReportOpen(true);
+        },
+        () => {
+          // Geolocation denied — treat as outside, block checkout
+          setCheckoutOutside(true);
+          setCheckoutLocationLoading(false);
+        }
+      );
+    } else {
+      setCheckoutOutside(false);
+      setReportOpen(true);
+    }
+  };
+
+  // Submit report + clock out
+  const handleSubmitReport = async () => {
+    if (!reportText.trim()) return;
+    setReportUploading(true);
+
     const time = getCurrentTime();
+    const today = new Date().toISOString().split("T")[0];
+    const attachments: { name: string; url: string; type: string }[] = [];
+
+    // Upload files to Supabase Storage
+    if (currentUserId && reportFiles.length > 0) {
+      for (const file of reportFiles) {
+        const path = `${currentUserId}/${today}/${file.name}`;
+        const { data } = await supabase.storage
+          .from("daily-reports")
+          .upload(path, file, { upsert: true });
+        if (data) {
+          const { data: urlData } = supabase.storage
+            .from("daily-reports")
+            .getPublicUrl(data.path);
+          attachments.push({
+            name: file.name,
+            url: urlData.publicUrl,
+            type: file.type,
+          });
+        }
+      }
+    }
+
+    // Save report to Supabase
+    if (currentUserId) {
+      await supabase.from("daily_reports").upsert({
+        user_id: currentUserId,
+        report_date: today,
+        content: reportText,
+        attachments,
+      }, { onConflict: "user_id,report_date" });
+    }
+
+    // Clock out
     setClockedIn(false);
     setClockOutTime(time);
     if (currentUserId) {
       store.clockOut(currentUserId, time);
     }
+
+    // Reset modal
+    setReportOpen(false);
+    setReportText("");
+    setReportFiles([]);
+    setReportUploading(false);
+    setCheckoutOutside(false);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024); // 10MB max
+    setReportFiles((prev) => [...prev, ...valid].slice(0, 5)); // max 5 files
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    setReportFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Handle adjustment submit
@@ -387,7 +536,8 @@ export default function AttendancePage() {
     { key: "geofence", label: t.clock.geofence, icon: MapPin },
   ];
 
-  const geofenceDisabled = !isInsideGeofence;
+  // locationRequired is fetched from Supabase profiles table (see useEffect above)
+  const geofenceDisabled = locationRequired && !isInsideGeofence;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -428,10 +578,10 @@ export default function AttendancePage() {
             {!clockedIn ? (
               <button
                 onClick={handleClockIn}
-                disabled={geofenceDisabled}
+                disabled={geofenceDisabled || tooEarly}
                 className={cn(
                   "w-36 h-36 rounded-full flex flex-col items-center justify-center gap-1 text-white font-bold text-lg shadow-lg transition-all hover-lift",
-                  geofenceDisabled
+                  (geofenceDisabled || tooEarly)
                     ? "bg-muted text-muted-foreground cursor-not-allowed shadow-none"
                     : "bg-gradient-to-br from-emerald-500 to-emerald-700 hover:from-emerald-400 hover:to-emerald-600 active:scale-95"
                 )}
@@ -442,15 +592,35 @@ export default function AttendancePage() {
             ) : (
               <button
                 onClick={handleClockOut}
-                className="w-36 h-36 rounded-full flex flex-col items-center justify-center gap-1 text-white font-bold text-lg shadow-lg bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 active:scale-95 transition-all hover-lift"
+                disabled={checkoutLocationLoading}
+                className={cn(
+                  "w-36 h-36 rounded-full flex flex-col items-center justify-center gap-1 text-white font-bold text-lg shadow-lg transition-all hover-lift",
+                  checkoutLocationLoading
+                    ? "bg-muted text-muted-foreground cursor-not-allowed shadow-none"
+                    : "bg-gradient-to-br from-red-500 to-red-700 hover:from-red-400 hover:to-red-600 active:scale-95"
+                )}
               >
-                <Clock className="w-8 h-8" />
-                {t.clock.clockOut}
+                {checkoutLocationLoading ? <Loader2 className="w-8 h-8 animate-spin" /> : <Clock className="w-8 h-8" />}
+                {checkoutLocationLoading ? t.clock.verifyingLocation : t.clock.clockOut}
               </button>
             )}
 
-            {/* Geofence warning when method is geofence and outside */}
-            {geofenceDisabled && (
+            {/* Time restriction warning */}
+            {tooEarly && (
+              <p className="text-xs text-red-500 font-medium flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5" />
+                {isAr ? "وقت تسجيل الحضور يبدأ من الساعة 6:00 صباحاً" : "Check-in starts at 6:00 AM"}
+              </p>
+            )}
+            {/* Geofence warning when method is geofence and outside (check-in) */}
+            {!tooEarly && !clockedIn && geofenceDisabled && (
+              <p className="text-xs text-red-500 font-medium flex items-center gap-1">
+                <MapPinOff className="w-3.5 h-3.5" />
+                {t.clock.geofenceRequired}
+              </p>
+            )}
+            {/* Geofence block on checkout */}
+            {clockedIn && checkoutOutside && (
               <p className="text-xs text-red-500 font-medium flex items-center gap-1">
                 <MapPinOff className="w-3.5 h-3.5" />
                 {t.clock.geofenceRequired}
@@ -486,8 +656,8 @@ export default function AttendancePage() {
               </div>
             </div>
 
-            {/* Geofence Indicator */}
-            <div className="glass-card rounded-lg p-4 space-y-3">
+            {/* Geofence Indicator — hidden when location not required */}
+            {locationRequired && <div className="glass-card rounded-lg p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-primary" />
@@ -508,25 +678,11 @@ export default function AttendancePage() {
               <div className="text-xs text-muted-foreground space-y-1">
                 <p>{isAr ? geofenceConfig.officeNameAr : geofenceConfig.officeNameEn}</p>
                 <p>
-                  {t.clock.radius}: {geofenceConfig.radiusMeters} {t.clock.meters}
+                  {t.clock.radius}: {geofenceConfig.radiusMeters >= 1000 ? `${geofenceConfig.radiusMeters / 1000} ${isAr ? "كم" : "km"}` : `${geofenceConfig.radiusMeters} ${t.clock.meters}`}
                 </p>
               </div>
 
-              {/* Demo toggle (fallback when real GPS is denied or unavailable) */}
-              {geoChecked && (
-                <button
-                  onClick={() => setIsInsideGeofence((prev) => !prev)}
-                  className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {isInsideGeofence ? (
-                    <ToggleRight className="w-5 h-5 text-emerald-500" />
-                  ) : (
-                    <ToggleLeft className="w-5 h-5 text-red-500" />
-                  )}
-                  {isAr ? "محاكاة تغيير الموقع" : "Simulate location change"}
-                </button>
-              )}
-            </div>
+            </div>}
 
             {/* Request Adjustment Button */}
             <Button
@@ -745,6 +901,50 @@ export default function AttendancePage() {
           </table>
         </div>
 
+        {/* Early Departure Rules */}
+        <div className="flex items-center gap-2 mt-8 mb-4">
+          <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+          <h3 className="font-bold text-lg">{isAr ? "جزاءات الانصراف المبكر" : "Early Departure Penalties"}</h3>
+        </div>
+
+        <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
+          <table className="w-full min-w-[400px]">
+            <thead>
+              <tr className="text-xs text-muted-foreground border-b border-border">
+                <th className="text-start pb-3 font-medium">
+                  {t.penalty.condition}
+                </th>
+                <th className="text-start pb-3 font-medium">
+                  {t.penalty.deduction}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {earlyDepartureRules.map((rule) => (
+                <tr
+                  key={rule.id}
+                  className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
+                >
+                  <td className="py-2.5 text-sm">
+                    {isAr ? rule.conditionAr : rule.conditionEn}
+                  </td>
+                  <td className="py-2.5 text-sm text-muted-foreground">
+                    {isAr ? rule.deductionAr : rule.deductionEn}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Exemption note */}
+        <div className="mt-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
+          <p className="text-xs font-medium text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 shrink-0" />
+            {isAr ? "الموظفون عن بُعد معفيون من قواعد الجزاءات" : "Remote employees are exempt from penalty rules"}
+          </p>
+        </div>
+
         <div className="flex items-center gap-1.5 mt-4 text-xs text-muted-foreground">
           <Info className="w-3.5 h-3.5" />
           <span>{t.penalty.autoCalculated}</span>
@@ -829,6 +1029,110 @@ export default function AttendancePage() {
             </Button>
             <Button onClick={handleAdjustmentSubmit}>
               {t.common.submit}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ───── Daily Report Modal (blocks checkout) ───── */}
+      <Dialog open={reportOpen} onOpenChange={(v) => { if (!v) return; }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {isAr ? "تقرير نهاية اليوم" : "End of Day Report"}
+            </DialogTitle>
+            <DialogDescription>
+              {isAr
+                ? "اكتب ملخص لما أنجزته اليوم قبل تسجيل الانصراف"
+                : "Write a summary of what you accomplished today before checking out"}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Report text */}
+            <textarea
+              value={reportText}
+              onChange={(e) => setReportText(e.target.value)}
+              rows={6}
+              dir={isAr ? "rtl" : "ltr"}
+              style={{ textAlign: isAr ? "right" : "left" }}
+              placeholder={isAr
+                ? "• أنجزت تصميم واجهة صفحة الإعدادات\n• راجعت كود المهمة رقم 42"
+                : "• Completed settings page UI design\n• Reviewed task #42 code"}
+              className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none resize-none focus:border-primary"
+            />
+
+            {/* File upload */}
+            <div>
+              <p className="text-sm font-medium mb-2">
+                {isAr ? "إرفاق ملفات (اختياري)" : "Attach files (optional)"}
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,video/mp4,video/quicktime,.pdf,.doc,.docx,.zip"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={reportFiles.length >= 5}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-dashed border-border hover:border-primary/50 text-sm text-muted-foreground hover:text-foreground transition-colors w-full justify-center"
+              >
+                <Upload className="w-4 h-4" />
+                {isAr ? "اختر ملفات" : "Choose files"}
+                <span className="text-xs">({reportFiles.length}/5)</span>
+              </button>
+
+              {/* File list */}
+              {reportFiles.length > 0 && (
+                <div className="mt-2 space-y-1.5">
+                  {reportFiles.map((file, i) => (
+                    <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 text-sm">
+                      {file.type.startsWith("image/") ? (
+                        <ImageIcon className="w-4 h-4 text-blue-500 shrink-0" />
+                      ) : file.type.startsWith("video/") ? (
+                        <Film className="w-4 h-4 text-purple-500 shrink-0" />
+                      ) : (
+                        <FileText className="w-4 h-4 text-amber-500 shrink-0" />
+                      )}
+                      <span className="truncate flex-1">{file.name}</span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        {(file.size / 1024 / 1024).toFixed(1)}MB
+                      </span>
+                      <button onClick={() => removeFile(i)} className="text-muted-foreground hover:text-red-500">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-1">
+                {isAr ? "الحد الأقصى: 10MB لكل ملف" : "Max: 10MB per file"}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setReportOpen(false);
+                setReportText("");
+                setReportFiles([]);
+                setCheckoutOutside(false);
+              }}
+            >
+              {t.common.cancel}
+            </Button>
+            <Button
+              onClick={handleSubmitReport}
+              disabled={!reportText.trim() || reportUploading}
+            >
+              {reportUploading
+                ? (isAr ? "جاري الإرسال..." : "Submitting...")
+                : (isAr ? "إرسال وتسجيل الانصراف" : "Submit & Check Out")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -8,14 +8,14 @@ export function DashboardIcon({ className }: IconProps) {
       <defs>
         <linearGradient id="dash-bg" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
           <stop stopColor="#9B82FF" />
-          <stop offset="1" stopColor="#6C3FC5" />
+          <stop offset="1" stopColor="#7C3AED" />
         </linearGradient>
         <linearGradient id="dash-shine" x1="24" y1="4" x2="24" y2="26" gradientUnits="userSpaceOnUse">
           <stop stopColor="white" stopOpacity="0.3" />
           <stop offset="1" stopColor="white" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <rect x="5" y="7" width="40" height="40" rx="13" fill="#4C2A8A" opacity="0.15" />
+      <rect x="5" y="7" width="40" height="40" rx="13" fill="#5B21B6" opacity="0.15" />
       <rect x="4" y="4" width="40" height="40" rx="13" fill="url(#dash-bg)" />
       <rect x="4" y="4" width="40" height="20" rx="13" fill="url(#dash-shine)" />
       <rect x="14" y="14" width="8" height="8" rx="2.5" fill="white" fillOpacity="0.95" />
@@ -32,14 +32,14 @@ export function EmployeesIcon({ className }: IconProps) {
       <defs>
         <linearGradient id="emp-bg" x1="4" y1="4" x2="44" y2="44" gradientUnits="userSpaceOnUse">
           <stop stopColor="#A78BFA" />
-          <stop offset="1" stopColor="#6C3FC5" />
+          <stop offset="1" stopColor="#7C3AED" />
         </linearGradient>
         <linearGradient id="emp-shine" x1="24" y1="4" x2="24" y2="26" gradientUnits="userSpaceOnUse">
           <stop stopColor="white" stopOpacity="0.3" />
           <stop offset="1" stopColor="white" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <rect x="5" y="7" width="40" height="40" rx="13" fill="#4C2A8A" opacity="0.15" />
+      <rect x="5" y="7" width="40" height="40" rx="13" fill="#5B21B6" opacity="0.15" />
       <rect x="4" y="4" width="40" height="40" rx="13" fill="url(#emp-bg)" />
       <rect x="4" y="4" width="40" height="20" rx="13" fill="url(#emp-shine)" />
       <circle cx="26" cy="18" r="5.5" fill="white" fillOpacity="0.95" />
@@ -91,7 +91,7 @@ export function LeavesIcon({ className }: IconProps) {
           <stop offset="1" stopColor="white" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <rect x="5" y="7" width="40" height="40" rx="13" fill="#4C2A8A" opacity="0.15" />
+      <rect x="5" y="7" width="40" height="40" rx="13" fill="#5B21B6" opacity="0.15" />
       <rect x="4" y="4" width="40" height="40" rx="13" fill="url(#leave-bg)" />
       <rect x="4" y="4" width="40" height="20" rx="13" fill="url(#leave-shine)" />
       <rect x="13" y="16" width="22" height="20" rx="3" fill="white" fillOpacity="0.9" />
@@ -140,7 +140,7 @@ export function RequestsIcon({ className }: IconProps) {
           <stop offset="1" stopColor="white" stopOpacity="0" />
         </linearGradient>
       </defs>
-      <rect x="5" y="7" width="40" height="40" rx="13" fill="#4C2A8A" opacity="0.15" />
+      <rect x="5" y="7" width="40" height="40" rx="13" fill="#5B21B6" opacity="0.15" />
       <rect x="4" y="4" width="40" height="40" rx="13" fill="url(#req-bg)" />
       <rect x="4" y="4" width="40" height="20" rx="13" fill="url(#req-shine)" />
       <rect x="12" y="18" width="24" height="17" rx="3" fill="white" fillOpacity="0.9" />
@@ -215,6 +215,7 @@ export const moduleIcons = {
   leaves: LeavesIcon,
   payroll: PayrollIcon,
   requests: RequestsIcon,
+  dailyReports: ReportsIcon,
   reports: ReportsIcon,
   settings: SettingsIcon,
 } as const;

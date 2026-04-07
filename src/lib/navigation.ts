@@ -13,8 +13,9 @@ export const navItems: NavItem[] = [
   { key: "employees", href: "/employees", adminOnly: true },
   { key: "attendance", href: "/attendance" },
   { key: "leaves", href: "/leaves" },
-  { key: "payroll", href: "/payroll", adminOnly: true },
-  { key: "requests", href: "/requests", adminOnly: true },
+  { key: "payroll", href: "/payroll" },
+  { key: "requests", href: "/requests" },
+  { key: "dailyReports", href: "/daily-reports", adminOnly: true },
   { key: "reports", href: "/reports", adminOnly: true },
   { key: "settings", href: "/settings", adminOnly: true },
 ];
@@ -23,8 +24,8 @@ export const mobileNavItems: NavItem[] = [
   { key: "dashboard", href: "/" },
   { key: "attendance", href: "/attendance" },
   { key: "leaves", href: "/leaves" },
-  { key: "requests", href: "/requests", adminOnly: true },
-  { key: "employees", href: "/employees", adminOnly: true },
+  { key: "requests", href: "/requests" },
+  { key: "payroll", href: "/payroll" },
 ];
 
 export function getNavForRole(items: NavItem[], role: UserRole): NavItem[] {

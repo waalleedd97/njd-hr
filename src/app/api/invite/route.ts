@@ -23,10 +23,10 @@ export async function POST(req: NextRequest) {
 <html dir="rtl" lang="ar">
 <head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#f4f1fa;font-family:'Segoe UI',Tahoma,Arial,sans-serif;">
-  <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(108,63,197,0.1);">
+  <div style="max-width:560px;margin:40px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(124,58,237,0.1);">
 
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#7C52D9,#4C2A8A);padding:32px 24px;text-align:center;">
+    <div style="background:linear-gradient(135deg,#8B5CF6,#5B21B6);padding:32px 24px;text-align:center;">
       <h1 style="color:#ffffff;font-size:24px;margin:0 0 4px;">نجد قيمز</h1>
       <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:0;">NJD Games HR</p>
     </div>
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
     <div style="padding:32px 24px;">
       <h2 style="color:#1a1a2e;font-size:20px;margin:0 0 8px;">مرحباً ${nameAr} 👋</h2>
       <p style="color:#64748b;font-size:15px;line-height:1.7;margin:0 0 24px;">
-        يسعدنا دعوتك للانضمام إلى فريق <strong style="color:#7C52D9;">نجد قيمز</strong>!
+        يسعدنا دعوتك للانضمام إلى فريق <strong style="color:#7C3AED;">نجد قيمز</strong>!
         تم تسجيلك في نظام الموارد البشرية بالمعلومات التالية:
       </p>
 
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
       <!-- CTA Button -->
       <div style="text-align:center;margin:24px 0;">
         <a href="${loginUrl}"
-           style="display:inline-block;background:linear-gradient(135deg,#7C52D9,#6C3FC5);color:#ffffff;font-size:15px;font-weight:700;padding:14px 40px;border-radius:12px;text-decoration:none;box-shadow:0 4px 16px rgba(108,63,197,0.3);">
+           style="display:inline-block;background:linear-gradient(135deg,#8B5CF6,#5B21B6);color:#ffffff;font-size:15px;font-weight:700;padding:14px 40px;border-radius:12px;text-decoration:none;box-shadow:0 4px 16px rgba(147,51,234,0.3);">
           تفعيل الحساب والدخول
         </a>
       </div>

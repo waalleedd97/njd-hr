@@ -13,6 +13,8 @@ import { type Language, translations, type TranslationKey } from "@/lib/i18n";
 import { type UserRole } from "@/lib/navigation";
 import { DataProvider } from "@/lib/data-store";
 import { employees as allEmployees } from "@/lib/mock-data";
+import { SupabaseAuthGuard } from "@/components/supabase-auth-guard";
+import { supabase } from "@/lib/supabase";
 
 // ─── Language Context ────────────────────────────────────────────────
 
@@ -32,8 +34,15 @@ export function useLanguage() {
   return ctx;
 }
 
+function getInitialLang(): Language {
+  if (typeof window === "undefined") return "ar";
+  const stored = localStorage.getItem("njd-lang");
+  if (stored === "en" || stored === "ar") return stored;
+  return "ar";
+}
+
 function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Language>("ar");
+  const [lang, setLang] = useState<Language>(getInitialLang);
 
   const toggleLang = useCallback(() => {
     setLang((prev) => (prev === "ar" ? "en" : "ar"));
@@ -62,7 +71,7 @@ export interface UserProfile {
   profileCompleted?: boolean;
 }
 
-/** Admin emails — users in HR department are admins */
+/** Fallback admin emails — used when Supabase RPC is unavailable */
 const ADMIN_EMAILS = new Set(
   allEmployees.filter((e) => e.department === "hr").map((e) => e.email)
 );
@@ -129,68 +138,95 @@ export function useAuth() {
   return ctx;
 }
 
-function AuthProvider({ children }: { children: ReactNode }) {
+function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: () => void }) {
   const [role, setRole] = useState<UserRole>("admin");
   const [user, setUser] = useState<UserProfile>(fallbackUser);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
-  // Hydrate from localStorage
+  // Sync auth from Supabase session + fetch RBAC role
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_KEY);
-      if (saved) {
-        const data = JSON.parse(saved);
-        setRole(data.role || "admin");
-        setIsAuthenticated(data.isAuthenticated || false);
-        if (data.user) setUser(data.user);
+    async function syncAuth() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.email) {
+        const email = session.user.email;
+        const userId = session.user.id;
+
+        // Accept any pending invitation for this email
+        try {
+          const saved = localStorage.getItem("njd-hr-data");
+          if (saved) {
+            const data = JSON.parse(saved);
+            const hasInvitation = (data.pendingInvitations || []).some(
+              (i: { email: string; status: string }) =>
+                i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
+            );
+            if (hasInvitation) {
+              window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
+            }
+          }
+        } catch { /* ignore */ }
+
+        // Fetch role from Supabase RBAC (super_admin → admin, else employee)
+        let supabaseRole: UserRole = "employee";
+        try {
+          const { data: roleData } = await supabase.rpc("get_user_role", { uid: userId });
+          if (roleData === "super_admin") {
+            supabaseRole = "admin";
+          }
+        } catch {
+          // RPC not available — fall back to local email-based check
+          supabaseRole = ADMIN_EMAILS.has(email) ? "admin" : "employee";
+        }
+
+        // Fetch real name from Supabase profiles table
+        let nameAr = "";
+        let nameEn = "";
+        try {
+          const { data: prof } = await supabase
+            .from("profiles")
+            .select("name_ar, name_en, full_name_ar, full_name_en")
+            .eq("id", userId)
+            .single();
+          if (prof) {
+            nameAr = prof.full_name_ar || prof.name_ar || "";
+            nameEn = prof.full_name_en || prof.name_en || "";
+          }
+        } catch { /* profiles table may not exist yet */ }
+
+        // Fall back to local employee data, then to email prefix
+        const resolved = resolveUser(email);
+        const fallbackName = session.user.user_metadata?.full_name || email.split("@")[0];
+
+        setUser({
+          id: resolved?.profile.id || userId,
+          nameAr: nameAr || resolved?.profile.nameAr || fallbackName,
+          nameEn: nameEn || resolved?.profile.nameEn || fallbackName,
+          positionAr: resolved?.profile.positionAr || (supabaseRole === "admin" ? "مدير النظام" : "موظف"),
+          positionEn: resolved?.profile.positionEn || (supabaseRole === "admin" ? "System Administrator" : "Employee"),
+          initials: (nameAr || resolved?.profile.nameAr || fallbackName).charAt(0).toUpperCase(),
+          email,
+          profileCompleted: resolved?.profile.profileCompleted ?? true,
+        });
+        setRole(supabaseRole);
+        setIsAuthenticated(true);
       }
-    } catch {
-      // ignore
+      setHydrated(true);
     }
-    setHydrated(true);
+    syncAuth();
   }, []);
 
-  // Persist auth state
+  // Signal to the loading overlay that the app is fully ready
   useEffect(() => {
-    if (hydrated) {
-      localStorage.setItem(
-        AUTH_KEY,
-        JSON.stringify({ role, isAuthenticated, user })
-      );
-    }
-  }, [role, isAuthenticated, user, hydrated]);
+    if (hydrated && onReady) onReady();
+  }, [hydrated, onReady]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const login = useCallback(
     (email: string, password: string): boolean => {
-      if (!email || !password) return false;
-      // Verify password from data store
-      try {
-        const saved = localStorage.getItem("njd-hr-data");
-        if (saved) {
-          const data = JSON.parse(saved);
-          const passwords: Record<string, string> = data.passwords || {};
-          const storedPw = passwords[email.toLowerCase()];
-          // If password exists in store, it must match. Otherwise accept "demo123" for invited users.
-          if (storedPw && storedPw !== password) return false;
-          if (!storedPw && password !== "demo123") return false;
-
-          // Check if this email has a pending invitation — accept it first
-          const hasInvitation = (data.pendingInvitations || []).some(
-            (i: { email: string; status: string }) =>
-              i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
-          );
-          if (hasInvitation) {
-            window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
-          }
-        }
-      } catch { /* ignore */ }
-      const resolved = resolveUser(email);
-      if (!resolved) return false;
-      setUser(resolved.profile);
-      setRole(resolved.role);
-      setIsAuthenticated(true);
-      return true;
+      // Login is handled by Supabase — kept for interface compatibility
+      void email; void password;
+      return false;
     },
     []
   );
@@ -199,6 +235,7 @@ function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
     setUser(fallbackUser);
     localStorage.removeItem(AUTH_KEY);
+    supabase.auth.signOut();
   }, []);
 
   const switchRole = useCallback(() => {
@@ -231,17 +268,28 @@ function AuthProvider({ children }: { children: ReactNode }) {
 // ─── Combined Providers ──────────────────────────────────────────────
 
 export function Providers({ children }: { children: ReactNode }) {
+  const handleAppReady = useCallback(() => {
+    // Dismiss the HTML loading screen
+    const loader = document.querySelector(".njd-loader");
+    if (loader) {
+      loader.classList.add("fade-out");
+      loader.addEventListener("transitionend", () => loader.remove());
+    }
+  }, []);
+
   return (
     <NextThemeProvider
-      attribute="class"
+      attribute={["class", "data-theme"]}
       defaultTheme="light"
       enableSystem={false}
     >
-      <LanguageProvider>
-        <AuthProvider>
-          <DataProvider>{children}</DataProvider>
-        </AuthProvider>
-      </LanguageProvider>
+      <SupabaseAuthGuard>
+        <LanguageProvider>
+          <AuthProvider onReady={handleAppReady}>
+            <DataProvider>{children}</DataProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </SupabaseAuthGuard>
     </NextThemeProvider>
   );
 }

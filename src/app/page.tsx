@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/components/providers";
 import { useData } from "@/lib/data-store";
@@ -26,6 +27,31 @@ const statusStyles: Record<string, string> = {
     "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400 border-0",
 };
 
+/** Next payroll: 27th of each month, adjusted for Saudi weekend (Fri/Sat). */
+function getNextPayrollDate(): Date {
+  const now = new Date();
+  let year = now.getFullYear();
+  let month = now.getMonth(); // 0-indexed
+
+  // If we're past the 27th, move to next month
+  if (now.getDate() > 27) {
+    month += 1;
+    if (month > 11) { month = 0; year += 1; }
+  }
+
+  const d = new Date(year, month, 27);
+  const day = d.getDay(); // 0=Sun … 5=Fri, 6=Sat
+  if (day === 5) d.setDate(26); // Friday → Thursday (26th)
+  if (day === 6) d.setDate(28); // Saturday → Sunday (28th)
+  return d;
+}
+
+function formatPayrollDate(d: Date, lang: string): string {
+  // Force Western Arabic numerals by using "en-u-nu-latn" number system
+  const locale = lang === "ar" ? "ar-SA-u-nu-latn" : "en-US";
+  return d.toLocaleDateString(locale, { day: "numeric", month: "long" });
+}
+
 export default function DashboardPage() {
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
@@ -48,18 +74,64 @@ export default function DashboardPage() {
     day: "numeric",
   });
 
+  const nextPayroll = formatPayrollDate(getNextPayrollDate(), lang);
+
+  // ── Live work hours counter ──
+  const myAttendance = useMemo(() => {
+    return store.todayAttendance.find(
+      (a) => a.employeeId === user.id
+    );
+  }, [store.todayAttendance, user.id]);
+
+  const [elapsed, setElapsed] = useState("00:00");
+  const [elapsedMinutes, setElapsedMinutes] = useState(0);
+
+  useEffect(() => {
+    function calc() {
+      if (!myAttendance?.checkIn) {
+        setElapsed("00:00");
+        setElapsedMinutes(0);
+        return;
+      }
+      const [inH, inM] = myAttendance.checkIn.split(":").map(Number);
+      let endH: number, endM: number;
+      if (myAttendance.checkOut) {
+        [endH, endM] = myAttendance.checkOut.split(":").map(Number);
+      } else {
+        const now = new Date();
+        endH = now.getHours();
+        endM = now.getMinutes();
+      }
+      const total = (endH * 60 + endM) - (inH * 60 + inM);
+      const mins = Math.max(0, total);
+      setElapsedMinutes(mins);
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      setElapsed(`${h}:${String(m).padStart(2, "0")}`);
+    }
+    calc();
+    // Update every 60s if still clocked in (not checked out)
+    if (myAttendance?.checkIn && !myAttendance?.checkOut) {
+      const timer = setInterval(calc, 60000);
+      return () => clearInterval(timer);
+    }
+  }, [myAttendance]);
+
+  const workTarget = 420; // 7 hours in minutes
+  const metTarget = elapsedMinutes >= workTarget;
+
   const adminStats = [
-    { icon: EmployeesIcon, value: String(store.employees.length), label: t.stats.totalEmployees, trend: null },
-    { icon: LeavesIcon, value: String(store.employees.filter(e => e.status === "on-leave").length), label: t.stats.onLeave, trend: null },
-    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.status === "pending").length), label: t.stats.pendingRequests, trend: null },
-    { icon: PayrollIcon, value: isAr ? "28 مارس" : "Mar 28", label: t.stats.nextPayroll, trend: null },
+    { icon: EmployeesIcon, value: String(store.employees.length), label: t.stats.totalEmployees, trend: null, color: "#8B5CF6" },
+    { icon: LeavesIcon, value: String(store.employees.filter(e => e.status === "on-leave").length), label: t.stats.onLeave, trend: null, color: "#10B981" },
+    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.status === "pending").length), label: t.stats.pendingRequests, trend: null, color: "#F59E0B" },
+    { icon: PayrollIcon, value: nextPayroll, label: t.stats.nextPayroll, trend: null, color: "#3B82F6" },
   ];
 
   const employeeStats = [
-    { icon: LeavesIcon, value: String(store.leaveBalances.find(b => b.typeKey === "annual")?.remaining ?? 0), label: isAr ? "أيام إجازة متبقية" : "Leave Days Left", trend: null },
-    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.employeeId === user.id && r.status === "pending").length), label: isAr ? "طلباتي المعلقة" : "My Pending Requests", trend: null },
-    { icon: PayrollIcon, value: isAr ? "28 مارس" : "Mar 28", label: t.stats.nextPayroll, trend: null },
-    { icon: EmployeesIcon, value: isAr ? "08:02" : "08:02", label: isAr ? "وقت الحضور اليوم" : "Today's Check-in", trend: null },
+    { icon: LeavesIcon, value: String(store.leaveBalances.find(b => b.typeKey === "annual")?.remaining ?? 0), label: isAr ? "أيام إجازة متبقية" : "Leave Days Left", trend: null, color: "#10B981" },
+    { icon: RequestsIcon, value: String(store.employeeRequests.filter(r => r.employeeId === user.id && r.status === "pending").length), label: isAr ? "طلباتي المعلقة" : "My Pending Requests", trend: null, color: "#F59E0B" },
+    { icon: PayrollIcon, value: nextPayroll, label: t.stats.nextPayroll, trend: null, color: "#3B82F6" },
+    { icon: EmployeesIcon, value: isAr ? "08:02" : "08:02", label: isAr ? "وقت الحضور اليوم" : "Today's Check-in", trend: null, color: "#8B5CF6" },
   ];
 
   const stats = isAdmin ? adminStats : employeeStats;
@@ -83,18 +155,35 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Greeting Card */}
-      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#7C52D9] to-[#4C2A8A] p-6 lg:p-8 text-white">
-        <div className="relative z-10">
-          <h2 className="text-2xl lg:text-3xl font-bold">
-            {greeting}، {(isAr ? user.nameAr : user.nameEn).split(" ")[0]}{" "}
-            <span className="inline-block animate-[wave_1.5s_ease-in-out_infinite]">
-              👋
-            </span>
-          </h2>
-          <p className="text-white/80 mt-1.5 text-sm lg:text-base">
-            {t.greeting.subtitle}
-          </p>
-          <p className="text-white/60 text-sm mt-3">{today}</p>
+      <div className="relative overflow-hidden rounded-[20px] p-6 lg:p-8 text-white shadow-lg" style={{ background: 'linear-gradient(to right, #8B5CF6, #5B21B6)' }}>
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          {/* Greeting text */}
+          <div>
+            <h2 className="text-2xl lg:text-3xl font-bold">
+              {greeting}، {(isAr ? user.nameAr : user.nameEn).split(" ")[0]}{" "}
+              <span className="inline-block animate-[wave_1.5s_ease-in-out_infinite]">
+                👋
+              </span>
+            </h2>
+            <p className="text-white/80 mt-1.5 text-sm lg:text-base">
+              {t.greeting.subtitle}
+            </p>
+            <p className="text-white/60 text-sm mt-3">{today}</p>
+          </div>
+
+          {/* Live work hours counter */}
+          {!isAdmin && (
+            <div className="flex items-baseline gap-1 shrink-0" dir="ltr">
+              <span
+                className="text-[28px] lg:text-[32px] font-bold tabular-nums"
+                style={{ color: metTarget ? "#10B981" : "#EF4444" }}
+              >
+                {elapsed}
+              </span>
+              <span className="text-[28px] lg:text-[32px] font-bold text-white/60">/</span>
+              <span className="text-[28px] lg:text-[32px] font-bold text-white/80">7:00</span>
+            </div>
+          )}
         </div>
         {/* Decorative elements */}
         <div className="absolute top-0 end-0 w-64 h-64 opacity-10">
@@ -114,7 +203,12 @@ export default function DashboardPage() {
               className="accent-card rounded-xl p-4 hover-lift cursor-default"
             >
               <div className="flex items-start gap-3">
-                <Icon className="w-12 h-12 shrink-0" />
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: stat.color }}
+                >
+                  <Icon className="w-7 h-7 [&_rect]:fill-white [&_circle]:fill-white [&_path]:fill-white [&_line]:stroke-white [&_ellipse]:fill-white" />
+                </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="text-2xl font-bold text-foreground">
@@ -257,7 +351,7 @@ export default function DashboardPage() {
                 {isAr ? "رصيد إجازاتي" : "My Leave Balance"}
               </h3>
               <div className="space-y-3">
-                {store.leaveBalances.slice(0, 4).map((lb) => (
+                {store.leaveBalances.filter((lb) => ["annual", "sick", "unpaid"].includes(lb.typeKey)).map((lb) => (
                   <div key={lb.typeKey} className="flex items-center justify-between p-2 rounded-lg hover:bg-accent/30 transition-colors">
                     <span className="text-sm font-medium">
                       {t.lev[lb.typeKey as keyof typeof t.lev] ?? lb.typeKey}

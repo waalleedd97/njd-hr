@@ -36,6 +36,7 @@ export interface Employee {
     qualification?: UploadedDocument;
     passport?: UploadedDocument;
   };
+  locationRequired?: boolean;
 }
 
 export const departments: Record<string, { ar: string; en: string }> = {
@@ -57,7 +58,6 @@ export const todayAttendance: { employeeId: string; checkIn: string | null; chec
 export const leaveBalances = [
   { typeKey: "annual", total: 21, used: 0, remaining: 21 },
   { typeKey: "sick", total: 10, used: 0, remaining: 10 },
-  { typeKey: "personal", total: 5, used: 0, remaining: 5 },
   { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
 ];
 
@@ -132,8 +132,8 @@ export interface Holiday {
 
 export const saudiHolidays: Holiday[] = [
   { id: "H001", nameAr: "يوم التأسيس", nameEn: "Founding Day", startDate: "2026-02-22", endDate: "2026-02-22", days: 1 },
-  { id: "H002", nameAr: "عيد الفطر", nameEn: "Eid Al-Fitr", startDate: "2026-03-30", endDate: "2026-04-02", days: 4 },
-  { id: "H003", nameAr: "عيد الأضحى", nameEn: "Eid Al-Adha", startDate: "2026-06-06", endDate: "2026-06-09", days: 4 },
+  { id: "H002", nameAr: "عيد الفطر", nameEn: "Eid Al-Fitr", startDate: "", endDate: "", days: 4 },
+  { id: "H003", nameAr: "عيد الأضحى", nameEn: "Eid Al-Adha", startDate: "", endDate: "", days: 4 },
   { id: "H004", nameAr: "اليوم الوطني", nameEn: "National Day", startDate: "2026-09-23", endDate: "2026-09-23", days: 1 },
 ];
 
@@ -151,11 +151,19 @@ export interface PenaltyRule {
 }
 
 export const penaltyRules: PenaltyRule[] = [
-  { id: "P001", conditionAr: "تأخر 1-15 دقيقة", conditionEn: "Late 1-15 min", deductionAr: "إنذار", deductionEn: "Warning", minLate: 1, maxLate: 15, percentage: 0 },
-  { id: "P002", conditionAr: "تأخر 16-30 دقيقة", conditionEn: "Late 16-30 min", deductionAr: "5% من الراتب اليومي", deductionEn: "5% of daily salary", minLate: 16, maxLate: 30, percentage: 5 },
-  { id: "P003", conditionAr: "تأخر 31-60 دقيقة", conditionEn: "Late 31-60 min", deductionAr: "10% من الراتب اليومي", deductionEn: "10% of daily salary", minLate: 31, maxLate: 60, percentage: 10 },
-  { id: "P004", conditionAr: "تأخر أكثر من 60 دقيقة", conditionEn: "Late > 60 min", deductionAr: "25% من الراتب اليومي", deductionEn: "25% of daily salary", minLate: 61, maxLate: 9999, percentage: 25 },
+  { id: "P001", conditionAr: "حضور 10:01 - 10:15 ص", conditionEn: "Check-in 10:01-10:15 AM", deductionAr: "بدون عقوبة (فترة سماح)", deductionEn: "No penalty (grace period)", minLate: 1, maxLate: 15, percentage: 0 },
+  { id: "P002", conditionAr: "حضور 10:16 - 10:30 ص", conditionEn: "Check-in 10:16-10:30 AM", deductionAr: "تحذير", deductionEn: "Warning", minLate: 16, maxLate: 30, percentage: 0 },
+  { id: "P003", conditionAr: "حضور 10:31 - 11:00 ص", conditionEn: "Check-in 10:31-11:00 AM", deductionAr: "5% من الراتب اليومي", deductionEn: "5% of daily salary", minLate: 31, maxLate: 60, percentage: 5 },
+  { id: "P004", conditionAr: "حضور بعد 11:00 ص", conditionEn: "Check-in after 11:00 AM", deductionAr: "10% من الراتب اليومي", deductionEn: "10% of daily salary", minLate: 61, maxLate: 9999, percentage: 10 },
   { id: "P005", conditionAr: "غياب بدون عذر", conditionEn: "Absent without excuse", deductionAr: "خصم يوم كامل", deductionEn: "Full day deduction", minLate: -1, maxLate: -1, percentage: 100 },
+];
+
+export const earlyDepartureRules: PenaltyRule[] = [
+  { id: "E001", conditionAr: "انصراف مبكر 1-15 دقيقة", conditionEn: "Left 1-15 min early", deductionAr: "بدون عقوبة", deductionEn: "No penalty", minLate: 1, maxLate: 15, percentage: 0 },
+  { id: "E002", conditionAr: "انصراف مبكر 16-30 دقيقة", conditionEn: "Left 16-30 min early", deductionAr: "تحذير", deductionEn: "Warning", minLate: 16, maxLate: 30, percentage: 0 },
+  { id: "E003", conditionAr: "انصراف مبكر 31-60 دقيقة", conditionEn: "Left 31-60 min early", deductionAr: "5% من الراتب اليومي", deductionEn: "5% of daily salary", minLate: 31, maxLate: 60, percentage: 5 },
+  { id: "E004", conditionAr: "انصراف مبكر أكثر من 60 دقيقة", conditionEn: "Left > 60 min early", deductionAr: "10% من الراتب اليومي", deductionEn: "10% of daily salary", minLate: 61, maxLate: 9999, percentage: 10 },
+  { id: "E005", conditionAr: "انصراف بدون تسجيل خروج", conditionEn: "Left without checking out", deductionAr: "خصم يوم كامل حتى التصحيح", deductionEn: "Full day deduction until corrected", minLate: -1, maxLate: -1, percentage: 100 },
 ];
 
 /** Calculate penalty percentage for given minutes late. Returns 0 for warning-only. */
@@ -175,9 +183,9 @@ export function calcDailySalary(emp: Employee): number {
 
 export const geofenceConfig = {
   enabled: true,
-  officeLat: 24.7136,
-  officeLng: 46.6753,
-  radiusMeters: 200,
+  officeLat: 24.787278,
+  officeLng: 46.614306,
+  radiusMeters: 1000,
   officeNameAr: "مقر نجد قيمز — الرياض",
   officeNameEn: "NJD Games HQ — Riyadh",
 };

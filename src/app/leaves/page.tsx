@@ -177,7 +177,6 @@ export default function LeavesPage() {
   const leaveTypeOptions = [
     "annual",
     "sick",
-    "personal",
     "unpaid",
     "marriage",
     "paternity",

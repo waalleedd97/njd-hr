@@ -8,7 +8,7 @@ function Globe3D({ className }: { className?: string }) {
       <defs>
         <linearGradient id="globe3d-bg" x1="3" y1="3" x2="37" y2="37" gradientUnits="userSpaceOnUse">
           <stop stopColor="#A78BFA" />
-          <stop offset="1" stopColor="#6C3FC5" />
+          <stop offset="1" stopColor="#7C3AED" />
         </linearGradient>
         <linearGradient id="globe3d-shine" x1="20" y1="3" x2="20" y2="22" gradientUnits="userSpaceOnUse">
           <stop stopColor="white" stopOpacity="0.35" />
@@ -20,7 +20,7 @@ function Globe3D({ className }: { className?: string }) {
         </radialGradient>
       </defs>
       {/* 3D shadow */}
-      <rect x="4" y="6" width="34" height="34" rx="11" fill="#4C2A8A" opacity="0.18" />
+      <rect x="4" y="6" width="34" height="34" rx="11" fill="#5B21B6" opacity="0.18" />
       {/* Background */}
       <rect x="3" y="3" width="34" height="34" rx="11" fill="url(#globe3d-bg)" />
       {/* Top shine */}
@@ -57,7 +57,7 @@ export function LanguageToggle() {
       <Globe3D className="w-10 h-10 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[15deg]" />
 
       {/* Language badge overlaid on globe */}
-      <span className="absolute -bottom-0.5 -end-1 bg-gradient-to-br from-[#9B6FFF] to-[#6C3FC5] text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-[0_2px_6px_rgba(108,63,197,0.5)] border-2 border-background transition-transform duration-300 group-hover:scale-110">
+      <span className="absolute -bottom-0.5 -end-1 bg-gradient-to-br from-[var(--njd-purple-500)] to-[var(--njd-purple-600)] text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-[0_2px_6px_rgba(147,51,234,0.5)] border-2 border-background transition-transform duration-300 group-hover:scale-110">
         {lang === "ar" ? "عر" : "EN"}
       </span>
     </button>

@@ -1,8 +1,39 @@
+@import url("https://njd-services.net/njd-design-system.css");
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════
+   Bridge: .dark class mirrors [data-theme="dark"] for NJD tokens
+   ═══════════════════════════════════════════════════════════ */
+.dark {
+  --njd-white: #0C0C14;
+  --njd-gray-50: #121220;
+  --njd-gray-100: #1C1C2E;
+  --njd-gray-200: #2A2A40;
+  --njd-gray-300: #3A3A55;
+  --njd-gray-400: #606078;
+  --njd-gray-500: #9090A8;
+  --njd-gray-600: #B0B0C4;
+  --njd-gray-700: #D0D0DD;
+  --njd-gray-800: #E8E8F0;
+  --njd-gray-900: #F4F4F8;
+  --njd-purple-50: #14102A;
+  --njd-purple-100: #1E1845;
+  --njd-purple-200: #2E2460;
+  --njd-header-bg: rgba(12, 12, 20, 0.88);
+  --njd-header-scrolled-shadow: 0 1px 12px rgba(0, 0, 0, 0.25);
+  --njd-status-bg: rgba(16, 185, 129, 0.1);
+  --njd-status-border: rgba(16, 185, 129, 0.2);
+  --njd-status-color: #34D399;
+  --njd-status-dot: #34D399;
+  --njd-card-hover-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  --njd-gradient-text-from: var(--njd-purple-400);
+  --njd-gradient-text-to: #D8B4FE;
+  --njd-shadow-purple: 0 12px 40px rgba(147, 51, 234, 0.3);
+}
 
 @layer utilities {
   .text-balance {
@@ -10,74 +41,43 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════
+   Map shadcn/Tailwind tokens → NJD design system tokens
+   ═══════════════════════════════════════════════════════════ */
 @layer base {
   :root {
-    --background: #FFFFFF;
-    --foreground: #1A1A2E;
-    --card: #FFFFFF;
-    --card-foreground: #1A1A2E;
-    --popover: #FFFFFF;
-    --popover-foreground: #1A1A2E;
-    --primary: #6C3FC5;
+    --background: var(--njd-white);
+    --foreground: var(--njd-gray-900);
+    --card: var(--njd-gray-50);
+    --card-foreground: var(--njd-gray-900);
+    --popover: var(--njd-white);
+    --popover-foreground: var(--njd-gray-900);
+    --primary: #7C3AED;
     --primary-foreground: #FFFFFF;
-    --secondary: #F3EEFF;
-    --secondary-foreground: #1A1A2E;
-    --muted: #F3EEFF;
-    --muted-foreground: #64607D;
-    --accent: #E8DAFF;
-    --accent-foreground: #1A1A2E;
+    --secondary: #EDE9FE;
+    --secondary-foreground: var(--njd-gray-900);
+    --muted: var(--njd-gray-100);
+    --muted-foreground: var(--njd-gray-500);
+    --accent: #F5F3FF;
+    --accent-foreground: var(--njd-gray-900);
     --destructive: #EF4444;
-    --border: #E8DAFF;
-    --input: #E8DAFF;
-    --ring: #6C3FC5;
+    --border: var(--njd-gray-200);
+    --input: var(--njd-gray-200);
+    --ring: #7C3AED;
     --radius: 0.75rem;
-    --chart-1: #6C3FC5;
+    --chart-1: #7C3AED;
     --chart-2: #8B5CF6;
     --chart-3: #A78BFA;
     --chart-4: #C4B5FD;
     --chart-5: #DDD6FE;
-    --sidebar: #FAFAFF;
-    --sidebar-foreground: #1A1A2E;
-    --sidebar-primary: #6C3FC5;
+    --sidebar: var(--njd-white);
+    --sidebar-foreground: var(--njd-gray-900);
+    --sidebar-primary: #7C3AED;
     --sidebar-primary-foreground: #FFFFFF;
-    --sidebar-accent: #F3EEFF;
-    --sidebar-accent-foreground: #1A1A2E;
-    --sidebar-border: #E8DAFF;
-    --sidebar-ring: #6C3FC5;
-  }
-
-  .dark {
-    --background: #0F0D1A;
-    --foreground: #E8E0F0;
-    --card: #1C1828;
-    --card-foreground: #E8E0F0;
-    --popover: #1C1828;
-    --popover-foreground: #E8E0F0;
-    --primary: #7C52D9;
-    --primary-foreground: #FFFFFF;
-    --secondary: #1C1828;
-    --secondary-foreground: #E8E0F0;
-    --muted: #1C1828;
-    --muted-foreground: #B0A8C8;
-    --accent: #2A2440;
-    --accent-foreground: #E8E0F0;
-    --destructive: #DC2626;
-    --border: #2D2545;
-    --input: #2D2545;
-    --ring: #7C52D9;
-    --chart-1: #7C52D9;
-    --chart-2: #9B6FFF;
-    --chart-3: #A78BFA;
-    --chart-4: #6C3FC5;
-    --chart-5: #5B35B5;
-    --sidebar: #1C1828;
-    --sidebar-foreground: #E8E0F0;
-    --sidebar-primary: #7C52D9;
-    --sidebar-primary-foreground: #FFFFFF;
-    --sidebar-accent: #2A2440;
-    --sidebar-accent-foreground: #E8E0F0;
-    --sidebar-border: #2D2545;
-    --sidebar-ring: #7C52D9;
+    --sidebar-accent: #F5F3FF;
+    --sidebar-accent-foreground: var(--njd-gray-900);
+    --sidebar-border: var(--njd-gray-200);
+    --sidebar-ring: #7C3AED;
   }
 
   .theme {
@@ -91,6 +91,7 @@
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--njd-font);
   }
 
   html {
@@ -98,46 +99,72 @@
   }
 }
 
-/* Glassmorphism card for dark mode */
+/* ═══════════════════════════════════════════════════════════
+   Navbar height token — reads from web component, fallback 64px
+   ═══════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════
+   njd-card compact for shadcn Card integration
+   ═══════════════════════════════════════════════════════════ */
+[data-slot="card"].njd-card {
+  padding: 0;
+  border-radius: var(--radius);
+}
+[data-slot="card"].njd-card:hover {
+  transform: none;
+}
+[data-slot="card"].njd-card::before {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Button NJD gradient & outline (layered for shadcn sizing)
+   ═══════════════════════════════════════════════════════════ */
+@layer utilities {
+  .njd-gradient-fill {
+    background: linear-gradient(135deg, #8B5CF6, #5B21B6);
+  }
+  .njd-gradient-fill:hover {
+    background: linear-gradient(135deg, #A78BFA, #5B21B6);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Card surfaces
+   ═══════════════════════════════════════════════════════════ */
 .glass-card {
-  @apply bg-card border border-border;
+  background: var(--njd-white);
+  border: 1px solid var(--njd-gray-100);
+  box-shadow: var(--njd-shadow-sm);
+  border-radius: var(--njd-radius-md);
+  transition: border-color var(--njd-transition-ease), box-shadow var(--njd-transition-ease);
 }
 
-.dark .glass-card {
-  background: rgba(28, 24, 40, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(124, 82, 217, 0.12);
+.glass-card:hover {
+  border-color: var(--njd-purple-100);
 }
 
-/* Accent card with left border */
 .accent-card {
-  @apply bg-card border border-border border-s-4 border-s-primary;
+  background: var(--njd-white);
+  border: 1px solid var(--njd-gray-100);
+  border-inline-start: 4px solid var(--njd-purple-600);
+  box-shadow: var(--njd-shadow-sm);
+  border-radius: var(--njd-radius-sm);
+  transition: border-color var(--njd-transition-ease), box-shadow var(--njd-transition-ease);
 }
 
-.dark .accent-card {
-  background: rgba(28, 24, 40, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(124, 82, 217, 0.12);
-  border-inline-start: 4px solid var(--primary);
-}
-
-/* Smooth hover animation */
 .hover-lift {
-  @apply transition-all duration-200 ease-out;
+  transition: transform var(--njd-transition-ease), box-shadow var(--njd-transition-ease);
 }
 
 .hover-lift:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 25px rgba(108, 63, 197, 0.12);
+  box-shadow: var(--njd-shadow-md);
 }
 
-.dark .hover-lift:hover {
-  box-shadow: 0 8px 25px rgba(124, 82, 217, 0.2);
-}
-
-/* Scrollbar styling */
+/* ═══════════════════════════════════════════════════════════
+   Scrollbar
+   ═══════════════════════════════════════════════════════════ */
 ::-webkit-scrollbar {
   width: 6px;
 }
@@ -147,10 +174,10 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--njd-gray-200);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: var(--njd-gray-400);
 }

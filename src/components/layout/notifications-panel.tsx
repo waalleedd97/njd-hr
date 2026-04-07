@@ -2,10 +2,15 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useLanguage } from "@/components/providers";
-import { useData } from "@/lib/data-store";
-import type { Notification } from "@/lib/mock-data";
+import { useLanguage, useAuth } from "@/components/providers";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import {
+  type SupaNotification,
+  fetchNotifications,
+  markNotificationReadInDB,
+  markAllReadInDB,
+} from "@/lib/notifications";
 import {
   Bell,
   CheckCircle,
@@ -17,7 +22,7 @@ import {
 } from "lucide-react";
 
 const typeConfig: Record<
-  Notification["type"],
+  SupaNotification["type"],
   { icon: typeof Bell; color: string; bg: string }
 > = {
   leave: {
@@ -47,182 +52,220 @@ const typeConfig: Record<
   },
 };
 
-function formatTime(minutes: number, t: ReturnType<typeof useLanguage>["t"]) {
-  if (minutes < 1) return t.notif.justNow;
-  if (minutes < 60) return `${minutes}${t.notif.minutesAgo}`;
-  return `${Math.floor(minutes / 60)}${t.notif.hoursAgo}`;
+function formatTime(createdAt: string, isAr: boolean) {
+  const diff = Date.now() - new Date(createdAt).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return isAr ? "الآن" : "now";
+  if (mins < 60) return isAr ? `${mins}د` : `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return isAr ? `${hrs}س` : `${hrs}h`;
+  const days = Math.floor(hrs / 24);
+  return isAr ? `${days}ي` : `${days}d`;
 }
 
-export function NotificationsPanel() {
+interface NotificationsPanelProps {
+  open: boolean;
+  onClose: () => void;
+  onUnreadCountChange: (count: number) => void;
+}
+
+export function NotificationsPanel({ open, onClose, onUnreadCountChange }: NotificationsPanelProps) {
   const { t, lang } = useLanguage();
+  const { user } = useAuth();
   const router = useRouter();
-  const {
-    notifications: items,
-    markNotificationRead,
-    markAllNotificationsRead,
-  } = useData();
   const isAr = lang === "ar";
-  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<SupaNotification[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const unreadCount = items.filter((n) => !n.read).length;
+
+  // Push unread count upstream whenever it changes
+  useEffect(() => {
+    onUnreadCountChange(unreadCount);
+  }, [unreadCount, onUnreadCountChange]);
+
+  // Fetch notifications from Supabase
+  useEffect(() => {
+    if (!user.id) return;
+
+    async function load() {
+      const data = await fetchNotifications(user.id);
+      setItems(data);
+    }
+    load();
+
+    // Realtime subscription for new notifications
+    const channel = supabase
+      .channel("hr-notifications")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const row = payload.new as SupaNotification;
+          if (row.app_name === "hr") {
+            setItems((prev) => [row, ...prev]);
+            if (document.hidden && Notification.permission === "granted") {
+              new Notification(isAr ? row.title_ar : row.title_en, {
+                body: isAr ? row.desc_ar : row.desc_en,
+                icon: "/logo.png",
+              });
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user.id, isAr]);
 
   // Close on click outside
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        onClose();
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
+  }, [open, onClose]);
 
   // Close on Escape
   useEffect(() => {
     if (!open) return;
     function handleKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") onClose();
     }
     document.addEventListener("keydown", handleKey);
     return () => document.removeEventListener("keydown", handleKey);
-  }, [open]);
+  }, [open, onClose]);
 
   const handleNotificationClick = useCallback(
-    (notification: { id: string; href?: string }) => {
-      markNotificationRead(notification.id);
-      setOpen(false);
+    async (notification: SupaNotification) => {
+      if (!notification.read) {
+        setItems((prev) =>
+          prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
+        );
+        markNotificationReadInDB(notification.id);
+      }
+      onClose();
       if (notification.href) {
         router.push(notification.href);
       }
     },
-    [router, markNotificationRead]
+    [router, onClose]
   );
 
+  const handleMarkAllRead = useCallback(async () => {
+    setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+    markAllReadInDB(user.id);
+  }, [user.id]);
+
+  if (!open) return null;
+
   return (
-    <div ref={panelRef} className="relative">
-      {/* Bell button */}
-      <button
-        onClick={() => setOpen((p) => !p)}
-        className="relative p-2 rounded-lg hover:bg-accent transition-colors"
-        aria-label={t.notif.title}
-      >
-        <Bell
-          className={cn(
-            "w-5 h-5 transition-colors",
-            open ? "text-primary" : "text-muted-foreground"
-          )}
-        />
-        {unreadCount > 0 && (
-          <span className="absolute top-1 end-1 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center animate-in zoom-in-50">
-            {unreadCount}
-          </span>
+    <>
+      {/* Backdrop on mobile */}
+      <div
+        className="fixed inset-0 z-[200] bg-black/20 lg:hidden"
+        onClick={onClose}
+      />
+
+      {/* Dropdown — anchored to top-end of viewport */}
+      <div
+        ref={panelRef}
+        className={cn(
+          "fixed top-[var(--njd-navbar-height,64px)] z-[201] w-[calc(100vw-2rem)] sm:w-96 max-h-[70vh] rounded-xl border border-border bg-card shadow-xl overflow-hidden",
+          "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150",
+          "end-4 sm:end-6"
         )}
-      </button>
-
-      {/* Panel */}
-      {open && (
-        <>
-          {/* Backdrop on mobile */}
-          <div
-            className="fixed inset-0 z-40 bg-black/20 lg:hidden"
-            onClick={() => setOpen(false)}
-          />
-
-          {/* Dropdown */}
-          <div
-            className={cn(
-              "absolute top-full mt-2 z-50 w-[calc(100vw-2rem)] sm:w-96 max-h-[70vh] rounded-xl border border-border bg-card shadow-xl overflow-hidden",
-              "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150",
-              "end-0 sm:end-0"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-border">
+          <div className="flex items-center gap-2">
+            <h3 className="font-bold text-sm">{t.notif.title}</h3>
+            {unreadCount > 0 && (
+              <span className="bg-primary/10 text-primary text-[11px] font-bold px-1.5 py-0.5 rounded-full">
+                {unreadCount}
+              </span>
             )}
-          >
-            {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-border">
-              <div className="flex items-center gap-2">
-                <h3 className="font-bold text-sm">{t.notif.title}</h3>
-                {unreadCount > 0 && (
-                  <span className="bg-primary/10 text-primary text-[11px] font-bold px-1.5 py-0.5 rounded-full">
-                    {unreadCount}
-                  </span>
-                )}
-              </div>
-              {unreadCount > 0 && (
-                <button
-                  onClick={markAllNotificationsRead}
-                  className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  {t.notif.markAllRead}
-                </button>
-              )}
+          </div>
+          {unreadCount > 0 && (
+            <button
+              onClick={handleMarkAllRead}
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+            >
+              <Check className="w-3.5 h-3.5" />
+              {t.notif.markAllRead}
+            </button>
+          )}
+        </div>
+
+        {/* Notification list */}
+        <div className="overflow-y-auto max-h-[calc(70vh-56px)]">
+          {items.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+              <Bell className="w-8 h-8 mb-2 opacity-40" />
+              <p className="text-sm">{t.notif.noNotifications}</p>
             </div>
+          ) : (
+            items.map((notification) => {
+              const config = typeConfig[notification.type];
+              const Icon = config.icon;
 
-            {/* Notification list */}
-            <div className="overflow-y-auto max-h-[calc(70vh-56px)]">
-              {items.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-                  <Bell className="w-8 h-8 mb-2 opacity-40" />
-                  <p className="text-sm">{t.notif.noNotifications}</p>
-                </div>
-              ) : (
-                items.map((notification) => {
-                  const config = typeConfig[notification.type];
-                  const Icon = config.icon;
-
-                  return (
-                    <button
-                      key={notification.id}
-                      onClick={() => handleNotificationClick(notification)}
-                      className={cn(
-                        "w-full flex items-start gap-3 p-4 text-start border-b border-border/50 last:border-0 transition-colors hover:bg-accent/40",
-                        !notification.read && "bg-primary/[0.03]"
-                      )}
-                    >
-                      {/* Icon */}
-                      <div
+              return (
+                <button
+                  key={notification.id}
+                  onClick={() => handleNotificationClick(notification)}
+                  className={cn(
+                    "w-full flex items-start gap-3 p-4 text-start border-b border-border/50 last:border-0 transition-colors hover:bg-accent/40",
+                    !notification.read && "bg-primary/[0.03]"
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "shrink-0 w-9 h-9 rounded-lg flex items-center justify-center mt-0.5",
+                      config.bg
+                    )}
+                  >
+                    <Icon className={cn("w-4.5 h-4.5", config.color)} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <p
                         className={cn(
-                          "shrink-0 w-9 h-9 rounded-lg flex items-center justify-center mt-0.5",
-                          config.bg
+                          "text-sm leading-snug",
+                          !notification.read
+                            ? "font-semibold text-foreground"
+                            : "font-medium text-muted-foreground"
                         )}
                       >
-                        <Icon className={cn("w-4.5 h-4.5", config.color)} />
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <p
-                            className={cn(
-                              "text-sm leading-snug",
-                              !notification.read
-                                ? "font-semibold text-foreground"
-                                : "font-medium text-muted-foreground"
-                            )}
-                          >
-                            {isAr ? notification.titleAr : notification.titleEn}
-                          </p>
-                          {/* Unread dot */}
-                          {!notification.read && (
-                            <div className="shrink-0 w-2 h-2 rounded-full bg-primary mt-1.5" />
-                          )}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
-                          {isAr ? notification.descAr : notification.descEn}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground/70 mt-1.5">
-                          {formatTime(notification.time, t)}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+                        {isAr ? notification.title_ar : notification.title_en}
+                      </p>
+                      {!notification.read && (
+                        <div className="shrink-0 w-2 h-2 rounded-full bg-primary mt-1.5" />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
+                      {isAr ? notification.desc_ar : notification.desc_en}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+                      {formatTime(notification.created_at, isAr)}
+                    </p>
+                  </div>
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </>
   );
 }

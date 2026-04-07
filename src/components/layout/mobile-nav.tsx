@@ -15,7 +15,7 @@ export function MobileNav() {
   const visibleItems = getNavForRole(mobileNavItems, role);
 
   return (
-    <nav className="fixed bottom-0 start-0 end-0 lg:hidden bg-background/90 backdrop-blur-md border-t border-border z-50 pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed bottom-0 start-0 end-0 lg:hidden bg-white dark:bg-card border-t border-border shadow-[0_-1px_3px_rgba(0,0,0,0.04)] z-50 pb-[env(safe-area-inset-bottom)]">
       <div className="flex justify-around items-center h-16 px-1">
         {visibleItems.map((item) => {
           const Icon = moduleIcons[item.key];
@@ -28,7 +28,7 @@ export function MobileNav() {
               href={item.href}
               className={cn(
                 "flex flex-col items-center justify-center gap-0.5 flex-1 py-1 rounded-lg transition-colors",
-                isActive ? "text-primary" : "text-muted-foreground"
+                isActive ? "text-primary font-semibold" : "text-muted-foreground"
               )}
             >
               <Icon className="w-6 h-6" />

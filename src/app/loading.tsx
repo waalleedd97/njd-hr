@@ -4,7 +4,7 @@ export default function Loading() {
       <div className="flex flex-col items-center gap-4">
         {/* Animated logo pulse */}
         <div className="relative">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#7C52D9] to-[#4C2A8A] flex items-center justify-center shadow-lg shadow-primary/25 animate-pulse">
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/25 animate-pulse" style={{ background: 'linear-gradient(135deg, #8B5CF6, #5B21B6)' }}>
             <span className="text-white font-bold text-2xl">ن</span>
           </div>
           {/* Spinning ring */}
