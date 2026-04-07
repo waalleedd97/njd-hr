@@ -433,15 +433,17 @@ export default function RequestsPage() {
                                 size="sm"
                                 className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
                                 onClick={() => {
-                                  const collection =
-                                    req.typeKey === "attendanceAdjust"
-                                      ? "attendanceAdjustments"
-                                      : req.typeKey === "salaryAdvance"
-                                        ? "salaryAdvances"
-                                        : req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)
-                                          ? "leaveRequests"
-                                          : "employeeRequests";
-                                  store.approveItem(collection, req.id);
+                                  if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
+                                    store.approveLeaveRequest(req.id);
+                                  } else {
+                                    const collection =
+                                      req.typeKey === "attendanceAdjust"
+                                        ? "attendanceAdjustments" as const
+                                        : req.typeKey === "salaryAdvance"
+                                          ? "salaryAdvances" as const
+                                          : "employeeRequests" as const;
+                                    store.approveItem(collection, req.id);
+                                  }
                                 }}
                               >
                                 <CheckCircle className="w-4 h-4" />
@@ -451,15 +453,17 @@ export default function RequestsPage() {
                                 size="sm"
                                 className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
                                 onClick={() => {
-                                  const collection =
-                                    req.typeKey === "attendanceAdjust"
-                                      ? "attendanceAdjustments"
-                                      : req.typeKey === "salaryAdvance"
-                                        ? "salaryAdvances"
-                                        : req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)
-                                          ? "leaveRequests"
-                                          : "employeeRequests";
-                                  store.rejectItem(collection, req.id);
+                                  if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
+                                    store.rejectLeaveRequest(req.id);
+                                  } else {
+                                    const collection =
+                                      req.typeKey === "attendanceAdjust"
+                                        ? "attendanceAdjustments" as const
+                                        : req.typeKey === "salaryAdvance"
+                                          ? "salaryAdvances" as const
+                                          : "employeeRequests" as const;
+                                    store.rejectItem(collection, req.id);
+                                  }
                                 }}
                               >
                                 <XCircle className="w-4 h-4" />

@@ -521,7 +521,7 @@ export default function LeavesPage() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                                onClick={() => store.approveItem("leaveRequests", lr.id)}
+                                onClick={() => store.approveLeaveRequest(lr.id)}
                               >
                                 <Check className="w-4 h-4" />
                               </Button>
@@ -529,7 +529,7 @@ export default function LeavesPage() {
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-500/10"
-                                onClick={() => store.rejectItem("leaveRequests", lr.id)}
+                                onClick={() => store.rejectLeaveRequest(lr.id)}
                               >
                                 <X className="w-4 h-4" />
                               </Button>

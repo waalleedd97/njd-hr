@@ -225,6 +225,7 @@ Dialog/Sheet headers include `pe-8` / `pe-12` padding to prevent overlap with cl
 4. **njd-navbar.js** is the single source of truth for the navbar. Do NOT create a local navbar component.
 5. **Profile page** lives in Landing Page (`njd-services.net/#profile`). Do NOT build a local profile page. The `/profile/complete` route in this repo is only for first-time profile completion of invited employees.
 6. **DO NOT modify the loading screen** (CSS variables `--njd-loader-*`, keyframes `njd-*`, the `.njd-loader` HTML block) without explicit instruction.
+7. **Supabase is the single source of truth for leave requests.** localStorage is used only as a temporary cache for instant rendering. When Supabase data arrives, it replaces localStorage entirely. Never fall back to localStorage silently — if Supabase is unavailable, show an error. Submit, approve, and reject operations write to Supabase first, then refresh the local cache.
 
 ## Common Pitfalls
 

@@ -147,8 +147,11 @@ interface DataContextType extends DataState {
   clockIn: (employeeId: string, time: string) => void;
   clockOut: (employeeId: string, time: string) => void;
 
-  // Leave
-  submitLeaveRequest: (req: Omit<LeaveReq, "id">) => void;
+  // Leave (Supabase as single source of truth)
+  submitLeaveRequest: (req: Omit<LeaveReq, "id">) => Promise<void>;
+  refreshLeaveRequests: () => Promise<void>;
+  approveLeaveRequest: (id: string) => Promise<void>;
+  rejectLeaveRequest: (id: string, reason?: string) => Promise<void>;
 
   // Employee Requests
   submitEmployeeRequest: (req: Omit<EmpReq, "id">) => void;
@@ -159,10 +162,9 @@ interface DataContextType extends DataState {
   // Attendance Adjustment
   submitAdjustment: (adj: Omit<AttendanceAdjustment, "id">) => void;
 
-  // Generic approve/reject (works on any collection with id + status)
+  // Generic approve/reject (for employeeRequests, salaryAdvances, attendanceAdjustments)
   approveItem: (
     collection:
-      | "leaveRequests"
       | "employeeRequests"
       | "salaryAdvances"
       | "attendanceAdjustments",
@@ -170,7 +172,6 @@ interface DataContextType extends DataState {
   ) => void;
   rejectItem: (
     collection:
-      | "leaveRequests"
       | "employeeRequests"
       | "salaryAdvances"
       | "attendanceAdjustments",
@@ -316,42 +317,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
     syncEmployees();
   }, [hydrated]);
 
-  // Sync leave requests from Supabase (so admin sees requests from all devices)
+  // ── Leave Requests: Supabase is the single source of truth ──
+
+  const refreshLeaveRequests = useCallback(async () => {
+    try {
+      const { supabase } = await import("./supabase");
+      const { data, error } = await supabase
+        .from("leave_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error || !data) return;
+
+      const mapped: LeaveReq[] = data.map((row: Record<string, unknown>) => ({
+        id: row.id as string,
+        employeeId: row.employee_id as string,
+        typeKey: (row.type as string) || (row.type_key as string) || "annual",
+        startDate: row.start_date as string,
+        endDate: row.end_date as string,
+        days: row.days as number,
+        status: row.status as "pending" | "approved" | "rejected",
+        reasonAr: (row.reason as string) || "",
+        reasonEn: (row.reason as string) || "",
+      }));
+      // Supabase always wins — replace local cache entirely
+      setState((prev) => ({ ...prev, leaveRequests: mapped }));
+    } catch { /* table may not exist yet */ }
+  }, []);
+
+  // Fetch leave requests from Supabase on hydration
   useEffect(() => {
     if (!hydrated) return;
-    async function syncLeaveRequests() {
-      try {
-        const { supabase } = await import("./supabase");
-        const { data, error } = await supabase
-          .from("leave_requests")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (error || !data) return;
-
-        setState((prev) => {
-          const existingIds = new Set(prev.leaveRequests.map((r) => r.id));
-          const newReqs: LeaveReq[] = [];
-          for (const row of data) {
-            if (existingIds.has(row.id)) continue;
-            newReqs.push({
-              id: row.id,
-              employeeId: row.employee_id,
-              typeKey: row.type_key,
-              startDate: row.start_date,
-              endDate: row.end_date,
-              days: row.days,
-              status: row.status,
-              reasonAr: row.reason_ar || "",
-              reasonEn: row.reason_en || "",
-            });
-          }
-          if (newReqs.length === 0) return prev;
-          return { ...prev, leaveRequests: [...newReqs, ...prev.leaveRequests] };
-        });
-      } catch { /* table may not exist */ }
-    }
-    syncLeaveRequests();
-  }, [hydrated]);
+    refreshLeaveRequests();
+  }, [hydrated, refreshLeaveRequests]);
 
   // Listen for invitation acceptance from AuthProvider
   useEffect(() => {
@@ -394,45 +391,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  // Submit leave request — writes to Supabase ONLY, then refreshes local cache
   const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
-    const newReq = { ...req, id: genId("LR") };
-    setState((p) => ({
-      ...p,
-      leaveRequests: [newReq, ...p.leaveRequests],
-      notifications: [
-        {
-          id: genId("N"),
-          type: "request" as const,
-          titleAr: "طلب إجازة جديد",
-          titleEn: "New Leave Request",
-          descAr: `طلب إجازة جديد بانتظار الموافقة`,
-          descEn: `New leave request pending approval`,
-          time: 0,
-          read: false,
-          href: "/leaves",
-        },
-        ...p.notifications,
-      ],
-    }));
+    const { supabase } = await import("./supabase");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.id) throw new Error("Not authenticated");
 
-    // Persist to Supabase so admins on other devices can see it
-    try {
-      const { supabase } = await import("./supabase");
-      const { data: { session } } = await supabase.auth.getSession();
-      const supabaseUserId = session?.user?.id;
-      await supabase.from("leave_requests").insert({
-        id: newReq.id,
-        employee_id: newReq.employeeId,
-        type_key: newReq.typeKey,
-        start_date: newReq.startDate,
-        end_date: newReq.endDate,
-        days: newReq.days,
-        status: "pending",
-        reason_ar: newReq.reasonAr,
-        reason_en: newReq.reasonEn,
-        supabase_user_id: supabaseUserId || null,
-      });
-    } catch { /* Supabase insert may fail if table schema differs — fall back to localStorage */ }
+    await supabase.from("leave_requests").insert({
+      employee_id: session.user.id,
+      type: req.typeKey,
+      start_date: req.startDate,
+      end_date: req.endDate,
+      days: req.days,
+      reason: req.reasonAr || req.reasonEn,
+      status: "pending",
+    });
+
+    // Refresh cache from Supabase
+    await refreshLeaveRequests();
 
     // Notify admins via Supabase
     notifyAdmins({
@@ -443,7 +419,52 @@ export function DataProvider({ children }: { children: ReactNode }) {
       descEn: "New leave request pending approval",
       href: "/leaves",
     });
-  }, []);
+  }, [refreshLeaveRequests]);
+
+  // Approve leave request — updates Supabase, then refreshes local cache
+  const approveLeaveRequest = useCallback(async (id: string) => {
+    const { supabase } = await import("./supabase");
+    const { data: { session } } = await supabase.auth.getSession();
+
+    await supabase.from("leave_requests").update({
+      status: "approved",
+      reviewed_by: session?.user?.id || null,
+      reviewed_at: new Date().toISOString(),
+    }).eq("id", id);
+
+    // Refresh cache from Supabase
+    await refreshLeaveRequests();
+
+    // Notify employee
+    const req = state.leaveRequests.find((r) => r.id === id);
+    if (req?.employeeId) {
+      createNotification({
+        userId: req.employeeId,
+        type: "leave",
+        titleAr: "تمت الموافقة على طلب الإجازة",
+        titleEn: "Leave Request Approved",
+        descAr: "تمت الموافقة على طلب إجازتك بنجاح",
+        descEn: "Your leave request has been approved",
+        href: "/leaves",
+      });
+    }
+  }, [refreshLeaveRequests, state.leaveRequests]);
+
+  // Reject leave request — updates Supabase, then refreshes local cache
+  const rejectLeaveRequest = useCallback(async (id: string, reason?: string) => {
+    const { supabase } = await import("./supabase");
+    const { data: { session } } = await supabase.auth.getSession();
+
+    await supabase.from("leave_requests").update({
+      status: "rejected",
+      reviewed_by: session?.user?.id || null,
+      reviewed_at: new Date().toISOString(),
+      rejection_reason: reason || null,
+    }).eq("id", id);
+
+    // Refresh cache from Supabase
+    await refreshLeaveRequests();
+  }, [refreshLeaveRequests]);
 
   const submitEmployeeRequest = useCallback((req: Omit<EmpReq, "id">) => {
     setState((p) => ({
@@ -475,7 +496,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const approveItem = useCallback(
     (
       collection:
-        | "leaveRequests"
         | "employeeRequests"
         | "salaryAdvances"
         | "attendanceAdjustments",
@@ -487,67 +507,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           item.id === id ? { ...item, status: "approved" } : item
         );
 
-        // If approving a leave request, update balances
-        let balances = p.leaveBalances;
-        if (collection === "leaveRequests") {
-          const req = p.leaveRequests.find((r) => r.id === id);
-          if (req && req.status === "pending") {
-            balances = p.leaveBalances.map((b) =>
-              b.typeKey === req.typeKey
-                ? {
-                    ...b,
-                    used: b.used + req.days,
-                    remaining: b.remaining - req.days,
-                  }
-                : b
-            );
-          }
-        }
-
-        // Notify the employee via Supabase
-        const item = p[collection] as { id: string; employeeId?: string }[];
-        const target = item.find((i) => i.id === id);
-        if (target?.employeeId) {
-          const emp = p.employees.find((e) => e.id === target.employeeId);
-          if (emp) {
-            createNotification({
-              userId: emp.id,
-              type: "leave",
-              titleAr: "تمت الموافقة",
-              titleEn: "Approved",
-              descAr: "تمت الموافقة على الطلب بنجاح",
-              descEn: "Request has been approved",
-              href: "/" + collection.replace("Requests", "").replace("Adjustments", ""),
-            });
-          }
-        }
-
         return {
           ...p,
           [collection]: updated,
-          leaveBalances: balances,
-          notifications: [
-            {
-              id: genId("N"),
-              type: "leave" as const,
-              titleAr: "تمت الموافقة",
-              titleEn: "Approved",
-              descAr: "تمت الموافقة على الطلب بنجاح",
-              descEn: "Request has been approved",
-              time: 0,
-              read: false,
-              href: "/" + collection.replace("Requests", "").replace("Adjustments", ""),
-            },
-            ...p.notifications,
-          ],
         };
       });
-      // Sync approval to Supabase
-      if (collection === "leaveRequests") {
-        import("./supabase").then(({ supabase }) => {
-          supabase.from("leave_requests").update({ status: "approved" }).eq("id", id);
-        }).catch(() => {});
-      }
     },
     []
   );
@@ -555,7 +519,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const rejectItem = useCallback(
     (
       collection:
-        | "leaveRequests"
         | "employeeRequests"
         | "salaryAdvances"
         | "attendanceAdjustments",
@@ -568,12 +531,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           item.id === id ? { ...item, status: "rejected" } : item
         ),
       }));
-      // Sync rejection to Supabase
-      if (collection === "leaveRequests") {
-        import("./supabase").then(({ supabase }) => {
-          supabase.from("leave_requests").update({ status: "rejected" }).eq("id", id);
-        }).catch(() => {});
-      }
     },
     []
   );
@@ -777,6 +734,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     clockIn,
     clockOut,
     submitLeaveRequest,
+    refreshLeaveRequests,
+    approveLeaveRequest,
+    rejectLeaveRequest,
     submitEmployeeRequest,
     submitAdvance,
     submitAdjustment,
