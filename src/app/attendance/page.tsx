@@ -40,6 +40,7 @@ import {
   Image as ImageIcon,
   Film,
   Loader2,
+  CheckCircle,
 } from "lucide-react";
 
 /** Get current time in KSA timezone (Asia/Riyadh, UTC+3) */
@@ -555,27 +556,42 @@ export default function AttendancePage() {
             <div className="flex items-center gap-2 mb-1">
               <Clock className="w-5 h-5 text-primary" />
               <h3 className="font-bold text-lg">
-                {clockedIn ? t.clock.clockOut : t.clock.clockIn}
+                {clockOutTime && !clockedIn ? t.clock.alreadyCheckedOut : clockedIn ? t.clock.clockOut : t.clock.clockIn}
               </h3>
             </div>
 
             {/* Status text */}
             <div className="text-center">
-              {clockedIn && clockInTime ? (
+              {clockOutTime && !clockedIn ? (
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">
+                    {t.clock.clockedInAt}: <span className="font-semibold text-foreground">{clockInTime}</span>
+                    {" — "}
+                    {t.clock.clockedOutAt}: <span className="font-semibold text-foreground">{clockOutTime}</span>
+                  </p>
+                </div>
+              ) : clockedIn && clockInTime ? (
                 <p className="text-sm text-muted-foreground">
                   {t.clock.clockedInAt}: <span className="font-semibold text-foreground">{clockInTime}</span>
-                </p>
-              ) : clockOutTime ? (
-                <p className="text-sm text-muted-foreground">
-                  {t.clock.clockedOutAt}: <span className="font-semibold text-foreground">{clockOutTime}</span>
                 </p>
               ) : (
                 <p className="text-sm text-muted-foreground">{t.clock.notClockedIn}</p>
               )}
             </div>
 
-            {/* Big clock in/out button */}
-            {!clockedIn ? (
+            {/* Big clock in/out button — 3 states: not clocked in, clocked in, already checked out */}
+            {clockOutTime && !clockedIn ? (
+              /* Already checked out — disabled neutral button */
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-36 h-36 rounded-full flex flex-col items-center justify-center gap-1 font-bold text-lg bg-muted text-muted-foreground shadow-none cursor-not-allowed">
+                  <CheckCircle className="w-8 h-8" />
+                  {t.clock.alreadyCheckedOut}
+                </div>
+                <p className="text-xs text-muted-foreground text-center max-w-[280px]">
+                  {t.clock.alreadyCheckedOutDesc}
+                </p>
+              </div>
+            ) : !clockedIn ? (
               <button
                 onClick={handleClockIn}
                 disabled={geofenceDisabled || tooEarly}
