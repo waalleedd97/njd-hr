@@ -331,8 +331,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const clockIn = useCallback((employeeId: string, time: string) => {
     setState((p) => {
-      const exists = p.todayAttendance.some((a) => a.employeeId === employeeId);
-      const attendance = exists
+      const existing = p.todayAttendance.find((a) => a.employeeId === employeeId);
+      // Block re-check-in if already checked out today
+      if (existing?.checkOut) return p;
+      const attendance = existing
         ? p.todayAttendance.map((a) =>
             a.employeeId === employeeId
               ? { ...a, checkIn: time, status: "present" as const }
