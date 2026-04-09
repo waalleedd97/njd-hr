@@ -30,67 +30,78 @@ type AdminNotificationPayload = {
   href?: string;
 };
 
+function isSchemaMismatchError(error: { message?: string; code?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.message?.includes("column") === true ||
+    error.message?.includes("schema cache") === true
+  );
+}
+
 function buildNotificationRows(
   adminIds: string[],
   body: AdminNotificationPayload
 ) {
-  return [
-    adminIds.map((adminId) => ({
+  const contentVariants = [
+    (adminId: string) => ({
       user_id: adminId,
-      app_name: "hr",
-      type: body.type,
       title_ar: body.titleAr,
       title_en: body.titleEn,
       body_ar: body.descAr,
       body_en: body.descEn,
-      link: body.href || null,
-      is_read: false,
-    })),
-    adminIds.map((adminId) => ({
+    }),
+    (adminId: string) => ({
       user_id: adminId,
-      app_name: "hr",
-      title_ar: body.titleAr,
-      title_en: body.titleEn,
-      body_ar: body.descAr,
-      body_en: body.descEn,
-      link: body.href || null,
-      is_read: false,
-    })),
-    adminIds.map((adminId) => ({
-      user_id: adminId,
-      app_name: "hr",
-      type: body.type,
       title_ar: body.titleAr,
       title_en: body.titleEn,
       desc_ar: body.descAr,
       desc_en: body.descEn,
-      href: body.href || null,
-      read: false,
-    })),
-    adminIds.map((adminId) => ({
-      user_id: adminId,
-      type: body.type,
-      title_ar: body.titleAr,
-      title_en: body.titleEn,
-      desc_ar: body.descAr,
-      desc_en: body.descEn,
-      href: body.href || null,
-      read: false,
-    })),
+    }),
   ];
+  const linkVariants = [
+    { link: body.href || null },
+    { href: body.href || null },
+  ];
+  const readVariants = [{ is_read: false }, { read: false }];
+  const typeVariants = [{}, { type: body.type }];
+  const appVariants = [{ app_name: "hr" }, {}];
+
+  const rowSets: Array<Array<Record<string, unknown>>> = [];
+  for (const appVariant of appVariants) {
+    for (const contentVariant of contentVariants) {
+      for (const linkVariant of linkVariants) {
+        for (const readVariant of readVariants) {
+          for (const typeVariant of typeVariants) {
+            rowSets.push(
+              adminIds.map((adminId) => ({
+                ...contentVariant(adminId),
+                ...appVariant,
+                ...linkVariant,
+                ...readVariant,
+                ...typeVariant,
+              }))
+            );
+          }
+        }
+      }
+    }
+  }
+  return rowSets;
 }
 
 async function insertNotifications(
   adminClient: SupabaseClient,
   rowsList: Array<Array<Record<string, unknown>>>
 ) {
-  let error: { message?: string } | null = null;
+  let error: { message?: string; code?: string } | null = null;
   for (const rows of rowsList) {
     const result = await adminClient
       .from("notifications")
       .insert(rows as never[]);
     error = result.error;
     if (!error) break;
+    if (!isSchemaMismatchError(error)) break;
   }
   return { error };
 }
@@ -106,8 +117,19 @@ async function resolveAdminUserIds(
     .eq("role_name", "super_admin");
 
   if (!roleError) {
-    for (const row of (roleRows || []) as Array<{ user_id: string }>) {
-      if (row.user_id) adminIds.add(row.user_id);
+    const roleUserIds = ((roleRows || []) as Array<{ user_id: string }>)
+      .map((row) => row.user_id)
+      .filter(Boolean);
+
+    const roleLookups = await Promise.all(
+      roleUserIds.map(async (userId) => {
+        const { data, error } = await adminClient.auth.admin.getUserById(userId);
+        return !error && data.user ? data.user.id : null;
+      })
+    );
+
+    for (const userId of roleLookups) {
+      if (userId) adminIds.add(userId);
     }
   }
 
@@ -200,7 +222,7 @@ export async function POST(req: NextRequest) {
     if (error) {
       console.error("[HR] admin notifications insert error:", error.message);
       return NextResponse.json(
-        { error: "Failed to create admin notifications" },
+        { error: error.message || "Failed to create admin notifications" },
         { status: 500 }
       );
     }

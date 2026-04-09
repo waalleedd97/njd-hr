@@ -50,50 +50,44 @@ function buildNotificationInsertCandidates(params: {
   descEn: string;
   href?: string;
 }) {
-  return [
-    {
-      user_id: params.userId,
-      app_name: "hr",
-      type: params.type,
-      title_ar: params.titleAr,
-      title_en: params.titleEn,
-      body_ar: params.descAr,
-      body_en: params.descEn,
-      link: params.href || null,
-      is_read: false,
-    },
-    {
-      user_id: params.userId,
-      app_name: "hr",
-      title_ar: params.titleAr,
-      title_en: params.titleEn,
-      body_ar: params.descAr,
-      body_en: params.descEn,
-      link: params.href || null,
-      is_read: false,
-    },
-    {
-      user_id: params.userId,
-      app_name: "hr",
-      type: params.type,
-      title_ar: params.titleAr,
-      title_en: params.titleEn,
-      desc_ar: params.descAr,
-      desc_en: params.descEn,
-      href: params.href || null,
-      read: false,
-    },
-    {
-      user_id: params.userId,
-      type: params.type,
-      title_ar: params.titleAr,
-      title_en: params.titleEn,
-      desc_ar: params.descAr,
-      desc_en: params.descEn,
-      href: params.href || null,
-      read: false,
-    },
+  const base = {
+    user_id: params.userId,
+    title_ar: params.titleAr,
+    title_en: params.titleEn,
+  };
+  const withApp = { app_name: "hr" };
+  const contentVariants = [
+    { body_ar: params.descAr, body_en: params.descEn },
+    { desc_ar: params.descAr, desc_en: params.descEn },
   ];
+  const linkVariants = [
+    { link: params.href || null },
+    { href: params.href || null },
+  ];
+  const readVariants = [{ is_read: false }, { read: false }];
+  const typeVariants = [{}, { type: params.type }];
+  const appVariants = [withApp, {}];
+
+  const candidates: Array<Record<string, unknown>> = [];
+  for (const appVariant of appVariants) {
+    for (const contentVariant of contentVariants) {
+      for (const linkVariant of linkVariants) {
+        for (const readVariant of readVariants) {
+          for (const typeVariant of typeVariants) {
+            candidates.push({
+              ...base,
+              ...appVariant,
+              ...contentVariant,
+              ...linkVariant,
+              ...readVariant,
+              ...typeVariant,
+            });
+          }
+        }
+      }
+    }
+  }
+  return candidates;
 }
 
 export function normalizeNotificationRow(
