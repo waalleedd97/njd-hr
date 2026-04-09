@@ -216,6 +216,21 @@ export default function LeavesPage() {
     const diffMs = end.getTime() - start.getTime();
     const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
 
+    // Validate against remaining balance (skip for unpaid leave)
+    if (formType !== "unpaid") {
+      const balance = leaveBalances.find((b) => b.typeKey === formType);
+      const remaining = balance ? balance.remaining : 0;
+      if (days > remaining) {
+        const typeName = t.lev[formType as keyof typeof t.lev] || formType;
+        setSubmitError(
+          isAr
+            ? `عدد الأيام المطلوبة (${days}) يتجاوز رصيدك المتبقي (${remaining} يوم) لـ${typeName}`
+            : `Requested days (${days}) exceeds your remaining balance (${remaining} days) for ${typeName}`
+        );
+        return;
+      }
+    }
+
     try {
       await store.submitLeaveRequest({
         employeeId: user.id,
