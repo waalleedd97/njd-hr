@@ -133,7 +133,7 @@ export default function PayrollPage() {
       employeePayroll: payroll,
       approvedAdvances: approved,
     };
-  }, []);
+  }, [employees, salaryAdvances, todayAttendance]);
 
   // For employees: filter to only their own data
   const visiblePayroll = useMemo(() => {
@@ -428,8 +428,22 @@ export default function PayrollPage() {
             {approvedAdvances.length > 0 ? (
               <div className="space-y-4">
                 {approvedAdvances.map((adv) => {
-                  const emp = employees.find((e) => e.id === adv.employeeId);
-                  if (!emp) return null;
+                  const emp = employees.find((e) => e.id === adv.employeeId) ?? {
+                    id: adv.employeeId,
+                    nameAr: "موظف غير مربوط",
+                    nameEn: "Unlinked Employee",
+                    positionAr: "",
+                    positionEn: "",
+                    department: "",
+                    email: "",
+                    phone: "",
+                    status: "active" as const,
+                    joinDate: "",
+                    salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+                    initials: (adv.employeeId[0] || "?").toUpperCase(),
+                    color: "bg-slate-500",
+                    profileCompleted: true,
+                  };
                   const name = isAr ? emp.nameAr : emp.nameEn;
                   return (
                     <div

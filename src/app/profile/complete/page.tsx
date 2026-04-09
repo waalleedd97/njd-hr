@@ -21,7 +21,8 @@ export default function CompleteProfilePage() {
   const store = useData();
   const isAr = lang === "ar";
 
-  const emp = store.employees.find((e) => e.id === user.id);
+  const emp = store.employees.find((e) => e.id === user.id || e.email === user.email);
+  const employeeId = emp?.id || user.id;
 
   const [fullNameAr, setFullNameAr] = useState("");
   const [fullNameEn, setFullNameEn] = useState("");
@@ -75,27 +76,32 @@ export default function CompleteProfilePage() {
     fullNameAr && fullNameEn && maritalStatus && dateOfBirth && mobileNumber &&
     nationalId && bankName && iban && salary && nationality;
 
-  const handleSubmit = () => {
-    if (!emp || !requiredFilled) return;
-    store.completeProfile(emp.id, {
-      fullNameAr,
-      fullNameEn,
-      nameAr: fullNameAr,
-      nameEn: fullNameEn,
-      maritalStatus,
-      dateOfBirth,
-      mobileNumber,
-      phone: mobileNumber,
-      nationalId,
-      bankName,
-      iban,
-      nationality,
-      salary: { basic: Number(salary), housing: 0, transport: 0, other: 0 },
-      initials: fullNameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
-      documents: documents as Employee["documents"],
-    });
-    // Update auth state to reflect completed profile
-    window.location.href = "/";
+  const handleSubmit = async () => {
+    if (!employeeId || !requiredFilled) return;
+
+    try {
+      await store.completeProfile(employeeId, {
+        fullNameAr,
+        fullNameEn,
+        nameAr: fullNameAr,
+        nameEn: fullNameEn,
+        maritalStatus,
+        dateOfBirth,
+        mobileNumber,
+        phone: mobileNumber,
+        nationalId,
+        bankName,
+        iban,
+        nationality,
+        salary: { basic: Number(salary), housing: 0, transport: 0, other: 0 },
+        initials: fullNameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
+        documents: documents as Employee["documents"],
+      });
+      // Force a fresh auth/profile sync after completion.
+      window.location.href = "/";
+    } catch (error) {
+      console.error("[HR] profile completion failed:", error);
+    }
   };
 
   const inputClass =

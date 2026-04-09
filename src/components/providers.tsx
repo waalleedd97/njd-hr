@@ -74,26 +74,13 @@ export interface UserProfile {
 
 /** Fallback admin emails — used when Supabase RPC is unavailable */
 const ADMIN_EMAILS = new Set(
-  allEmployees.filter((e) => e.department === "hr").map((e) => e.email)
+  ["waleed@njdstudio.net", "salman@njdstudio.net", ...allEmployees.filter((e) => e.department === "hr").map((e) => e.email)]
 );
 
 function resolveUser(email: string): { profile: UserProfile; role: UserRole } | null {
-  // Check static employees first
-  let emp = allEmployees.find(
+  const emp = allEmployees.find(
     (e) => e.email.toLowerCase() === email.toLowerCase()
   );
-  // Also check dynamic employees from data store (invited employees)
-  if (!emp) {
-    try {
-      const saved = localStorage.getItem("njd-hr-data");
-      if (saved) {
-        const data = JSON.parse(saved);
-        emp = (data.employees || []).find(
-          (e: { email: string }) => e.email.toLowerCase() === email.toLowerCase()
-        );
-      }
-    } catch { /* ignore */ }
-  }
   if (!emp) return null;
   const profile: UserProfile = {
     id: emp.id,
@@ -111,14 +98,15 @@ function resolveUser(email: string): { profile: UserProfile; role: UserRole } | 
 }
 
 const fallbackUser: UserProfile = {
-  id: "EMP001",
-  localId: "EMP001",
-  nameAr: "وليد",
-  nameEn: "Waleed",
-  positionAr: "مدير النظام",
-  positionEn: "System Administrator",
-  initials: "و",
-  email: "waleed@njdstudio.net",
+  id: "",
+  localId: "",
+  nameAr: "",
+  nameEn: "",
+  positionAr: "",
+  positionEn: "",
+  initials: "",
+  email: "",
+  profileCompleted: true,
 };
 
 interface AuthContextType {
@@ -157,60 +145,69 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
 
         // Accept any pending invitation for this email
         try {
-          const saved = localStorage.getItem("njd-hr-data");
-          if (saved) {
-            const data = JSON.parse(saved);
-            const hasInvitation = (data.pendingInvitations || []).some(
-              (i: { email: string; status: string }) =>
-                i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
-            );
-            if (hasInvitation) {
-              window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
-            }
+          const { data: invitation } = await supabase
+            .from("pending_invitations")
+            .select("id")
+            .eq("email", email)
+            .eq("status", "pending")
+            .maybeSingle();
+          if (invitation) {
+            window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
           }
         } catch { /* ignore */ }
 
         // Fetch role from Supabase RBAC (super_admin → admin, else employee)
         let supabaseRole: UserRole = "employee";
+        let profileData: {
+          name_ar?: string;
+          name_en?: string;
+          full_name_ar?: string;
+          full_name_en?: string;
+          job_title_ar?: string;
+          profile_completed?: boolean;
+          department?: string;
+        } | null = null;
         try {
           const { data: roleData } = await supabase.rpc("get_user_role", { uid: userId });
           if (roleData === "super_admin") {
             supabaseRole = "admin";
           }
-        } catch {
-          // RPC not available — fall back to local email-based check
-          supabaseRole = ADMIN_EMAILS.has(email) ? "admin" : "employee";
-        }
+        } catch { /* RPC may be unavailable */ }
 
-        // Fetch real name from Supabase profiles table
-        let nameAr = "";
-        let nameEn = "";
         try {
           const { data: prof } = await supabase
             .from("profiles")
-            .select("name_ar, name_en, full_name_ar, full_name_en")
+            .select("name_ar, name_en, full_name_ar, full_name_en, job_title_ar, profile_completed, department")
             .eq("id", userId)
             .single();
           if (prof) {
-            nameAr = prof.full_name_ar || prof.name_ar || "";
-            nameEn = prof.full_name_en || prof.name_en || "";
+            profileData = prof;
           }
         } catch { /* profiles table may not exist yet */ }
+
+        if (supabaseRole !== "admin") {
+          supabaseRole =
+            profileData?.department === "hr" || ADMIN_EMAILS.has(email)
+              ? "admin"
+              : "employee";
+        }
 
         // Fall back to local employee data, then to email prefix
         const resolved = resolveUser(email);
         const fallbackName = session.user.user_metadata?.full_name || email.split("@")[0];
+        const nameAr = profileData?.full_name_ar || profileData?.name_ar || "";
+        const nameEn = profileData?.full_name_en || profileData?.name_en || "";
 
         setUser({
           id: userId,  // Always Supabase UUID — used for all data lookups
-          localId: resolved?.profile.id || userId.slice(0, 8).toUpperCase(),
+          localId: resolved?.profile.localId || userId.slice(0, 8).toUpperCase(),
           nameAr: nameAr || resolved?.profile.nameAr || fallbackName,
           nameEn: nameEn || resolved?.profile.nameEn || fallbackName,
-          positionAr: resolved?.profile.positionAr || (supabaseRole === "admin" ? "مدير النظام" : "موظف"),
+          positionAr: profileData?.job_title_ar || resolved?.profile.positionAr || (supabaseRole === "admin" ? "مدير النظام" : "موظف"),
           positionEn: resolved?.profile.positionEn || (supabaseRole === "admin" ? "System Administrator" : "Employee"),
           initials: (nameAr || resolved?.profile.nameAr || fallbackName).charAt(0).toUpperCase(),
           email,
-          profileCompleted: resolved?.profile.profileCompleted ?? true,
+          profileCompleted: profileData?.profile_completed ?? resolved?.profile.profileCompleted ?? true,
         });
         setRole(supabaseRole);
         setIsAuthenticated(true);

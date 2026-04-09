@@ -201,7 +201,7 @@ interface DataContextType extends DataState {
 
   // Profile completion
   acceptInvitation: (email: string) => void;
-  completeProfile: (id: string, data: Partial<Employee>) => void;
+  completeProfile: (id: string, data: Partial<Employee>) => Promise<void>;
 
   // Payroll
   processPayroll: () => void;
@@ -301,8 +301,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
         endDate: row.end_date as string,
         days: row.days as number,
         status: row.status as "pending" | "approved" | "rejected",
-        reasonAr: (row.reason as string) || "",
-        reasonEn: (row.reason as string) || "",
+        reasonAr: (row.reason_ar as string) || (row.reason as string) || "",
+        reasonEn: (row.reason_en as string) || (row.reason as string) || "",
       }));
       setState((prev) => ({ ...prev, leaveRequests: mapped }));
     } catch { /* */ }
@@ -459,32 +459,84 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!users) return;
 
         setState((prev) => {
-          const existingEmails = new Set(prev.employees.map((e) => e.email.toLowerCase()));
-          const newEmployees: Employee[] = [];
+          const today = new Date().toISOString().split("T")[0];
+          const incomingEmails = new Set(
+            users
+              .map((u) => (u.email || "").toLowerCase())
+              .filter(Boolean)
+          );
+          const incomingIds = new Set(users.map((u) => u.user_id));
 
-          for (const u of users) {
+          const retainedEmployees = prev.employees.filter((emp) => {
+            const email = emp.email.toLowerCase();
+            if (incomingIds.has(emp.id)) return false;
+            if (email && incomingEmails.has(email)) return false;
+            return true;
+          });
+
+          const syncedEmployees: Employee[] = users.map((u) => {
             const email = (u.email || "").toLowerCase();
-            if (existingEmails.has(email)) continue;
-            newEmployees.push({
-              id: u.user_id,
-              nameAr: u.name_ar || u.full_name_ar || u.email.split("@")[0],
-              nameEn: u.name_en || u.full_name_en || u.email.split("@")[0],
-              positionAr: u.job_title_ar || (u.role_name === "super_admin" ? "مدير النظام" : "موظف"),
-              positionEn: u.role_name === "super_admin" ? "System Administrator" : "Employee",
-              department: u.department || "",
-              email: u.email,
-              phone: u.phone || "",
-              status: "active",
-              joinDate: u.created_at ? u.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
-              salary: { basic: 0, housing: 0, transport: 0, other: 0 },
-              initials: (u.name_ar || u.name_en || u.email).charAt(0).toUpperCase(),
-              color: "bg-primary",
-              profileCompleted: u.profile_completed ?? false,
-            });
-          }
+            const existing = prev.employees.find(
+              (emp) => emp.id === u.user_id || (email && emp.email.toLowerCase() === email)
+            );
+            const fallbackLabel = u.email
+              ? u.email.split("@")[0]
+              : u.user_id.slice(0, 8).toUpperCase();
+            const resolvedNameAr =
+              u.name_ar ||
+              u.full_name_ar ||
+              existing?.nameAr ||
+              existing?.fullNameAr ||
+              fallbackLabel;
+            const resolvedNameEn =
+              u.name_en ||
+              u.full_name_en ||
+              existing?.nameEn ||
+              existing?.fullNameEn ||
+              fallbackLabel;
 
-          if (newEmployees.length === 0) return prev;
-          return { ...prev, employees: [...prev.employees, ...newEmployees] };
+            return {
+              ...(existing ?? {}),
+              id: u.user_id,
+              nameAr: resolvedNameAr,
+              nameEn: resolvedNameEn,
+              fullNameAr: u.full_name_ar || existing?.fullNameAr || resolvedNameAr,
+              fullNameEn: u.full_name_en || existing?.fullNameEn || resolvedNameEn,
+              positionAr:
+                u.job_title_ar ||
+                existing?.positionAr ||
+                (u.role_name === "super_admin" ? "مدير النظام" : "موظف"),
+              positionEn:
+                existing?.positionEn ||
+                (u.role_name === "super_admin" ? "System Administrator" : "Employee"),
+              department: u.department || existing?.department || "",
+              email: u.email || existing?.email || "",
+              phone: u.phone || existing?.phone || existing?.mobileNumber || "",
+              status: existing?.status || "active",
+              joinDate: u.created_at
+                ? u.created_at.split("T")[0]
+                : existing?.joinDate || today,
+              salary: existing?.salary || {
+                basic: 0,
+                housing: 0,
+                transport: 0,
+                other: 0,
+              },
+              initials:
+                existing?.initials ||
+                resolvedNameAr.charAt(0).toUpperCase() ||
+                resolvedNameEn.charAt(0).toUpperCase() ||
+                fallbackLabel.charAt(0).toUpperCase(),
+              color: existing?.color || "bg-primary",
+              profileCompleted:
+                u.profile_completed ?? existing?.profileCompleted ?? false,
+            };
+          });
+
+          return {
+            ...prev,
+            employees: [...retainedEmployees, ...syncedEmployees],
+          };
         });
       } catch { /* */ }
     }
@@ -538,18 +590,22 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     const { error } = await supabase.from("leave_requests").insert({
       employee_id: userId,
-      type: req.typeKey,
+      type_key: req.typeKey,
       start_date: req.startDate,
       end_date: req.endDate,
       days: req.days,
-      reason: req.reasonAr || req.reasonEn,
+      reason_ar: req.reasonAr,
+      reason_en: req.reasonEn,
       status: "pending",
     });
-    if (error) console.error("[HR] leave_requests insert error:", error.message, error.details);
+    if (error) {
+      console.error("[HR] leave_requests insert error:", error.message, error.details);
+      throw error;
+    }
 
     await refreshLeaveRequests();
 
-    notifyAdmins({
+    await notifyAdmins({
       type: "leave",
       titleAr: "طلب إجازة جديد",
       titleEn: "New Leave Request",
@@ -602,7 +658,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const submitEmployeeRequest = useCallback(async (req: Omit<EmpReq, "id">) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("employee_requests").insert({
+    const { error } = await supabase.from("employee_requests").insert({
       employee_id: userId,
       type_key: req.typeKey,
       date: req.date || new Date().toISOString().split("T")[0],
@@ -610,6 +666,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       details_ar: req.detailsAr,
       details_en: req.detailsEn,
     });
+    if (error) throw error;
 
     await refreshEmployeeRequests();
   }, [refreshEmployeeRequests]);
@@ -619,7 +676,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const submitAdvance = useCallback(async (adv: Omit<SalaryAdvance, "id">) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("salary_advances").insert({
+    const { error } = await supabase.from("salary_advances").insert({
       employee_id: userId,
       amount: adv.amount,
       reason_ar: adv.reasonAr,
@@ -631,6 +688,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       remaining_balance: adv.amount,
       paid_months: 0,
     });
+    if (error) throw error;
 
     await refreshSalaryAdvances();
   }, [refreshSalaryAdvances]);
@@ -640,7 +698,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const submitAdjustment = useCallback(async (adj: Omit<AttendanceAdjustment, "id">) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("attendance_adjustments").insert({
+    const { error } = await supabase.from("attendance_adjustments").insert({
       employee_id: userId,
       date: adj.date,
       original_in: adj.originalIn || null,
@@ -651,6 +709,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       reason_en: adj.reasonEn,
       status: "pending",
     });
+    if (error) throw error;
 
     await refreshAttendanceAdjustments();
   }, [refreshAttendanceAdjustments]);
@@ -820,10 +879,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
         (i) => i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
       );
       if (!inv) return p;
+
+      // Update invitation status in Supabase even if the employee already exists.
+      supabase.from("pending_invitations").update({ status: "expired" }).eq("id", inv.id);
+
       const alreadyExists = p.employees.some(
         (e) => e.email.toLowerCase() === email.toLowerCase()
       );
-      if (alreadyExists) return p;
+      if (alreadyExists) {
+        return {
+          ...p,
+          pendingInvitations: p.pendingInvitations.map((i) =>
+            i.id === inv.id ? { ...i, status: "expired" as const } : i
+          ),
+        };
+      }
       const colors = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-purple-500", "bg-cyan-500", "bg-orange-500", "bg-teal-500", "bg-pink-500", "bg-indigo-500"];
       const newEmp: Employee = {
         id: genId("EMP"),
@@ -842,9 +912,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         profileCompleted: false,
       };
 
-      // Update invitation status in Supabase
-      supabase.from("pending_invitations").update({ status: "expired" }).eq("id", inv.id);
-
       return {
         ...p,
         employees: [...p.employees, newEmp],
@@ -856,7 +923,23 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeProfile = useCallback(
-    (id: string, data: Partial<Employee>) => {
+    async (id: string, data: Partial<Employee>) => {
+      const fullNameAr = data.fullNameAr || data.nameAr || "";
+      const fullNameEn = data.fullNameEn || data.nameEn || "";
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          name_ar: data.nameAr || fullNameAr,
+          name_en: data.nameEn || fullNameEn,
+          full_name_ar: fullNameAr,
+          full_name_en: fullNameEn,
+          phone: data.phone || data.mobileNumber || null,
+          profile_completed: true,
+        })
+        .eq("id", id);
+
+      if (error) throw error;
+
       setState((p) => ({
         ...p,
         employees: p.employees.map((e) =>

@@ -132,6 +132,23 @@ export default function RequestsPage() {
 
   const employees = store.employees;
   const getEmployee = (id: string) => employees.find((e: Employee) => e.id === id || e.email === id);
+  const resolveEmployee = (id: string): Employee =>
+    getEmployee(id) ?? {
+      id,
+      nameAr: "موظف غير مربوط",
+      nameEn: "Unlinked Employee",
+      positionAr: "",
+      positionEn: "",
+      department: "",
+      email: id.includes("@") ? id : "",
+      phone: "",
+      status: "active",
+      joinDate: "",
+      salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+      initials: (id[0] || "?").toUpperCase(),
+      color: "bg-slate-500",
+      profileCompleted: true,
+    };
 
   // Build unified requests list
   const allRequests: UnifiedRequest[] = useMemo(() => {
@@ -193,7 +210,7 @@ export default function RequestsPage() {
 
     // Role-based filtering: non-admin sees only their own requests
     if (!isAdmin) {
-      list = list.filter((req) => req.employeeId === user.id);
+      list = list.filter((req) => req.employeeId === user.id || req.employeeId === user.email);
     }
 
     return list.filter((req) => {
@@ -201,7 +218,7 @@ export default function RequestsPage() {
       if (statusFilter !== "all" && req.status !== statusFilter) return false;
       return true;
     });
-  }, [allRequests, typeFilter, statusFilter, isAdmin, user.id]);
+  }, [allRequests, typeFilter, statusFilter, isAdmin, user.email, user.id]);
 
   const resetForm = () => {
     setNewReqType("leaveRequest");
@@ -218,40 +235,45 @@ export default function RequestsPage() {
   const handleSubmit = async () => {
     const today = new Date().toISOString().split("T")[0];
 
-    if (newReqType === "attendanceAdjust") {
-      store.submitAdjustment({
-        employeeId: user.id,
-        date: adjDate || today,
-        originalIn: adjOriginalIn,
-        requestedIn: adjRequestedIn,
-        originalOut: adjOriginalOut,
-        requestedOut: adjRequestedOut,
-        reasonAr: newReqDesc,
-        reasonEn: newReqDesc,
-        status: "pending",
-      });
-    } else if (newReqType === "salaryAdvance") {
-      store.submitAdvance({
-        employeeId: user.id,
-        amount: advAmount,
-        reasonAr: newReqDesc,
-        reasonEn: newReqDesc,
-        requestDate: today,
-        status: "pending",
-        repaymentMonths: advRepaymentMonths,
-        monthlyDeduction: calculatedMonthlyDeduction,
-        remainingBalance: advAmount,
-        paidMonths: 0,
-      });
-    } else {
-      store.submitEmployeeRequest({
-        employeeId: user.id,
-        typeKey: newReqType,
-        date: today,
-        status: "pending",
-        detailsAr: newReqDesc,
-        detailsEn: newReqDesc,
-      });
+    try {
+      if (newReqType === "attendanceAdjust") {
+        await store.submitAdjustment({
+          employeeId: user.id,
+          date: adjDate || today,
+          originalIn: adjOriginalIn,
+          requestedIn: adjRequestedIn,
+          originalOut: adjOriginalOut,
+          requestedOut: adjRequestedOut,
+          reasonAr: newReqDesc,
+          reasonEn: newReqDesc,
+          status: "pending",
+        });
+      } else if (newReqType === "salaryAdvance") {
+        await store.submitAdvance({
+          employeeId: user.id,
+          amount: advAmount,
+          reasonAr: newReqDesc,
+          reasonEn: newReqDesc,
+          requestDate: today,
+          status: "pending",
+          repaymentMonths: advRepaymentMonths,
+          monthlyDeduction: calculatedMonthlyDeduction,
+          remainingBalance: advAmount,
+          paidMonths: 0,
+        });
+      } else {
+        await store.submitEmployeeRequest({
+          employeeId: user.id,
+          typeKey: newReqType,
+          date: today,
+          status: "pending",
+          detailsAr: newReqDesc,
+          detailsEn: newReqDesc,
+        });
+      }
+    } catch (error) {
+      console.error("[HR] request submission failed:", error);
+      return;
     }
 
     setDialogOpen(false);
@@ -379,8 +401,7 @@ export default function RequestsPage() {
                 </tr>
               ) : (
                 filteredRequests.map((req) => {
-                  const emp = getEmployee(req.employeeId);
-                  if (!emp) return null;
+                  const emp = resolveEmployee(req.employeeId);
                   return (
                     <tr
                       key={req.id}

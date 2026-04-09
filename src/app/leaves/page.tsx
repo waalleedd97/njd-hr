@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
-import { saudiHolidays } from "@/lib/mock-data";
+import { saudiHolidays, type Employee } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -139,12 +139,29 @@ export default function LeavesPage() {
   const { leaveBalances, leaveRequests: allLeaveRequests } = store;
   const employees = store.employees;
   const getEmployee = (id: string) => employees.find((e) => e.id === id || e.email === id);
+  const resolveEmployee = (id: string): Employee =>
+    getEmployee(id) ?? {
+      id,
+      nameAr: "موظف غير مربوط",
+      nameEn: "Unlinked Employee",
+      positionAr: "",
+      positionEn: "",
+      department: "",
+      email: id.includes("@") ? id : "",
+      phone: "",
+      status: "active",
+      joinDate: "",
+      salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+      initials: (id[0] || "?").toUpperCase(),
+      color: "bg-slate-500",
+      profileCompleted: true,
+    };
   const isAr = lang === "ar";
 
   // Employees see only their own leave records
   const leaveRequests = isAdmin
     ? allLeaveRequests
-    : allLeaveRequests.filter((lr) => lr.employeeId === user.id);
+    : allLeaveRequests.filter((lr) => lr.employeeId === user.id || lr.employeeId === user.email);
 
   const [activeTab, setActiveTab] = useState<TabKey>("balance");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -186,7 +203,7 @@ export default function LeavesPage() {
 
   const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!formStart || !formEnd) return;
 
@@ -197,16 +214,21 @@ export default function LeavesPage() {
     const diffMs = end.getTime() - start.getTime();
     const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
 
-    store.submitLeaveRequest({
-      employeeId: user.id ?? "EMP003",
-      typeKey: formType,
-      startDate: formStart,
-      endDate: formEnd,
-      days,
-      status: "pending",
-      reasonAr: formReason,
-      reasonEn: formReason,
-    });
+    try {
+      await store.submitLeaveRequest({
+        employeeId: user.id,
+        typeKey: formType,
+        startDate: formStart,
+        endDate: formEnd,
+        days,
+        status: "pending",
+        reasonAr: formReason,
+        reasonEn: formReason,
+      });
+    } catch (error) {
+      console.error("[HR] leave request submission failed:", error);
+      return;
+    }
 
     // Show success, then auto-close after 5s
     setSubmitSuccess(true);
@@ -457,8 +479,7 @@ export default function LeavesPage() {
               </thead>
               <tbody>
                 {leaveRequests.map((lr) => {
-                  const emp = getEmployee(lr.employeeId);
-                  if (!emp) return null;
+                  const emp = resolveEmployee(lr.employeeId);
                   const levKey = lr.typeKey as keyof typeof t.lev;
                   const statusKey = lr.status as keyof typeof t.statuses;
 
@@ -583,8 +604,7 @@ export default function LeavesPage() {
                     lr.status === "approved" &&
                     isDateInRange(wd, lr.startDate, lr.endDate)
                 )
-                .map((lr) => getEmployee(lr.employeeId))
-                .filter(Boolean);
+                .map((lr) => resolveEmployee(lr.employeeId));
 
               const holiday = getHolidayForDate(wd);
 
@@ -614,7 +634,7 @@ export default function LeavesPage() {
                   )}
                   {onLeave.map((emp) => (
                     <div
-                      key={emp!.id}
+                      key={emp.id}
                       className="flex items-center gap-1 rounded-md bg-accent/50 px-1.5 py-1"
                     >
                       <Avatar className="w-5 h-5" size="sm">

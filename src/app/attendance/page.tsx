@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData, haversineDistance } from "@/lib/data-store";
 import {
-  employees,
   calcDuration,
   geofenceConfig,
   penaltyRules,
@@ -249,6 +248,7 @@ export default function AttendancePage() {
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
   const store = useData();
+  const employees = store.employees;
   const departments = store.departments;
   const isAr = lang === "ar";
   const [selectedDept, setSelectedDept] = useState("all");
@@ -792,10 +792,23 @@ export default function AttendancePage() {
             </thead>
             <tbody>
               {filteredRecords.map((record) => {
-                const emp = employees.find(
-                  (e) => e.id === record.employeeId
-                );
-                if (!emp) return null;
+                const emp =
+                  employees.find((e) => e.id === record.employeeId) ?? {
+                    id: record.employeeId,
+                    nameAr: "موظف غير مربوط",
+                    nameEn: "Unlinked Employee",
+                    positionAr: "",
+                    positionEn: "",
+                    department: "",
+                    email: "",
+                    phone: "",
+                    status: "active" as const,
+                    joinDate: "",
+                    salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+                    initials: (record.employeeId[0] || "?").toUpperCase(),
+                    color: "bg-slate-500",
+                    profileCompleted: true,
+                  };
 
                 const name = isAr ? emp.nameAr : emp.nameEn;
                 const deptName = departments[emp.department]?.[lang] ?? emp.department;
