@@ -3,11 +3,11 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://iauulqfgrbegwcnfatmx.supabase.co";
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+// Use the same Landing project credentials as the browser client.
+// Do not prefer env overrides here, otherwise the route can authenticate
+// against a different Supabase project than the rest of the HR app.
+const SUPABASE_URL = "https://iauulqfgrbegwcnfatmx.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY =
   "sb_publishable_Dvk_dI_FY6oxhyOw7__06Q_wzDmwguJ";
 const ADMIN_EMAILS = new Set([
   "waleed@njdstudio.net",
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid href" }, { status: 400 });
     }
 
-    const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    const authClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
       auth: { persistSession: false },
     });
     const {

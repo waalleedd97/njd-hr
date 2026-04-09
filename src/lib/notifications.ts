@@ -32,6 +32,15 @@ const DEFAULT_PREFS: NotificationPreferences = {
   payroll_updates: true,
 };
 
+function isSchemaMismatchError(error: { message?: string; code?: string } | null) {
+  if (!error) return false;
+  return (
+    error.code === "42703" ||
+    error.message?.includes("column") === true ||
+    error.message?.includes("schema cache") === true
+  );
+}
+
 function buildNotificationInsertCandidates(params: {
   userId: string;
   type: SupaNotification["type"];
@@ -121,6 +130,7 @@ export async function createNotification(params: {
     const result = await supabase.from("notifications").insert(candidate);
     error = result.error;
     if (!error) break;
+    if (!isSchemaMismatchError(error)) break;
   }
   if (error) console.error("[HR] createNotification error:", error.message);
   return { error };
@@ -161,27 +171,9 @@ export async function notifyAdmins(params: {
         "[HR] notifyAdmins — API route error:",
         errorBody.error || response.statusText
       );
-    }
-
-    const { data: admins, error } = await supabase
-      .from("user_roles")
-      .select("user_id")
-      .eq("role_name", "super_admin");
-
-    if (error) {
-      console.error("[HR] notifyAdmins — user_roles query error:", error.message);
       return;
     }
-    if (!admins || admins.length === 0) {
-      console.warn("[HR] notifyAdmins — no super_admin users found in user_roles table");
-      return;
-    }
-
-    await Promise.all(
-      admins.map((a) =>
-        createNotification({ ...params, userId: a.user_id })
-      )
-    );
+    console.warn("[HR] notifyAdmins — skipped because no access token was available");
   } catch (e) {
     console.error("[HR] notifyAdmins error:", e);
   }
