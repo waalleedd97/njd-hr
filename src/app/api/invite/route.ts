@@ -7,10 +7,17 @@ export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "RESEND_API_KEY not configured" }, { status: 500 });
+      return NextResponse.json({ error: "RESEND_API_KEY not configured" }, { status: 503 });
     }
     const resend = new Resend(apiKey);
-    const { email, nameAr, nameEn, positionAr, positionEn, department } = await req.json();
+
+    let body;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const { email, nameAr, nameEn, positionAr, positionEn, department } = body;
 
     if (!email || !nameAr) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
