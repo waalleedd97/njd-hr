@@ -271,12 +271,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         .eq("date", today)
         .order("created_at", { ascending: false });
       if (!data) return;
+      // Supabase returns TIME as "HH:MM:SS" — trim to "HH:MM"
+      const trimTime = (t: unknown) => t ? String(t).slice(0, 5) : null;
       const mapped: AttRecord[] = data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
         employeeId: r.employee_id as string,
         date: r.date as string,
-        checkIn: r.check_in as string | null,
-        checkOut: r.check_out as string | null,
+        checkIn: trimTime(r.check_in),
+        checkOut: trimTime(r.check_out),
         status: ((r.status as string) || "present") as AttRecord["status"],
       }));
       setState((prev) => ({ ...prev, todayAttendance: mapped }));
@@ -285,10 +287,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshLeaveRequests = useCallback(async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("leave_requests")
         .select("*")
         .order("created_at", { ascending: false });
+      if (error) { console.error("[HR] leave_requests fetch error:", error.message); return; }
       if (!data) return;
       const mapped: LeaveReq[] = data.map((row: Record<string, unknown>) => ({
         id: row.id as string,
@@ -533,7 +536,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("leave_requests").insert({
+    const { error } = await supabase.from("leave_requests").insert({
       employee_id: userId,
       type: req.typeKey,
       start_date: req.startDate,
@@ -542,6 +545,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       reason: req.reasonAr || req.reasonEn,
       status: "pending",
     });
+    if (error) console.error("[HR] leave_requests insert error:", error.message, error.details);
 
     await refreshLeaveRequests();
 
