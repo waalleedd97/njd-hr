@@ -603,18 +603,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
     const userId = await getSessionUserId();
 
-    const { error } = await supabase.from("leave_requests").insert({
+    // Try with 'type' column first (migration 004 schema), fall back to 'type_key' (old schema)
+    let { error } = await supabase.from("leave_requests").insert({
       employee_id: userId,
-      type_key: req.typeKey,
+      type: req.typeKey,
       start_date: req.startDate,
       end_date: req.endDate,
       days: req.days,
-      reason_ar: req.reasonAr,
-      reason_en: req.reasonEn,
+      reason: req.reasonAr || req.reasonEn,
       status: "pending",
     });
+    if (error && (error.message.includes("type") || error.message.includes("column"))) {
+      // Fallback: old schema uses type_key + reason_ar/reason_en
+      const retry = await supabase.from("leave_requests").insert({
+        employee_id: userId,
+        type_key: req.typeKey,
+        start_date: req.startDate,
+        end_date: req.endDate,
+        days: req.days,
+        reason_ar: req.reasonAr,
+        reason_en: req.reasonEn,
+        status: "pending",
+      });
+      error = retry.error;
+    }
     if (error) {
-      console.error("[HR] leave_requests insert error:", error.message, error.details);
+      console.error("[HR] leave_requests insert error:", error.message, error.details, error.hint);
       throw error;
     }
 

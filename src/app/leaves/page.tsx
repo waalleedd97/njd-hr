@@ -167,6 +167,7 @@ export default function LeavesPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   // form state
+  const [submitError, setSubmitError] = useState("");
   const [formType, setFormType] = useState("annual");
   const [formStart, setFormStart] = useState("");
   const [formEnd, setFormEnd] = useState("");
@@ -206,6 +207,7 @@ export default function LeavesPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!formStart || !formEnd) return;
+    setSubmitError("");
 
     // Calculate days between start and end
     const start = new Date(formStart + "T00:00:00");
@@ -227,6 +229,7 @@ export default function LeavesPage() {
       });
     } catch (error) {
       console.error("[HR] leave request submission failed:", error);
+      setSubmitError(isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again.");
       return;
     }
 
@@ -745,11 +748,15 @@ export default function LeavesPage() {
               />
             </div>
 
+            {submitError && (
+              <p className="text-sm text-red-500 font-medium">{submitError}</p>
+            )}
+
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setDialogOpen(false)}
+                onClick={() => { setDialogOpen(false); setSubmitError(""); }}
               >
                 {t.common.cancel}
               </Button>
