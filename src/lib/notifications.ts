@@ -43,7 +43,8 @@ export async function createNotification(params: {
   descEn: string;
   href?: string;
 }) {
-  const { error } = await supabase.from("notifications").insert({
+  // Try with app_name first (Landing Page schema), fall back without it (old schema)
+  let { error } = await supabase.from("notifications").insert({
     user_id: params.userId,
     app_name: "hr",
     type: params.type,
@@ -54,6 +55,20 @@ export async function createNotification(params: {
     href: params.href || null,
     read: false,
   });
+  if (error && (error.message.includes("app_name") || error.message.includes("column") || error.code === "42703")) {
+    const retry = await supabase.from("notifications").insert({
+      user_id: params.userId,
+      type: params.type,
+      title_ar: params.titleAr,
+      title_en: params.titleEn,
+      desc_ar: params.descAr,
+      desc_en: params.descEn,
+      href: params.href || null,
+      read: false,
+    });
+    error = retry.error;
+  }
+  if (error) console.error("[HR] createNotification error:", error.message);
   return { error };
 }
 
@@ -67,27 +82,36 @@ export async function notifyAdmins(params: {
   href?: string;
 }) {
   try {
-    const { data: admins } = await supabase
+    const { data: admins, error } = await supabase
       .from("user_roles")
       .select("user_id")
       .eq("role_name", "super_admin");
 
-    if (admins) {
-      await Promise.all(
-        admins.map((a) =>
-          createNotification({ ...params, userId: a.user_id })
-        )
-      );
+    if (error) {
+      console.error("[HR] notifyAdmins — user_roles query error:", error.message);
+      return;
     }
-  } catch {
-    // Graceful fallback if table doesn't exist
+    if (!admins || admins.length === 0) {
+      console.warn("[HR] notifyAdmins — no super_admin users found in user_roles table");
+      return;
+    }
+
+    await Promise.all(
+      admins.map((a) =>
+        createNotification({ ...params, userId: a.user_id })
+      )
+    );
+  } catch (e) {
+    console.error("[HR] notifyAdmins error:", e);
   }
 }
 
 // ─── Fetch Notifications ─────────────────────────────────────────────
 
 export async function fetchNotifications(userId: string) {
-  const { data, error } = await supabase
+  // Try with app_name filter first, fall back without it
+  // eslint-disable-next-line prefer-const
+  let { data, error } = await supabase
     .from("notifications")
     .select("*")
     .eq("user_id", userId)
@@ -95,7 +119,17 @@ export async function fetchNotifications(userId: string) {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (error) return [];
+  if (error) {
+    // app_name column may not exist — retry without it
+    const retry = await supabase
+      .from("notifications")
+      .select("*")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    data = retry.data;
+  }
+
   return (data || []) as SupaNotification[];
 }
 
