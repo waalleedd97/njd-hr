@@ -82,6 +82,33 @@ export async function notifyAdmins(params: {
   href?: string;
 }) {
   try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (session?.access_token) {
+      const response = await fetch("/api/notifications/admins", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (response.ok) {
+        return;
+      }
+
+      const errorBody = await response
+        .json()
+        .catch(() => ({ error: "Unknown notification route error" }));
+      console.error(
+        "[HR] notifyAdmins — API route error:",
+        errorBody.error || response.statusText
+      );
+    }
+
     const { data: admins, error } = await supabase
       .from("user_roles")
       .select("user_id")
