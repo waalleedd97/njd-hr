@@ -49,6 +49,7 @@ function buildNotificationInsertCandidates(params: {
   descAr: string;
   descEn: string;
   href?: string;
+  createdBy?: string;
 }) {
   const base = {
     user_id: params.userId,
@@ -64,6 +65,9 @@ function buildNotificationInsertCandidates(params: {
     { link: params.href || null },
     { href: params.href || null },
   ];
+  const createdByVariants = params.createdBy
+    ? [{ created_by: params.createdBy }, {}]
+    : [{}];
   const readVariants = [{ is_read: false }, { read: false }];
   const typeVariants = [{}, { type: params.type }];
   const appVariants = [withApp, {}];
@@ -72,16 +76,19 @@ function buildNotificationInsertCandidates(params: {
   for (const appVariant of appVariants) {
     for (const contentVariant of contentVariants) {
       for (const linkVariant of linkVariants) {
-        for (const readVariant of readVariants) {
-          for (const typeVariant of typeVariants) {
-            candidates.push({
-              ...base,
-              ...appVariant,
-              ...contentVariant,
-              ...linkVariant,
-              ...readVariant,
-              ...typeVariant,
-            });
+        for (const createdByVariant of createdByVariants) {
+          for (const readVariant of readVariants) {
+            for (const typeVariant of typeVariants) {
+              candidates.push({
+                ...base,
+                ...appVariant,
+                ...contentVariant,
+                ...linkVariant,
+                ...createdByVariant,
+                ...readVariant,
+                ...typeVariant,
+              });
+            }
           }
         }
       }
@@ -119,8 +126,15 @@ export async function createNotification(params: {
   descEn: string;
   href?: string;
 }) {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
   let error: { message?: string } | null = null;
-  for (const candidate of buildNotificationInsertCandidates(params)) {
+  for (const candidate of buildNotificationInsertCandidates({
+    ...params,
+    createdBy: session?.user?.id,
+  })) {
     const result = await supabase.from("notifications").insert(candidate);
     error = result.error;
     if (!error) break;
@@ -163,7 +177,13 @@ export async function notifyAdmins(params: {
         .catch(() => ({ error: "Unknown notification route error" }));
       console.error(
         "[HR] notifyAdmins — API route error:",
-        errorBody.error || response.statusText
+        {
+          status: response.status,
+          error: errorBody.error || response.statusText,
+          code: errorBody.code || null,
+          details: errorBody.details || null,
+          hint: errorBody.hint || null,
+        }
       );
       return;
     }

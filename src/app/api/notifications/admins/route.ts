@@ -41,7 +41,8 @@ function isSchemaMismatchError(error: { message?: string; code?: string } | null
 
 function buildNotificationRows(
   adminIds: string[],
-  body: AdminNotificationPayload
+  body: AdminNotificationPayload,
+  createdBy: string
 ) {
   const contentVariants = [
     (adminId: string) => ({
@@ -64,6 +65,7 @@ function buildNotificationRows(
     { href: body.href || null },
   ];
   const readVariants = [{ is_read: false }, { read: false }];
+  const createdByVariants = [{ created_by: createdBy }, {}];
   const typeVariants = [{}, { type: body.type }];
   const appVariants = [{ app_name: "hr" }, {}];
 
@@ -71,17 +73,20 @@ function buildNotificationRows(
   for (const appVariant of appVariants) {
     for (const contentVariant of contentVariants) {
       for (const linkVariant of linkVariants) {
-        for (const readVariant of readVariants) {
-          for (const typeVariant of typeVariants) {
-            rowSets.push(
-              adminIds.map((adminId) => ({
-                ...contentVariant(adminId),
-                ...appVariant,
-                ...linkVariant,
-                ...readVariant,
-                ...typeVariant,
-              }))
-            );
+        for (const createdByVariant of createdByVariants) {
+          for (const readVariant of readVariants) {
+            for (const typeVariant of typeVariants) {
+              rowSets.push(
+                adminIds.map((adminId) => ({
+                  ...contentVariant(adminId),
+                  ...appVariant,
+                  ...linkVariant,
+                  ...createdByVariant,
+                  ...readVariant,
+                  ...typeVariant,
+                }))
+              );
+            }
           }
         }
       }
@@ -94,7 +99,9 @@ async function insertNotifications(
   adminClient: SupabaseClient,
   rowsList: Array<Array<Record<string, unknown>>>
 ) {
-  let error: { message?: string; code?: string } | null = null;
+  let error:
+    | { message?: string; code?: string; details?: string; hint?: string }
+    | null = null;
   for (const rows of rowsList) {
     const result = await adminClient
       .from("notifications")
@@ -217,12 +224,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rowCandidates = buildNotificationRows(Array.from(adminIds), body);
+    const rowCandidates = buildNotificationRows(Array.from(adminIds), body, user.id);
     const { error } = await insertNotifications(adminClient, rowCandidates);
     if (error) {
-      console.error("[HR] admin notifications insert error:", error.message);
+      console.error(
+        "[HR] admin notifications insert error:",
+        error.code,
+        error.message,
+        error.details,
+        error.hint
+      );
       return NextResponse.json(
-        { error: error.message || "Failed to create admin notifications" },
+        {
+          error: error.message || "Failed to create admin notifications",
+          code: error.code || null,
+          details: error.details || null,
+          hint: error.hint || null,
+        },
         { status: 500 }
       );
     }
