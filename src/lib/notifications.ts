@@ -32,70 +32,7 @@ const DEFAULT_PREFS: NotificationPreferences = {
   payroll_updates: true,
 };
 
-function isSchemaMismatchError(error: { message?: string; code?: string } | null) {
-  if (!error) return false;
-  return (
-    error.code === "42703" ||
-    error.message?.includes("column") === true ||
-    error.message?.includes("schema cache") === true
-  );
-}
-
-function buildNotificationInsertCandidates(params: {
-  userId: string;
-  type: SupaNotification["type"];
-  titleAr: string;
-  titleEn: string;
-  descAr: string;
-  descEn: string;
-  href?: string;
-  createdBy?: string;
-}) {
-  const base = {
-    user_id: params.userId,
-    title_ar: params.titleAr,
-    title_en: params.titleEn,
-  };
-  const withApp = { app_name: "hr" };
-  const contentVariants = [
-    { body_ar: params.descAr, body_en: params.descEn },
-    { desc_ar: params.descAr, desc_en: params.descEn },
-  ];
-  const linkVariants = [
-    { link: params.href || null },
-    { href: params.href || null },
-  ];
-  const createdByVariants = params.createdBy
-    ? [{ created_by: params.createdBy }, {}]
-    : [{}];
-  const readVariants = [{ is_read: false }, { read: false }];
-  const typeVariants = [{}, { type: params.type }];
-  const appVariants = [withApp, {}];
-
-  const candidates: Array<Record<string, unknown>> = [];
-  for (const appVariant of appVariants) {
-    for (const contentVariant of contentVariants) {
-      for (const linkVariant of linkVariants) {
-        for (const createdByVariant of createdByVariants) {
-          for (const readVariant of readVariants) {
-            for (const typeVariant of typeVariants) {
-              candidates.push({
-                ...base,
-                ...appVariant,
-                ...contentVariant,
-                ...linkVariant,
-                ...createdByVariant,
-                ...readVariant,
-                ...typeVariant,
-              });
-            }
-          }
-        }
-      }
-    }
-  }
-  return candidates;
-}
+// ─── Normalize row from Supabase (handles both old and new schemas) ──
 
 export function normalizeNotificationRow(
   row: Record<string, unknown>
@@ -104,18 +41,60 @@ export function normalizeNotificationRow(
     id: (row.id as string) || "",
     user_id: (row.user_id as string) || "",
     app_name: (row.app_name as string) || null,
-    type: ((row.type as SupaNotification["type"]) || "system"),
+    type: (row.type as SupaNotification["type"]) || "system",
     title_ar: (row.title_ar as string) || "",
     title_en: (row.title_en as string) || "",
-    desc_ar: ((row.desc_ar as string) || (row.body_ar as string) || ""),
-    desc_en: ((row.desc_en as string) || (row.body_en as string) || ""),
-    href: ((row.href as string) || (row.link as string) || undefined),
-    read: ((row.read as boolean) ?? (row.is_read as boolean) ?? false),
+    desc_ar: (row.desc_ar as string) || (row.body_ar as string) || "",
+    desc_en: (row.desc_en as string) || (row.body_en as string) || "",
+    href: (row.href as string) || (row.link as string) || undefined,
+    read: (row.read as boolean) ?? (row.is_read as boolean) ?? false,
     created_at: (row.created_at as string) || new Date().toISOString(),
   };
 }
 
-// ─── Create Notification ─────────────────────────────────────────────
+// ─── Notify Admins (via server-side API route) ──────────────────────
+//
+// This is the ONLY way to notify admins. It calls the API route which
+// uses SUPABASE_SERVICE_ROLE_KEY to bypass RLS and:
+// 1. Find all super_admin user IDs from user_roles
+// 2. Insert notifications for each admin
+//
+// The client-side Supabase client CANNOT read user_roles (RLS blocks it).
+
+export async function notifyAdmins(params: {
+  type: SupaNotification["type"];
+  titleAr: string;
+  titleEn: string;
+  descAr: string;
+  descEn: string;
+  href?: string;
+}) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn("[HR] notifyAdmins — no session, skipping");
+      return;
+    }
+
+    const response = await fetch("/api/notifications/admins", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      console.error("[HR] notifyAdmins failed:", response.status, body.error || response.statusText);
+    }
+  } catch (e) {
+    console.error("[HR] notifyAdmins error:", e);
+  }
+}
+
+// ─── Create Single Notification (for employee-targeted notifications) ──
 
 export async function createNotification(params: {
   userId: string;
@@ -126,77 +105,36 @@ export async function createNotification(params: {
   descEn: string;
   href?: string;
 }) {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  // Try with all columns (Landing Page schema has app_name, desc_ar, etc.)
+  const row: Record<string, unknown> = {
+    user_id: params.userId,
+    app_name: "hr",
+    type: params.type,
+    title_ar: params.titleAr,
+    title_en: params.titleEn,
+    desc_ar: params.descAr,
+    desc_en: params.descEn,
+    href: params.href || null,
+    read: false,
+  };
 
-  let error: { message?: string } | null = null;
-  for (const candidate of buildNotificationInsertCandidates({
-    ...params,
-    createdBy: session?.user?.id,
-  })) {
-    const result = await supabase.from("notifications").insert(candidate);
-    error = result.error;
-    if (!error) break;
-    if (!isSchemaMismatchError(error)) break;
+  let { error } = await supabase.from("notifications").insert(row);
+
+  // Fallback: remove app_name if column doesn't exist
+  if (error && (error.code === "42703" || error.message?.includes("column"))) {
+    delete row.app_name;
+    const retry = await supabase.from("notifications").insert(row);
+    error = retry.error;
   }
+
   if (error) console.error("[HR] createNotification error:", error.message);
   return { error };
-}
-
-// Notify all super_admins
-export async function notifyAdmins(params: {
-  type: SupaNotification["type"];
-  titleAr: string;
-  titleEn: string;
-  descAr: string;
-  descEn: string;
-  href?: string;
-}) {
-  try {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (session?.access_token) {
-      const response = await fetch("/api/notifications/admins", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(params),
-      });
-
-      if (response.ok) {
-        return;
-      }
-
-      const errorBody = await response
-        .json()
-        .catch(() => ({ error: "Unknown notification route error" }));
-      console.error(
-        "[HR] notifyAdmins — API route error:",
-        {
-          status: response.status,
-          error: errorBody.error || response.statusText,
-          code: errorBody.code || null,
-          details: errorBody.details || null,
-          hint: errorBody.hint || null,
-        }
-      );
-      return;
-    }
-    console.warn("[HR] notifyAdmins — skipped because no access token was available");
-  } catch (e) {
-    console.error("[HR] notifyAdmins error:", e);
-  }
 }
 
 // ─── Fetch Notifications ─────────────────────────────────────────────
 
 export async function fetchNotifications(userId: string) {
-  // Try with app_name filter first, fall back without it
+  // Try with app_name filter first
   // eslint-disable-next-line prefer-const
   let { data, error } = await supabase
     .from("notifications")
@@ -206,8 +144,8 @@ export async function fetchNotifications(userId: string) {
     .order("created_at", { ascending: false })
     .limit(50);
 
+  // Fallback if app_name column doesn't exist
   if (error) {
-    // app_name column may not exist — retry without it
     const retry = await supabase
       .from("notifications")
       .select("*")
@@ -220,32 +158,30 @@ export async function fetchNotifications(userId: string) {
   return ((data || []) as Record<string, unknown>[]).map(normalizeNotificationRow);
 }
 
-export async function markNotificationReadInDB(id: string) {
-  const { error } = await supabase
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("id", id);
+// ─── Mark Read ───────────────────────────────────────────────────────
 
+export async function markNotificationReadInDB(id: string) {
+  // Try 'read' column first (our schema), fall back to 'is_read'
+  const { error } = await supabase.from("notifications").update({ read: true }).eq("id", id);
   if (error) {
-    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
   }
 }
 
 export async function markAllReadInDB(userId: string) {
+  // Try with app_name filter
   const { error } = await supabase
     .from("notifications")
-    .update({ is_read: true })
+    .update({ read: true })
     .eq("user_id", userId)
-    .eq("app_name", "hr")
-    .eq("is_read", false);
+    .eq("read", false);
 
   if (error) {
     await supabase
       .from("notifications")
-      .update({ read: true })
+      .update({ is_read: true })
       .eq("user_id", userId)
-      .eq("app_name", "hr")
-      .eq("read", false);
+      .eq("is_read", false);
   }
 }
 
@@ -269,23 +205,17 @@ export async function fetchPreferences(userId: string): Promise<NotificationPref
         payroll_updates: data.payroll_updates ?? true,
       };
     }
-  } catch {
-    // Table may not exist
-  }
+  } catch { /* table may not exist */ }
   return DEFAULT_PREFS;
 }
 
 export async function savePreferences(userId: string, prefs: NotificationPreferences) {
-  const row = { user_id: userId, app_name: "hr", ...prefs };
-
-  const { error } = await supabase
+  return supabase
     .from("notification_preferences")
-    .upsert(row, { onConflict: "user_id,app_name" });
-
-  return { error };
+    .upsert({ user_id: userId, app_name: "hr", ...prefs }, { onConflict: "user_id,app_name" });
 }
 
-// ─── Push Subscription ───────────────────────────────────────────────
+// ─── Push Subscription (disabled — needs VAPID key) ─────────────────
 
 export async function savePushSubscription(userId: string, subscription: PushSubscription) {
   const sub = subscription.toJSON();
@@ -303,8 +233,6 @@ export async function savePushSubscription(userId: string, subscription: PushSub
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export async function requestPushPermission(_userId: string): Promise<boolean> {
-  // Push notifications require VAPID key pair configuration.
-  // Set NEXT_PUBLIC_VAPID_KEY env var to enable.
   console.warn("[HR] Push notifications not configured — VAPID key missing");
   return false;
 }

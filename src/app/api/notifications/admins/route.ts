@@ -1,259 +1,108 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-// Use the same Landing project credentials as the browser client.
-// Do not prefer env overrides here, otherwise the route can authenticate
-// against a different Supabase project than the rest of the HR app.
-const SUPABASE_URL = "https://iauulqfgrbegwcnfatmx.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY =
-  "sb_publishable_Dvk_dI_FY6oxhyOw7__06Q_wzDmwguJ";
-const ADMIN_EMAILS = new Set([
-  "waleed@njdstudio.net",
-  "salman@njdstudio.net",
-]);
-const ALLOWED_TYPES = new Set([
-  "leave",
-  "request",
-  "payroll",
-  "attendance",
-  "system",
-]);
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://iauulqfgrbegwcnfatmx.supabase.co";
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_Dvk_dI_FY6oxhyOw7__06Q_wzDmwguJ";
 
-type AdminNotificationPayload = {
-  type: "leave" | "request" | "payroll" | "attendance" | "system";
-  titleAr: string;
-  titleEn: string;
-  descAr: string;
-  descEn: string;
-  href?: string;
-};
-
-function isSchemaMismatchError(error: { message?: string; code?: string } | null) {
-  if (!error) return false;
-  return (
-    error.code === "42703" ||
-    error.message?.includes("column") === true ||
-    error.message?.includes("schema cache") === true
-  );
-}
-
-function buildNotificationRows(
-  adminIds: string[],
-  body: AdminNotificationPayload,
-  createdBy: string
-) {
-  const contentVariants = [
-    (adminId: string) => ({
-      user_id: adminId,
-      title_ar: body.titleAr,
-      title_en: body.titleEn,
-      body_ar: body.descAr,
-      body_en: body.descEn,
-    }),
-    (adminId: string) => ({
-      user_id: adminId,
-      title_ar: body.titleAr,
-      title_en: body.titleEn,
-      desc_ar: body.descAr,
-      desc_en: body.descEn,
-    }),
-  ];
-  const linkVariants = [
-    { link: body.href || null },
-    { href: body.href || null },
-  ];
-  const readVariants = [{ is_read: false }, { read: false }];
-  const createdByVariants = [{ created_by: createdBy }, {}];
-  const typeVariants = [{}, { type: body.type }];
-  const appVariants = [{ app_name: "hr" }, {}];
-
-  const rowSets: Array<Array<Record<string, unknown>>> = [];
-  for (const appVariant of appVariants) {
-    for (const contentVariant of contentVariants) {
-      for (const linkVariant of linkVariants) {
-        for (const createdByVariant of createdByVariants) {
-          for (const readVariant of readVariants) {
-            for (const typeVariant of typeVariants) {
-              rowSets.push(
-                adminIds.map((adminId) => ({
-                  ...contentVariant(adminId),
-                  ...appVariant,
-                  ...linkVariant,
-                  ...createdByVariant,
-                  ...readVariant,
-                  ...typeVariant,
-                }))
-              );
-            }
-          }
-        }
-      }
-    }
-  }
-  return rowSets;
-}
-
-async function insertNotifications(
-  adminClient: SupabaseClient,
-  rowsList: Array<Array<Record<string, unknown>>>
-) {
-  let error:
-    | { message?: string; code?: string; details?: string; hint?: string }
-    | null = null;
-  for (const rows of rowsList) {
-    const result = await adminClient
-      .from("notifications")
-      .insert(rows as never[]);
-    error = result.error;
-    if (!error) break;
-    if (!isSchemaMismatchError(error)) break;
-  }
-  return { error };
-}
-
-async function resolveAdminUserIds(
-  adminClient: SupabaseClient
-) {
-  const adminIds = new Set<string>();
-
-  const { data: roleRows, error: roleError } = await adminClient
-    .from("user_roles")
-    .select("user_id")
-    .eq("role_name", "super_admin");
-
-  if (!roleError) {
-    const roleUserIds = ((roleRows || []) as Array<{ user_id: string }>)
-      .map((row) => row.user_id)
-      .filter(Boolean);
-
-    const roleLookups = await Promise.all(
-      roleUserIds.map(async (userId) => {
-        const { data, error } = await adminClient.auth.admin.getUserById(userId);
-        return !error && data.user ? data.user.id : null;
-      })
-    );
-
-    for (const userId of roleLookups) {
-      if (userId) adminIds.add(userId);
-    }
-  }
-
-  const { data: usersData, error: usersError } =
-    await adminClient.auth.admin.listUsers({
-      page: 1,
-      perPage: 200,
-    });
-
-  if (!usersError) {
-    for (const user of usersData.users) {
-      if (user.email && ADMIN_EMAILS.has(user.email.toLowerCase())) {
-        adminIds.add(user.id);
-      }
-    }
-  }
-
-  return adminIds;
-}
+// Hardcoded admin emails as ultimate fallback
+const ADMIN_EMAILS = ["waleed@njdstudio.net", "salman@njdstudio.net"];
 
 export async function POST(req: NextRequest) {
   try {
+    // 1. Validate service role key exists
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
-      return NextResponse.json(
-        { error: "SUPABASE_SERVICE_ROLE_KEY not configured" },
-        { status: 503 }
-      );
+      return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 503 });
     }
 
+    // 2. Validate caller has a valid session
     const authHeader = req.headers.get("authorization");
-    const token = authHeader?.startsWith("Bearer ")
-      ? authHeader.slice(7)
-      : null;
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!token) {
       return NextResponse.json({ error: "Missing access token" }, { status: 401 });
     }
 
-    let body: AdminNotificationPayload;
-    try {
-      body = (await req.json()) as AdminNotificationPayload;
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-    }
-
-    if (
-      !body?.type ||
-      !ALLOWED_TYPES.has(body.type) ||
-      !body.titleAr ||
-      !body.titleEn ||
-      !body.descAr ||
-      !body.descEn
-    ) {
-      return NextResponse.json(
-        { error: "Missing or invalid notification payload" },
-        { status: 400 }
-      );
-    }
-
-    if (body.href !== undefined && typeof body.href !== "string") {
-      return NextResponse.json({ error: "Invalid href" }, { status: 400 });
-    }
-
-    const authClient = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: false },
-    });
-    const {
-      data: { user },
-      error: userError,
-    } = await authClient.auth.getUser(token);
-
+    // Verify token
+    const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
+    const { data: { user }, error: userError } = await anonClient.auth.getUser(token);
     if (userError || !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminClient = createClient(SUPABASE_URL, serviceRoleKey, {
-      auth: { persistSession: false },
-    });
+    // 3. Parse body
+    const body = await req.json().catch(() => null);
+    if (!body?.type || !body.titleAr || !body.titleEn) {
+      return NextResponse.json({ error: "Missing notification payload" }, { status: 400 });
+    }
 
-    const adminIds = await resolveAdminUserIds(adminClient);
+    // 4. Create admin client (bypasses RLS)
+    const adminClient = createClient(SUPABASE_URL, serviceRoleKey, { auth: { persistSession: false } });
+
+    // 5. Find all admin user IDs
+    const adminIds = new Set<string>();
+
+    // Method A: Query user_roles table
+    const { data: roleRows } = await adminClient
+      .from("user_roles")
+      .select("user_id")
+      .eq("role_name", "super_admin");
+
+    if (roleRows) {
+      for (const row of roleRows) {
+        if (row.user_id) adminIds.add(row.user_id);
+      }
+    }
+
+    // Method B: Find by email (fallback)
     if (adminIds.size === 0) {
-      return NextResponse.json(
-        { error: "No super admin recipients found" },
-        { status: 404 }
-      );
+      const { data: usersData } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
+      if (usersData) {
+        for (const u of usersData.users) {
+          if (u.email && ADMIN_EMAILS.includes(u.email.toLowerCase())) {
+            adminIds.add(u.id);
+          }
+        }
+      }
     }
 
-    const rowCandidates = buildNotificationRows(Array.from(adminIds), body, user.id);
-    const { error } = await insertNotifications(adminClient, rowCandidates);
+    if (adminIds.size === 0) {
+      return NextResponse.json({ error: "No admin recipients found" }, { status: 404 });
+    }
+
+    // 6. Insert notifications for each admin
+    const rows = Array.from(adminIds).map((adminId) => ({
+      user_id: adminId,
+      app_name: "hr",
+      type: body.type,
+      title_ar: body.titleAr,
+      title_en: body.titleEn,
+      desc_ar: body.descAr || "",
+      desc_en: body.descEn || "",
+      href: body.href || null,
+      read: false,
+    }));
+
+    // Try insert with all columns
+    let { error } = await adminClient.from("notifications").insert(rows);
+
+    // Fallback: remove app_name if column doesn't exist
+    if (error && (error.code === "42703" || error.message?.includes("column"))) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const fallbackRows = rows.map(({ app_name: _, ...rest }) => rest);
+      const retry = await adminClient.from("notifications").insert(fallbackRows);
+      error = retry.error;
+    }
+
     if (error) {
-      console.error(
-        "[HR] admin notifications insert error:",
-        error.code,
-        error.message,
-        error.details,
-        error.hint
-      );
-      return NextResponse.json(
-        {
-          error: error.message || "Failed to create admin notifications",
-          code: error.code || null,
-          details: error.details || null,
-          hint: error.hint || null,
-        },
-        { status: 500 }
-      );
+      console.error("[HR] admin notification insert error:", error.message);
+      return NextResponse.json({ error: "Failed to insert notifications" }, { status: 500 });
     }
 
-    return NextResponse.json({
-      success: true,
-      recipients: adminIds.size,
-    });
-  } catch (error) {
-    console.error("[HR] admin notifications route error:", error);
-    return NextResponse.json(
-      { error: "Unexpected notification error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: true, recipients: rows.length });
+  } catch (e) {
+    console.error("[HR] admin notifications route error:", e);
+    return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }
