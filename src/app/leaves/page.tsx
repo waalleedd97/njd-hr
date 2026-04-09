@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
-import { employees, saudiHolidays } from "@/lib/mock-data";
+import { saudiHolidays } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -87,9 +87,7 @@ const statusStyles: Record<string, string> = {
 
 // ---------- helpers ----------
 
-function getEmployee(id: string) {
-  return employees.find((e) => e.id === id);
-}
+// getEmployee is now inside the component to use store.employees
 
 function getWeekDays(refDate: Date) {
   const day = refDate.getDay(); // 0=Sun
@@ -139,6 +137,8 @@ export default function LeavesPage() {
   const { isAdmin, user } = useAuth();
   const store = useData();
   const { leaveBalances, leaveRequests: allLeaveRequests } = store;
+  const employees = store.employees;
+  const getEmployee = (id: string) => employees.find((e) => e.id === id || e.email === id);
   const isAr = lang === "ar";
 
   // Employees see only their own leave records

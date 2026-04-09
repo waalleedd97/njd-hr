@@ -138,15 +138,14 @@ export default function EmployeesPage() {
   const [inviteSending, setInviteSending] = useState(false);
 
   const sendInviteEmail = async (data: { email: string; nameAr: string; nameEn: string; positionAr: string; positionEn: string; department: string }) => {
-    try {
-      const deptLabel = departments[data.department];
-      await fetch("/api/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...data, department: isAr ? deptLabel?.ar : deptLabel?.en || data.department }),
-      });
-    } catch {
-      // Email sending is best-effort; invitation is saved regardless
+    const deptLabel = departments[data.department];
+    const res = await fetch("/api/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, department: isAr ? deptLabel?.ar : deptLabel?.en || data.department }),
+    });
+    if (!res.ok) {
+      throw new Error(`Email send failed: ${res.status}`);
     }
   };
 

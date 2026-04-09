@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
-import { employees } from "@/lib/mock-data";
+import type { Employee } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -130,7 +130,8 @@ export default function RequestsPage() {
     return Math.ceil(advAmount / advRepaymentMonths);
   }, [advAmount, advRepaymentMonths]);
 
-  const getEmployee = (id: string) => employees.find((e) => e.id === id);
+  const employees = store.employees;
+  const getEmployee = (id: string) => employees.find((e: Employee) => e.id === id || e.email === id);
 
   // Build unified requests list
   const allRequests: UnifiedRequest[] = useMemo(() => {

@@ -4,14 +4,11 @@ import { useMemo, useState } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import {
-  employees,
   GOSI_RATE,
-  todayAttendance,
   calcPenalty,
   calcDailySalary,
   penaltyRules,
   earlyDepartureRules,
-  salaryAdvances,
 } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -40,7 +37,11 @@ import {
 export default function PayrollPage() {
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
-  const { processPayroll, payrollProcessed } = useData();
+  const store = useData();
+  const { processPayroll, payrollProcessed } = store;
+  const employees = store.employees;
+  const todayAttendance = store.todayAttendance;
+  const salaryAdvances = store.salaryAdvances;
   const isAr = lang === "ar";
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
     null

@@ -466,7 +466,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
             const email = (u.email || "").toLowerCase();
             if (existingEmails.has(email)) continue;
             newEmployees.push({
-              id: u.user_id.slice(0, 8).toUpperCase(),
+              id: u.user_id,
               nameAr: u.name_ar || u.full_name_ar || u.email.split("@")[0],
               nameEn: u.name_en || u.full_name_en || u.email.split("@")[0],
               positionAr: u.job_title_ar || (u.role_name === "super_admin" ? "مدير النظام" : "موظف"),
