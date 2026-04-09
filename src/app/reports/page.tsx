@@ -100,11 +100,13 @@ export default function ReportsPage() {
 
   // --- Weekly Attendance Data ---
 
-  const weeklyData = (() => {
-    if (employees.length === 0) return [0, 0, 0, 0, 0];
-    const todayRate = Math.round((todayAttendance.filter(r => r.status === "present" || r.status === "late" || r.status === "half-day").length / employees.length) * 100);
-    return [0, 0, 0, 0, todayRate]; // Only today (Thu) has real data — no historical data
-  })();
+  // Weekly attendance — only today has real data, others show 0
+  // Historical data will populate as attendance records accumulate in Supabase
+  const todayDayIndex = new Date().getDay(); // 0=Sun, 1=Mon...
+  const todayRate = employees.length > 0
+    ? Math.round((todayAttendance.filter(r => r.status === "present" || r.status === "late" || r.status === "half-day").length / employees.length) * 100)
+    : 0;
+  const weeklyData = [0, 0, 0, 0, 0].map((_, i) => i === Math.min(todayDayIndex, 4) ? todayRate : 0);
   const dayKeys: Array<keyof typeof t.days> = ["sun", "mon", "tue", "wed", "thu"];
   const maxBarHeight = 120;
 
@@ -132,7 +134,8 @@ export default function ReportsPage() {
     const gosi = emp.salary.basic * GOSI_RATE;
     return sum + gross - gosi;
   }, 0);
-  const payrollData = [currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll, currentMonthlyPayroll];
+  // Payroll trend — only current month has real data. Historical will accumulate over time.
+  const payrollData = [0, 0, 0, 0, 0, currentMonthlyPayroll];
   const now = new Date();
   const monthLabels = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);

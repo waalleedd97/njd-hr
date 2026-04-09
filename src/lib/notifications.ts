@@ -164,21 +164,10 @@ export async function savePushSubscription(userId: string, subscription: PushSub
   );
 }
 
-export async function requestPushPermission(userId: string): Promise<boolean> {
-  if (!("Notification" in window) || !("serviceWorker" in navigator)) return false;
-
-  const permission = await Notification.requestPermission();
-  if (permission !== "granted") return false;
-
-  try {
-    const reg = await navigator.serviceWorker.register("/sw.js");
-    const sub = await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: undefined, // VAPID key would go here
-    });
-    await savePushSubscription(userId, sub);
-    return true;
-  } catch {
-    return false;
-  }
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function requestPushPermission(_userId: string): Promise<boolean> {
+  // Push notifications require VAPID key pair configuration.
+  // Set NEXT_PUBLIC_VAPID_KEY env var to enable.
+  console.warn("[HR] Push notifications not configured — VAPID key missing");
+  return false;
 }

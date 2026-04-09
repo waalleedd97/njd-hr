@@ -72,7 +72,7 @@ export default function PayrollPage() {
         if (attendance.status === "late" && attendance.checkIn) {
           const [h, m] = attendance.checkIn.split(":").map(Number);
           const checkInMinutes = h * 60 + m;
-          const minutesLate = checkInMinutes - 480; // 8:00 AM = 480 min
+          const minutesLate = checkInMinutes - 600; // 10:00 AM = 600 min
           if (minutesLate > 0) {
             const percentage = calcPenalty(minutesLate);
             penalty = Math.round(calcDailySalary(emp) * percentage / 100);
@@ -115,7 +115,7 @@ export default function PayrollPage() {
     );
     const deductions = payroll.reduce((sum, p) => sum + p.gosi, 0);
     const gosiCompany = payroll.reduce(
-      (sum, p) => sum + p.employee.salary.basic * 0.12,
+      (sum, p) => sum + p.employee.salary.basic * 0.1225,
       0
     );
     const penalties = payroll.reduce((sum, p) => sum + p.penalty, 0);

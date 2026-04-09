@@ -190,7 +190,7 @@ export default function RequestsPage() {
   const filteredRequests = useMemo(() => {
     let list = allRequests;
 
-    // Role-based filtering: non-admin sees only their own requests (EMP003 as mock)
+    // Role-based filtering: non-admin sees only their own requests
     if (!isAdmin) {
       list = list.filter((req) => req.employeeId === user.id);
     }
@@ -200,7 +200,7 @@ export default function RequestsPage() {
       if (statusFilter !== "all" && req.status !== statusFilter) return false;
       return true;
     });
-  }, [allRequests, typeFilter, statusFilter, isAdmin]);
+  }, [allRequests, typeFilter, statusFilter, isAdmin, user.id]);
 
   const resetForm = () => {
     setNewReqType("leaveRequest");

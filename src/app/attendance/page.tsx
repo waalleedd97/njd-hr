@@ -409,12 +409,10 @@ export default function AttendancePage() {
           .from("daily-reports")
           .upload(path, file, { upsert: true });
         if (data) {
-          const { data: urlData } = supabase.storage
-            .from("daily-reports")
-            .getPublicUrl(data.path);
+          // Private bucket — store path, generate signed URL on read
           attachments.push({
             name: file.name,
-            url: urlData.publicUrl,
+            url: data.path,
             type: file.type,
           });
         }

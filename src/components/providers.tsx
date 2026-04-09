@@ -61,7 +61,8 @@ function LanguageProvider({ children }: { children: ReactNode }) {
 // ─── Auth / Role Context ─────────────────────────────────────────────
 
 export interface UserProfile {
-  id: string;
+  id: string;        // Always Supabase UUID — used for all data lookups
+  localId: string;   // EMP001 format — for display only
   nameAr: string;
   nameEn: string;
   positionAr: string;
@@ -96,6 +97,7 @@ function resolveUser(email: string): { profile: UserProfile; role: UserRole } | 
   if (!emp) return null;
   const profile: UserProfile = {
     id: emp.id,
+    localId: emp.id,
     nameAr: emp.nameAr,
     nameEn: emp.nameEn,
     positionAr: emp.positionAr,
@@ -110,6 +112,7 @@ function resolveUser(email: string): { profile: UserProfile; role: UserRole } | 
 
 const fallbackUser: UserProfile = {
   id: "EMP001",
+  localId: "EMP001",
   nameAr: "وليد",
   nameEn: "Waleed",
   positionAr: "مدير النظام",
@@ -199,7 +202,8 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
         const fallbackName = session.user.user_metadata?.full_name || email.split("@")[0];
 
         setUser({
-          id: resolved?.profile.id || userId,
+          id: userId,  // Always Supabase UUID — used for all data lookups
+          localId: resolved?.profile.id || userId.slice(0, 8).toUpperCase(),
           nameAr: nameAr || resolved?.profile.nameAr || fallbackName,
           nameEn: nameEn || resolved?.profile.nameEn || fallbackName,
           positionAr: resolved?.profile.positionAr || (supabaseRole === "admin" ? "مدير النظام" : "موظف"),

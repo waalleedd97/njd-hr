@@ -47,7 +47,20 @@ export default function DailyReportsPage() {
       .eq("report_date", selectedDate)
       .order("submitted_at", { ascending: false });
 
-    setReports((data || []) as DailyReport[]);
+    // Generate signed URLs for private bucket attachments
+    const reports = (data || []) as DailyReport[];
+    for (const report of reports) {
+      if (!report.attachments?.length) continue;
+      for (const att of report.attachments) {
+        if (att.url && !att.url.startsWith("http")) {
+          const { data: signedData } = await supabase.storage
+            .from("daily-reports")
+            .createSignedUrl(att.url, 3600); // 1 hour expiry
+          if (signedData?.signedUrl) att.url = signedData.signedUrl;
+        }
+      }
+    }
+    setReports(reports);
   }, [selectedDate]);
 
   useEffect(() => {

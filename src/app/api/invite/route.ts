@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
       </div>
 
       <p style="color:#94a3b8;font-size:13px;line-height:1.7;margin:24px 0 0;padding-top:16px;border-top:1px solid #e9e2f5;">
-        استخدم بريدك الإلكتروني (<strong dir="ltr">${email}</strong>) مع كلمة المرور <strong>demo123</strong> لتسجيل الدخول.
+        استخدم بريدك الإلكتروني (<strong dir="ltr">${email}</strong>) لتسجيل الدخول عبر الرابط أعلاه.
         بعد الدخول، سيتم توجيهك لإكمال بياناتك الشخصية.
       </p>
     </div>

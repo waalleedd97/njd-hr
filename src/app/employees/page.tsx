@@ -150,9 +150,13 @@ export default function EmployeesPage() {
     }
   };
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [inviteError, setInviteError] = useState("");
+
   const handleInviteSubmit = async () => {
     if (!inviteName || !inviteEmail) return;
     setInviteSending(true);
+    setInviteError("");
 
     const invData = {
       email: inviteEmail,
@@ -165,20 +169,24 @@ export default function EmployeesPage() {
       status: "pending" as const,
     };
 
-    store.sendInvitation(invData);
-    await sendInviteEmail(invData);
+    try {
+      await store.sendInvitation(invData);
+      await sendInviteEmail(invData);
+      setInviteSending(false);
+      setInviteSent(true);
 
-    setInviteSending(false);
-    setInviteSent(true);
-
-    setTimeout(() => {
-      setInviteSent(false);
-      setInviteName("");
-      setInviteEmail("");
-      setInviteDept("");
-      setInvitePosition("");
-      setInviteOpen(false);
-    }, 2000);
+      setTimeout(() => {
+        setInviteSent(false);
+        setInviteName("");
+        setInviteEmail("");
+        setInviteDept("");
+        setInvitePosition("");
+        setInviteOpen(false);
+      }, 2000);
+    } catch {
+      setInviteSending(false);
+      setInviteError(isAr ? "فشل إرسال الدعوة. حاول مرة أخرى." : "Failed to send invitation. Please try again.");
+    }
   };
 
   const handleResend = async (id: string) => {
