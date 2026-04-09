@@ -10,6 +10,7 @@ import {
   fetchNotifications,
   markNotificationReadInDB,
   markAllReadInDB,
+  normalizeNotificationRow,
 } from "@/lib/notifications";
 import {
   Bell,
@@ -106,8 +107,8 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
           filter: `user_id=eq.${user.id}`,
         },
         (payload) => {
-          const row = payload.new as SupaNotification;
-          if (row.app_name === "hr") {
+          const row = normalizeNotificationRow(payload.new as Record<string, unknown>);
+          if (!row.app_name || row.app_name === "hr" || row.app_name === "both") {
             setItems((prev) => [row, ...prev]);
             if (document.hidden && Notification.permission === "granted") {
               new Notification(isAr ? row.title_ar : row.title_en, {

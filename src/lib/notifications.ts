@@ -5,7 +5,7 @@ import { supabase } from "./supabase";
 export interface SupaNotification {
   id: string;
   user_id: string;
-  app_name: string;
+  app_name?: string | null;
   type: "leave" | "request" | "payroll" | "attendance" | "system";
   title_ar: string;
   title_en: string;
@@ -32,6 +32,79 @@ const DEFAULT_PREFS: NotificationPreferences = {
   payroll_updates: true,
 };
 
+function buildNotificationInsertCandidates(params: {
+  userId: string;
+  type: SupaNotification["type"];
+  titleAr: string;
+  titleEn: string;
+  descAr: string;
+  descEn: string;
+  href?: string;
+}) {
+  return [
+    {
+      user_id: params.userId,
+      app_name: "hr",
+      type: params.type,
+      title_ar: params.titleAr,
+      title_en: params.titleEn,
+      body_ar: params.descAr,
+      body_en: params.descEn,
+      link: params.href || null,
+      is_read: false,
+    },
+    {
+      user_id: params.userId,
+      app_name: "hr",
+      title_ar: params.titleAr,
+      title_en: params.titleEn,
+      body_ar: params.descAr,
+      body_en: params.descEn,
+      link: params.href || null,
+      is_read: false,
+    },
+    {
+      user_id: params.userId,
+      app_name: "hr",
+      type: params.type,
+      title_ar: params.titleAr,
+      title_en: params.titleEn,
+      desc_ar: params.descAr,
+      desc_en: params.descEn,
+      href: params.href || null,
+      read: false,
+    },
+    {
+      user_id: params.userId,
+      type: params.type,
+      title_ar: params.titleAr,
+      title_en: params.titleEn,
+      desc_ar: params.descAr,
+      desc_en: params.descEn,
+      href: params.href || null,
+      read: false,
+    },
+  ];
+}
+
+export function normalizeNotificationRow(
+  row: Record<string, unknown>
+): SupaNotification {
+  return {
+    id: (row.id as string) || "",
+    user_id: (row.user_id as string) || "",
+    app_name: (row.app_name as string) || null,
+    type: ((row.type as SupaNotification["type"]) || "system"),
+    title_ar: (row.title_ar as string) || "",
+    title_en: (row.title_en as string) || "",
+    desc_ar: ((row.desc_ar as string) || (row.body_ar as string) || ""),
+    desc_en: ((row.desc_en as string) || (row.body_en as string) || ""),
+    href: ((row.href as string) || (row.link as string) || undefined),
+    read: ((row.read as boolean) ?? (row.is_read as boolean) ?? false),
+    created_at: (row.created_at as string) || new Date().toISOString(),
+  };
+}
+
 // ─── Create Notification ─────────────────────────────────────────────
 
 export async function createNotification(params: {
@@ -43,30 +116,11 @@ export async function createNotification(params: {
   descEn: string;
   href?: string;
 }) {
-  // Try with app_name first (Landing Page schema), fall back without it (old schema)
-  let { error } = await supabase.from("notifications").insert({
-    user_id: params.userId,
-    app_name: "hr",
-    type: params.type,
-    title_ar: params.titleAr,
-    title_en: params.titleEn,
-    desc_ar: params.descAr,
-    desc_en: params.descEn,
-    href: params.href || null,
-    read: false,
-  });
-  if (error && (error.message.includes("app_name") || error.message.includes("column") || error.code === "42703")) {
-    const retry = await supabase.from("notifications").insert({
-      user_id: params.userId,
-      type: params.type,
-      title_ar: params.titleAr,
-      title_en: params.titleEn,
-      desc_ar: params.descAr,
-      desc_en: params.descEn,
-      href: params.href || null,
-      read: false,
-    });
-    error = retry.error;
+  let error: { message?: string } | null = null;
+  for (const candidate of buildNotificationInsertCandidates(params)) {
+    const result = await supabase.from("notifications").insert(candidate);
+    error = result.error;
+    if (!error) break;
   }
   if (error) console.error("[HR] createNotification error:", error.message);
   return { error };
@@ -157,20 +211,36 @@ export async function fetchNotifications(userId: string) {
     data = retry.data;
   }
 
-  return (data || []) as SupaNotification[];
+  return ((data || []) as Record<string, unknown>[]).map(normalizeNotificationRow);
 }
 
 export async function markNotificationReadInDB(id: string) {
-  await supabase.from("notifications").update({ read: true }).eq("id", id);
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("id", id);
+
+  if (error) {
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
+  }
 }
 
 export async function markAllReadInDB(userId: string) {
-  await supabase
+  const { error } = await supabase
     .from("notifications")
-    .update({ read: true })
+    .update({ is_read: true })
     .eq("user_id", userId)
     .eq("app_name", "hr")
-    .eq("read", false);
+    .eq("is_read", false);
+
+  if (error) {
+    await supabase
+      .from("notifications")
+      .update({ read: true })
+      .eq("user_id", userId)
+      .eq("app_name", "hr")
+      .eq("read", false);
+  }
 }
 
 // ─── Notification Preferences ────────────────────────────────────────

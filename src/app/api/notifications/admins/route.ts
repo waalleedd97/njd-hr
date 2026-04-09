@@ -30,31 +30,68 @@ type AdminNotificationPayload = {
   href?: string;
 };
 
+function buildNotificationRows(
+  adminIds: string[],
+  body: AdminNotificationPayload
+) {
+  return [
+    adminIds.map((adminId) => ({
+      user_id: adminId,
+      app_name: "hr",
+      type: body.type,
+      title_ar: body.titleAr,
+      title_en: body.titleEn,
+      body_ar: body.descAr,
+      body_en: body.descEn,
+      link: body.href || null,
+      is_read: false,
+    })),
+    adminIds.map((adminId) => ({
+      user_id: adminId,
+      app_name: "hr",
+      title_ar: body.titleAr,
+      title_en: body.titleEn,
+      body_ar: body.descAr,
+      body_en: body.descEn,
+      link: body.href || null,
+      is_read: false,
+    })),
+    adminIds.map((adminId) => ({
+      user_id: adminId,
+      app_name: "hr",
+      type: body.type,
+      title_ar: body.titleAr,
+      title_en: body.titleEn,
+      desc_ar: body.descAr,
+      desc_en: body.descEn,
+      href: body.href || null,
+      read: false,
+    })),
+    adminIds.map((adminId) => ({
+      user_id: adminId,
+      type: body.type,
+      title_ar: body.titleAr,
+      title_en: body.titleEn,
+      desc_ar: body.descAr,
+      desc_en: body.descEn,
+      href: body.href || null,
+      read: false,
+    })),
+  ];
+}
+
 async function insertNotifications(
   adminClient: SupabaseClient,
-  rows: Array<Record<string, unknown>>
+  rowsList: Array<Array<Record<string, unknown>>>
 ) {
-  let { error } = await adminClient
-    .from("notifications")
-    .insert(rows as never[]);
-
-  if (
-    error &&
-    (error.message.includes("app_name") ||
-      error.message.includes("column") ||
-      error.code === "42703")
-  ) {
-    const fallbackRows = rows.map((row) => {
-      const nextRow = { ...row };
-      delete nextRow.app_name;
-      return nextRow;
-    });
-    const retry = await adminClient
+  let error: { message?: string } | null = null;
+  for (const rows of rowsList) {
+    const result = await adminClient
       .from("notifications")
-      .insert(fallbackRows as never[]);
-    error = retry.error;
+      .insert(rows as never[]);
+    error = result.error;
+    if (!error) break;
   }
-
   return { error };
 }
 
@@ -158,19 +195,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rows = Array.from(adminIds).map((adminId) => ({
-      user_id: adminId,
-      app_name: "hr",
-      type: body.type,
-      title_ar: body.titleAr,
-      title_en: body.titleEn,
-      desc_ar: body.descAr,
-      desc_en: body.descEn,
-      href: body.href || null,
-      read: false,
-    }));
-
-    const { error } = await insertNotifications(adminClient, rows);
+    const rowCandidates = buildNotificationRows(Array.from(adminIds), body);
+    const { error } = await insertNotifications(adminClient, rowCandidates);
     if (error) {
       console.error("[HR] admin notifications insert error:", error.message);
       return NextResponse.json(
@@ -181,7 +207,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      recipients: rows.length,
+      recipients: adminIds.size,
     });
   } catch (error) {
     console.error("[HR] admin notifications route error:", error);
