@@ -214,7 +214,7 @@ export default function RequestsPage() {
     setAdvRepaymentMonths(3);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const today = new Date().toISOString().split("T")[0];
 
     if (newReqType === "attendanceAdjust") {

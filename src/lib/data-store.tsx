@@ -10,14 +10,6 @@ import {
 } from "react";
 import {
   employees as defaultEmployees,
-  todayAttendance as defaultAttendance,
-  leaveBalances as defaultBalances,
-  leaveRequests as defaultLeaveReqs,
-  employeeRequests as defaultEmpReqs,
-  salaryAdvances as defaultAdvances,
-  attendanceAdjustments as defaultAdjustments,
-  pendingInvitations as defaultInvitations,
-  notifications as defaultNotifications,
   departments as defaultDepartments,
   type Employee,
   type Notification,
@@ -26,11 +18,14 @@ import {
   type PendingInvitation,
 } from "./mock-data";
 import { createNotification, notifyAdmins } from "./notifications";
+import { supabase } from "./supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
 interface AttRecord {
+  id?: string;
   employeeId: string;
+  date: string;
   checkIn: string | null;
   checkOut: string | null;
   status: "present" | "absent" | "late" | "on-leave" | "half-day";
@@ -76,7 +71,6 @@ interface AppSettings {
 interface DataState {
   employees: Employee[];
   todayAttendance: AttRecord[];
-  attendanceDate: string; // YYYY-MM-DD — tracks which day todayAttendance belongs to
   leaveBalances: LeaveBalance[];
   leaveRequests: LeaveReq[];
   employeeRequests: EmpReq[];
@@ -87,7 +81,6 @@ interface DataState {
   settings: AppSettings;
   payrollProcessed: boolean;
   departments: Record<string, { ar: string; en: string }>;
-  passwords: Record<string, string>; // email (lowercase) → password
 }
 
 // ─── Default State ───────────────────────────────────────────────────
@@ -95,15 +88,14 @@ interface DataState {
 function getDefaultState(): DataState {
   return {
     employees: [...defaultEmployees],
-    todayAttendance: [...defaultAttendance] as AttRecord[],
-    attendanceDate: new Date().toISOString().split("T")[0],
-    leaveBalances: [...defaultBalances],
-    leaveRequests: [...defaultLeaveReqs] as LeaveReq[],
-    employeeRequests: [...defaultEmpReqs] as EmpReq[],
-    salaryAdvances: [...defaultAdvances],
-    attendanceAdjustments: [...defaultAdjustments],
-    pendingInvitations: [...defaultInvitations],
-    notifications: [...defaultNotifications],
+    todayAttendance: [],
+    leaveBalances: [],
+    leaveRequests: [],
+    employeeRequests: [],
+    salaryAdvances: [],
+    attendanceAdjustments: [],
+    pendingInvitations: [],
+    notifications: [],
     settings: {
       geofenceEnabled: true,
       geofenceRadius: 200,
@@ -113,7 +105,6 @@ function getDefaultState(): DataState {
     },
     payrollProcessed: false,
     departments: { ...defaultDepartments },
-    passwords: { "waleed@njdstudio.net": "admin123" },
   };
 }
 
@@ -142,49 +133,57 @@ export function haversineDistance(
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+async function getSessionUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user?.id) throw new Error("Not authenticated");
+  return session.user.id;
+}
+
 // ─── Context ─────────────────────────────────────────────────────────
 
 interface DataContextType extends DataState {
-  // Attendance
-  clockIn: (employeeId: string, time: string) => void;
-  clockOut: (employeeId: string, time: string) => void;
+  // Attendance (Supabase)
+  clockIn: (time: string) => Promise<void>;
+  clockOut: (time: string) => Promise<void>;
+  refreshAttendance: () => Promise<void>;
 
-  // Leave (Supabase as single source of truth)
+  // Leave Requests (Supabase)
   submitLeaveRequest: (req: Omit<LeaveReq, "id">) => Promise<void>;
   refreshLeaveRequests: () => Promise<void>;
   approveLeaveRequest: (id: string) => Promise<void>;
   rejectLeaveRequest: (id: string, reason?: string) => Promise<void>;
 
-  // Employee Requests
-  submitEmployeeRequest: (req: Omit<EmpReq, "id">) => void;
+  // Employee Requests (Supabase)
+  submitEmployeeRequest: (req: Omit<EmpReq, "id">) => Promise<void>;
+  refreshEmployeeRequests: () => Promise<void>;
 
-  // Salary Advance
-  submitAdvance: (adv: Omit<SalaryAdvance, "id">) => void;
+  // Salary Advance (Supabase)
+  submitAdvance: (adv: Omit<SalaryAdvance, "id">) => Promise<void>;
+  refreshSalaryAdvances: () => Promise<void>;
 
-  // Attendance Adjustment
-  submitAdjustment: (adj: Omit<AttendanceAdjustment, "id">) => void;
+  // Attendance Adjustment (Supabase)
+  submitAdjustment: (adj: Omit<AttendanceAdjustment, "id">) => Promise<void>;
+  refreshAttendanceAdjustments: () => Promise<void>;
 
-  // Generic approve/reject (for employeeRequests, salaryAdvances, attendanceAdjustments)
+  // Generic approve/reject (Supabase)
   approveItem: (
-    collection:
-      | "employeeRequests"
-      | "salaryAdvances"
-      | "attendanceAdjustments",
+    collection: "employeeRequests" | "salaryAdvances" | "attendanceAdjustments",
     id: string
-  ) => void;
+  ) => Promise<void>;
   rejectItem: (
-    collection:
-      | "employeeRequests"
-      | "salaryAdvances"
-      | "attendanceAdjustments",
+    collection: "employeeRequests" | "salaryAdvances" | "attendanceAdjustments",
     id: string
-  ) => void;
+  ) => Promise<void>;
 
-  // Invitations
-  sendInvitation: (inv: Omit<PendingInvitation, "id">) => void;
-  resendInvitation: (id: string) => void;
+  // Invitations (Supabase)
+  sendInvitation: (inv: Omit<PendingInvitation, "id">) => Promise<void>;
+  resendInvitation: (id: string) => Promise<void>;
+  refreshInvitations: () => Promise<void>;
 
-  // Notifications
+  // Leave Balances (Supabase)
+  refreshLeaveBalances: () => Promise<void>;
+
+  // Notifications (local cache — Supabase handles persistent ones separately)
   markNotificationRead: (id: string) => void;
   markAllNotificationsRead: () => void;
   addNotification: (n: Omit<Notification, "id">) => void;
@@ -192,7 +191,7 @@ interface DataContextType extends DataState {
   // Employees
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
 
-  // Settings
+  // Settings (local)
   updateSettings: (updates: Partial<AppSettings>) => void;
 
   // Departments
@@ -200,13 +199,9 @@ interface DataContextType extends DataState {
   updateDepartment: (key: string, ar: string, en: string) => void;
   removeDepartment: (key: string) => void;
 
-  // Profile completion (for invited employees)
+  // Profile completion
   acceptInvitation: (email: string) => void;
   completeProfile: (id: string, data: Partial<Employee>) => void;
-
-  // Passwords
-  changePassword: (email: string, newPassword: string) => void;
-  verifyPassword: (email: string, password: string) => boolean;
 
   // Payroll
   processPayroll: () => void;
@@ -223,48 +218,218 @@ export function useData() {
   return ctx;
 }
 
+// ─── Supabase table → collection name mapping ───────────────────────
+
+const SUPA_TABLE: Record<string, string> = {
+  employeeRequests: "employee_requests",
+  salaryAdvances: "salary_advances",
+  attendanceAdjustments: "attendance_adjustments",
+};
+
 // ─── Provider ────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "njd-hr-data";
+const SETTINGS_KEY = "njd-hr-settings"; // Only settings cached locally
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DataState>(getDefaultState);
   const [hydrated, setHydrated] = useState(false);
 
-  // Hydrate from localStorage after mount (merge with defaults so new fields are preserved)
+  // Hydrate settings from localStorage (only settings — everything else from Supabase)
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(SETTINGS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const today = new Date().toISOString().split("T")[0];
-        // Reset attendance if it belongs to a previous day
-        if (parsed.attendanceDate && parsed.attendanceDate !== today) {
-          parsed.todayAttendance = [];
-          parsed.attendanceDate = today;
-        }
-        setState((defaults) => ({ ...defaults, ...parsed }));
+        setState((prev) => ({
+          ...prev,
+          settings: { ...prev.settings, ...parsed.settings },
+          departments: parsed.departments || prev.departments,
+        }));
       }
-    } catch {
-      // ignore parse errors
-    }
+    } catch { /* ignore */ }
     setHydrated(true);
   }, []);
 
-  // Persist to localStorage on every change (after hydration)
+  // Persist ONLY settings to localStorage
   useEffect(() => {
     if (hydrated) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+        settings: state.settings,
+        departments: state.departments,
+      }));
     }
-  }, [state, hydrated]);
+  }, [state.settings, state.departments, hydrated]);
 
-  // Sync employees from Supabase (all registered users)
+  // ── Supabase Refresh Functions ──
+
+  const refreshAttendance = useCallback(async () => {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const { data } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("date", today)
+        .order("created_at", { ascending: false });
+      if (!data) return;
+      const mapped: AttRecord[] = data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        employeeId: r.employee_id as string,
+        date: r.date as string,
+        checkIn: r.check_in as string | null,
+        checkOut: r.check_out as string | null,
+        status: ((r.status as string) || "present") as AttRecord["status"],
+      }));
+      setState((prev) => ({ ...prev, todayAttendance: mapped }));
+    } catch { /* table may not exist */ }
+  }, []);
+
+  const refreshLeaveRequests = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("leave_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!data) return;
+      const mapped: LeaveReq[] = data.map((row: Record<string, unknown>) => ({
+        id: row.id as string,
+        employeeId: row.employee_id as string,
+        typeKey: (row.type as string) || (row.type_key as string) || "annual",
+        startDate: row.start_date as string,
+        endDate: row.end_date as string,
+        days: row.days as number,
+        status: row.status as "pending" | "approved" | "rejected",
+        reasonAr: (row.reason as string) || "",
+        reasonEn: (row.reason as string) || "",
+      }));
+      setState((prev) => ({ ...prev, leaveRequests: mapped }));
+    } catch { /* */ }
+  }, []);
+
+  const refreshEmployeeRequests = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("employee_requests")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!data) return;
+      const mapped: EmpReq[] = data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        employeeId: r.employee_id as string,
+        typeKey: r.type_key as string,
+        date: r.date as string,
+        status: r.status as "pending" | "in-review" | "approved" | "rejected",
+        detailsAr: (r.details_ar as string) || "",
+        detailsEn: (r.details_en as string) || "",
+      }));
+      setState((prev) => ({ ...prev, employeeRequests: mapped }));
+    } catch { /* */ }
+  }, []);
+
+  const refreshSalaryAdvances = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("salary_advances")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!data) return;
+      const mapped: SalaryAdvance[] = data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        employeeId: r.employee_id as string,
+        amount: r.amount as number,
+        reasonAr: (r.reason_ar as string) || "",
+        reasonEn: (r.reason_en as string) || "",
+        requestDate: r.request_date as string,
+        status: r.status as "pending" | "approved" | "rejected",
+        repaymentMonths: r.repayment_months as number,
+        monthlyDeduction: r.monthly_deduction as number,
+        remainingBalance: r.remaining_balance as number,
+        paidMonths: r.paid_months as number,
+      }));
+      setState((prev) => ({ ...prev, salaryAdvances: mapped }));
+    } catch { /* */ }
+  }, []);
+
+  const refreshAttendanceAdjustments = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("attendance_adjustments")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!data) return;
+      const mapped: AttendanceAdjustment[] = data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        employeeId: r.employee_id as string,
+        date: r.date as string,
+        originalIn: (r.original_in as string) || "",
+        requestedIn: (r.requested_in as string) || "",
+        originalOut: (r.original_out as string) || "",
+        requestedOut: (r.requested_out as string) || "",
+        reasonAr: (r.reason_ar as string) || "",
+        reasonEn: (r.reason_en as string) || "",
+        status: r.status as "pending" | "approved" | "rejected",
+      }));
+      setState((prev) => ({ ...prev, attendanceAdjustments: mapped }));
+    } catch { /* */ }
+  }, []);
+
+  const refreshInvitations = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from("pending_invitations")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (!data) return;
+      const mapped: PendingInvitation[] = data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        email: r.email as string,
+        nameAr: (r.name_ar as string) || "",
+        nameEn: (r.name_en as string) || "",
+        department: (r.department as string) || "",
+        positionAr: (r.position_ar as string) || "",
+        positionEn: (r.position_en as string) || "",
+        sentDate: r.sent_date as string,
+        status: r.status as "pending" | "expired",
+      }));
+      setState((prev) => ({ ...prev, pendingInvitations: mapped }));
+    } catch { /* */ }
+  }, []);
+
+  const refreshLeaveBalances = useCallback(async () => {
+    try {
+      const currentYear = new Date().getFullYear();
+      const { data } = await supabase
+        .from("leave_balances")
+        .select("*")
+        .eq("year", currentYear);
+      if (!data || data.length === 0) return;
+      const mapped: LeaveBalance[] = data.map((r: Record<string, unknown>) => ({
+        typeKey: r.type_key as string,
+        total: r.total as number,
+        used: r.used as number,
+        remaining: (r.total as number) - (r.used as number),
+      }));
+      setState((prev) => ({ ...prev, leaveBalances: mapped }));
+    } catch { /* */ }
+  }, []);
+
+  // ── Fetch ALL data from Supabase on hydration ──
+
+  useEffect(() => {
+    if (!hydrated) return;
+    refreshAttendance();
+    refreshLeaveRequests();
+    refreshEmployeeRequests();
+    refreshSalaryAdvances();
+    refreshAttendanceAdjustments();
+    refreshInvitations();
+    refreshLeaveBalances();
+  }, [hydrated, refreshAttendance, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments, refreshInvitations, refreshLeaveBalances]);
+
+  // Sync employees from Supabase
   useEffect(() => {
     if (!hydrated) return;
     async function syncEmployees() {
       try {
-        const { supabase } = await import("./supabase");
-        // Try admin RPC first, fallback to profiles table
         // eslint-disable-next-line prefer-const
         let users: Array<{
           user_id: string; email: string; created_at: string;
@@ -318,45 +483,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
           if (newEmployees.length === 0) return prev;
           return { ...prev, employees: [...prev.employees, ...newEmployees] };
         });
-      } catch {
-        // admin_list_users RPC may not be available for non-admins — silently ignore
-      }
+      } catch { /* */ }
     }
     syncEmployees();
   }, [hydrated]);
-
-  // ── Leave Requests: Supabase is the single source of truth ──
-
-  const refreshLeaveRequests = useCallback(async () => {
-    try {
-      const { supabase } = await import("./supabase");
-      const { data, error } = await supabase
-        .from("leave_requests")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (error || !data) return;
-
-      const mapped: LeaveReq[] = data.map((row: Record<string, unknown>) => ({
-        id: row.id as string,
-        employeeId: row.employee_id as string,
-        typeKey: (row.type as string) || (row.type_key as string) || "annual",
-        startDate: row.start_date as string,
-        endDate: row.end_date as string,
-        days: row.days as number,
-        status: row.status as "pending" | "approved" | "rejected",
-        reasonAr: (row.reason as string) || "",
-        reasonEn: (row.reason as string) || "",
-      }));
-      // Supabase always wins — replace local cache entirely
-      setState((prev) => ({ ...prev, leaveRequests: mapped }));
-    } catch { /* table may not exist yet */ }
-  }, []);
-
-  // Fetch leave requests from Supabase on hydration
-  useEffect(() => {
-    if (!hydrated) return;
-    refreshLeaveRequests();
-  }, [hydrated, refreshLeaveRequests]);
 
   // Listen for invitation acceptance from AuthProvider
   useEffect(() => {
@@ -369,44 +499,42 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Actions ──
+  // ── Attendance Actions (Supabase) ──
 
-  const clockIn = useCallback((employeeId: string, time: string) => {
-    setState((p) => {
-      const existing = p.todayAttendance.find((a) => a.employeeId === employeeId);
-      // Block re-check-in if already checked out today
-      if (existing?.checkOut) return p;
-      const attendance = existing
-        ? p.todayAttendance.map((a) =>
-            a.employeeId === employeeId
-              ? { ...a, checkIn: time, status: "present" as const }
-              : a
-          )
-        : [
-            ...p.todayAttendance,
-            { employeeId, checkIn: time, checkOut: null, status: "present" as const },
-          ];
-      return { ...p, todayAttendance: attendance };
-    });
-  }, []);
+  const clockIn = useCallback(async (time: string) => {
+    const userId = await getSessionUserId();
+    const today = new Date().toISOString().split("T")[0];
 
-  const clockOut = useCallback((employeeId: string, time: string) => {
-    setState((p) => ({
-      ...p,
-      todayAttendance: p.todayAttendance.map((a) =>
-        a.employeeId === employeeId ? { ...a, checkOut: time } : a
-      ),
-    }));
-  }, []);
+    await supabase.from("attendance").upsert({
+      employee_id: userId,
+      date: today,
+      check_in: time,
+      status: "present",
+      method: "geofence",
+    }, { onConflict: "employee_id,date" });
 
-  // Submit leave request — writes to Supabase ONLY, then refreshes local cache
+    await refreshAttendance();
+  }, [refreshAttendance]);
+
+  const clockOut = useCallback(async (time: string) => {
+    const userId = await getSessionUserId();
+    const today = new Date().toISOString().split("T")[0];
+
+    await supabase.from("attendance")
+      .update({ check_out: time })
+      .eq("employee_id", userId)
+      .eq("date", today);
+
+    await refreshAttendance();
+  }, [refreshAttendance]);
+
+  // ── Leave Requests (Supabase) ──
+
   const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
-    const { supabase } = await import("./supabase");
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user?.id) throw new Error("Not authenticated");
+    const userId = await getSessionUserId();
 
     await supabase.from("leave_requests").insert({
-      employee_id: session.user.id,
+      employee_id: userId,
       type: req.typeKey,
       start_date: req.startDate,
       end_date: req.endDate,
@@ -415,10 +543,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       status: "pending",
     });
 
-    // Refresh cache from Supabase
     await refreshLeaveRequests();
 
-    // Notify admins via Supabase
     notifyAdmins({
       type: "leave",
       titleAr: "طلب إجازة جديد",
@@ -429,21 +555,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   }, [refreshLeaveRequests]);
 
-  // Approve leave request — updates Supabase, then refreshes local cache
   const approveLeaveRequest = useCallback(async (id: string) => {
-    const { supabase } = await import("./supabase");
-    const { data: { session } } = await supabase.auth.getSession();
+    const userId = await getSessionUserId();
 
     await supabase.from("leave_requests").update({
       status: "approved",
-      reviewed_by: session?.user?.id || null,
+      reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
     }).eq("id", id);
 
-    // Refresh cache from Supabase
     await refreshLeaveRequests();
 
-    // Notify employee
     const req = state.leaveRequests.find((r) => r.id === id);
     if (req?.employeeId) {
       createNotification({
@@ -458,115 +580,146 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshLeaveRequests, state.leaveRequests]);
 
-  // Reject leave request — updates Supabase, then refreshes local cache
   const rejectLeaveRequest = useCallback(async (id: string, reason?: string) => {
-    const { supabase } = await import("./supabase");
-    const { data: { session } } = await supabase.auth.getSession();
+    const userId = await getSessionUserId();
 
     await supabase.from("leave_requests").update({
       status: "rejected",
-      reviewed_by: session?.user?.id || null,
+      reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
       rejection_reason: reason || null,
     }).eq("id", id);
 
-    // Refresh cache from Supabase
     await refreshLeaveRequests();
   }, [refreshLeaveRequests]);
 
-  const submitEmployeeRequest = useCallback((req: Omit<EmpReq, "id">) => {
-    setState((p) => ({
-      ...p,
-      employeeRequests: [{ ...req, id: genId("REQ") }, ...p.employeeRequests],
-    }));
-  }, []);
+  // ── Employee Requests (Supabase) ──
 
-  const submitAdvance = useCallback((adv: Omit<SalaryAdvance, "id">) => {
-    setState((p) => ({
-      ...p,
-      salaryAdvances: [{ ...adv, id: genId("ADV") }, ...p.salaryAdvances],
-    }));
-  }, []);
+  const submitEmployeeRequest = useCallback(async (req: Omit<EmpReq, "id">) => {
+    const userId = await getSessionUserId();
 
-  const submitAdjustment = useCallback(
-    (adj: Omit<AttendanceAdjustment, "id">) => {
-      setState((p) => ({
-        ...p,
-        attendanceAdjustments: [
-          { ...adj, id: genId("ADJ") },
-          ...p.attendanceAdjustments,
-        ],
-      }));
-    },
-    []
-  );
+    await supabase.from("employee_requests").insert({
+      employee_id: userId,
+      type_key: req.typeKey,
+      date: req.date || new Date().toISOString().split("T")[0],
+      status: "pending",
+      details_ar: req.detailsAr,
+      details_en: req.detailsEn,
+    });
 
-  const approveItem = useCallback(
-    (
-      collection:
-        | "employeeRequests"
-        | "salaryAdvances"
-        | "attendanceAdjustments",
-      id: string
-    ) => {
-      setState((p) => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const updated = (p[collection] as any[]).map((item: any) =>
-          item.id === id ? { ...item, status: "approved" } : item
-        );
+    await refreshEmployeeRequests();
+  }, [refreshEmployeeRequests]);
 
-        return {
-          ...p,
-          [collection]: updated,
-        };
-      });
-    },
-    []
-  );
+  // ── Salary Advance (Supabase) ──
 
-  const rejectItem = useCallback(
-    (
-      collection:
-        | "employeeRequests"
-        | "salaryAdvances"
-        | "attendanceAdjustments",
-      id: string
-    ) => {
-      setState((p) => ({
-        ...p,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        [collection]: (p[collection] as any[]).map((item: any) =>
-          item.id === id ? { ...item, status: "rejected" } : item
-        ),
-      }));
-    },
-    []
-  );
+  const submitAdvance = useCallback(async (adv: Omit<SalaryAdvance, "id">) => {
+    const userId = await getSessionUserId();
 
-  const sendInvitation = useCallback((inv: Omit<PendingInvitation, "id">) => {
-    setState((p) => ({
-      ...p,
-      pendingInvitations: [
-        { ...inv, id: genId("INV") },
-        ...p.pendingInvitations,
-      ],
-    }));
-  }, []);
+    await supabase.from("salary_advances").insert({
+      employee_id: userId,
+      amount: adv.amount,
+      reason_ar: adv.reasonAr,
+      reason_en: adv.reasonEn,
+      request_date: adv.requestDate || new Date().toISOString().split("T")[0],
+      status: "pending",
+      repayment_months: adv.repaymentMonths,
+      monthly_deduction: adv.monthlyDeduction,
+      remaining_balance: adv.amount,
+      paid_months: 0,
+    });
 
-  const resendInvitation = useCallback((id: string) => {
-    setState((p) => ({
-      ...p,
-      pendingInvitations: p.pendingInvitations.map((inv) =>
-        inv.id === id
-          ? {
-              ...inv,
-              status: "pending" as const,
-              sentDate: new Date().toISOString().split("T")[0],
-            }
-          : inv
-      ),
-    }));
-  }, []);
+    await refreshSalaryAdvances();
+  }, [refreshSalaryAdvances]);
+
+  // ── Attendance Adjustment (Supabase) ──
+
+  const submitAdjustment = useCallback(async (adj: Omit<AttendanceAdjustment, "id">) => {
+    const userId = await getSessionUserId();
+
+    await supabase.from("attendance_adjustments").insert({
+      employee_id: userId,
+      date: adj.date,
+      original_in: adj.originalIn || null,
+      requested_in: adj.requestedIn || null,
+      original_out: adj.originalOut || null,
+      requested_out: adj.requestedOut || null,
+      reason_ar: adj.reasonAr,
+      reason_en: adj.reasonEn,
+      status: "pending",
+    });
+
+    await refreshAttendanceAdjustments();
+  }, [refreshAttendanceAdjustments]);
+
+  // ── Generic Approve/Reject (Supabase) ──
+
+  const approveItem = useCallback(async (
+    collection: "employeeRequests" | "salaryAdvances" | "attendanceAdjustments",
+    id: string
+  ) => {
+    const userId = await getSessionUserId();
+    const table = SUPA_TABLE[collection];
+
+    await supabase.from(table).update({
+      status: "approved",
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+    }).eq("id", id);
+
+    // Refresh the relevant collection
+    if (collection === "employeeRequests") await refreshEmployeeRequests();
+    else if (collection === "salaryAdvances") await refreshSalaryAdvances();
+    else if (collection === "attendanceAdjustments") await refreshAttendanceAdjustments();
+  }, [refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments]);
+
+  const rejectItem = useCallback(async (
+    collection: "employeeRequests" | "salaryAdvances" | "attendanceAdjustments",
+    id: string
+  ) => {
+    const userId = await getSessionUserId();
+    const table = SUPA_TABLE[collection];
+
+    await supabase.from(table).update({
+      status: "rejected",
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+    }).eq("id", id);
+
+    if (collection === "employeeRequests") await refreshEmployeeRequests();
+    else if (collection === "salaryAdvances") await refreshSalaryAdvances();
+    else if (collection === "attendanceAdjustments") await refreshAttendanceAdjustments();
+  }, [refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments]);
+
+  // ── Invitations (Supabase) ──
+
+  const sendInvitation = useCallback(async (inv: Omit<PendingInvitation, "id">) => {
+    const userId = await getSessionUserId();
+
+    await supabase.from("pending_invitations").insert({
+      email: inv.email,
+      name_ar: inv.nameAr,
+      name_en: inv.nameEn,
+      department: inv.department,
+      position_ar: inv.positionAr,
+      position_en: inv.positionEn,
+      sent_date: inv.sentDate || new Date().toISOString().split("T")[0],
+      status: "pending",
+      invited_by: userId,
+    });
+
+    await refreshInvitations();
+  }, [refreshInvitations]);
+
+  const resendInvitation = useCallback(async (id: string) => {
+    await supabase.from("pending_invitations").update({
+      status: "pending",
+      sent_date: new Date().toISOString().split("T")[0],
+    }).eq("id", id);
+
+    await refreshInvitations();
+  }, [refreshInvitations]);
+
+  // ── Notifications (local cache) ──
 
   const markNotificationRead = useCallback((id: string) => {
     setState((p) => ({
@@ -591,6 +744,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
+  // ── Employees (local + Supabase sync) ──
+
   const updateEmployee = useCallback(
     (id: string, updates: Partial<Employee>) => {
       setState((p) => ({
@@ -603,6 +758,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     []
   );
 
+  // ── Settings (local only) ──
+
   const updateSettings = useCallback((updates: Partial<AppSettings>) => {
     setState((p) => ({
       ...p,
@@ -612,7 +769,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const processPayroll = useCallback(() => {
     setState((p) => {
-      // Notify each employee via Supabase
       p.employees.forEach((emp) => {
         createNotification({
           userId: emp.id,
@@ -624,27 +780,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
           href: "/payroll",
         });
       });
-
-      return {
-        ...p,
-        payrollProcessed: true,
-        notifications: [
-          {
-            id: genId("N"),
-            type: "payroll" as const,
-            titleAr: "تم تشغيل الرواتب",
-            titleEn: "Payroll Processed",
-            descAr: "تم معالجة رواتب الشهر الحالي بنجاح",
-            descEn: "Current month payroll has been processed successfully",
-            time: 0,
-            read: false,
-            href: "/payroll",
-          },
-          ...p.notifications,
-        ],
-      };
+      return { ...p, payrollProcessed: true };
     });
   }, []);
+
+  // ── Departments ──
 
   const addDepartment = useCallback((key: string, ar: string, en: string) => {
     setState((p) => ({
@@ -667,6 +807,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return { ...p, departments: rest };
     });
   }, []);
+
+  // ── Profile / Invitation Acceptance ──
 
   const acceptInvitation = useCallback((email: string) => {
     setState((p) => {
@@ -695,13 +837,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         color: colors[Math.floor(Math.random() * colors.length)],
         profileCompleted: false,
       };
+
+      // Update invitation status in Supabase
+      supabase.from("pending_invitations").update({ status: "expired" }).eq("id", inv.id);
+
       return {
         ...p,
         employees: [...p.employees, newEmp],
         pendingInvitations: p.pendingInvitations.map((i) =>
           i.id === inv.id ? { ...i, status: "expired" as const } : i
         ),
-        passwords: { ...p.passwords, [inv.email.toLowerCase()]: "demo123" },
       };
     });
   }, []);
@@ -718,40 +863,32 @@ export function DataProvider({ children }: { children: ReactNode }) {
     []
   );
 
-  const changePassword = useCallback((email: string, newPassword: string) => {
-    setState((p) => ({
-      ...p,
-      passwords: { ...p.passwords, [email.toLowerCase()]: newPassword },
-    }));
-  }, []);
-
-  const verifyPassword = useCallback((email: string, password: string): boolean => {
-    const stored = state.passwords[email.toLowerCase()];
-    if (!stored) return password === "demo123"; // Default for invited employees
-    return stored === password;
-  }, [state.passwords]);
-
   const resetStore = useCallback(() => {
-    const fresh = getDefaultState();
-    setState(fresh);
-    localStorage.removeItem(STORAGE_KEY);
+    setState(getDefaultState());
+    localStorage.removeItem(SETTINGS_KEY);
   }, []);
 
   const value: DataContextType = {
     ...state,
     clockIn,
     clockOut,
+    refreshAttendance,
     submitLeaveRequest,
     refreshLeaveRequests,
     approveLeaveRequest,
     rejectLeaveRequest,
     submitEmployeeRequest,
+    refreshEmployeeRequests,
     submitAdvance,
+    refreshSalaryAdvances,
     submitAdjustment,
+    refreshAttendanceAdjustments,
     approveItem,
     rejectItem,
     sendInvitation,
     resendInvitation,
+    refreshInvitations,
+    refreshLeaveBalances,
     markNotificationRead,
     markAllNotificationsRead,
     addNotification,
@@ -762,8 +899,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     removeDepartment,
     acceptInvitation,
     completeProfile,
-    changePassword,
-    verifyPassword,
     processPayroll,
     resetStore,
   };

@@ -354,16 +354,14 @@ export default function AttendancePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle clock in
-  const handleClockIn = () => {
+  const handleClockIn = async () => {
     if (tooEarly) return;
     if (clockMethod === "geofence" && locationRequired && !isInsideGeofence) return;
     const time = getCurrentTime();
     setClockedIn(true);
     setClockInTime(time);
     setClockOutTime(null);
-    if (currentUserId) {
-      store.clockIn(currentUserId, time);
-    }
+    await store.clockIn(time);
   };
 
   // Handle clock out — re-verify geofence, block if outside
@@ -436,9 +434,7 @@ export default function AttendancePage() {
     // Clock out
     setClockedIn(false);
     setClockOutTime(time);
-    if (currentUserId) {
-      store.clockOut(currentUserId, time);
-    }
+    await store.clockOut(time);
 
     // Reset modal
     setReportOpen(false);
@@ -460,20 +456,18 @@ export default function AttendancePage() {
   };
 
   // Handle adjustment submit
-  const handleAdjustmentSubmit = () => {
-    if (currentUserId) {
-      store.submitAdjustment({
-        employeeId: currentUserId,
-        date: adjDate,
-        originalIn: adjOriginalIn,
-        requestedIn: adjRequestedIn,
-        originalOut: adjOriginalOut,
-        requestedOut: adjRequestedOut,
-        reasonAr: adjReason,
-        reasonEn: adjReason,
-        status: "pending",
-      });
-    }
+  const handleAdjustmentSubmit = async () => {
+    await store.submitAdjustment({
+      employeeId: "",
+      date: adjDate,
+      originalIn: adjOriginalIn,
+      requestedIn: adjRequestedIn,
+      originalOut: adjOriginalOut,
+      requestedOut: adjRequestedOut,
+      reasonAr: adjReason,
+      reasonEn: adjReason,
+      status: "pending",
+    });
     setAdjustDialogOpen(false);
     setAdjDate("");
     setAdjOriginalIn("");
