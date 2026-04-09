@@ -397,6 +397,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     } catch { /* */ }
   }, []);
 
+  // Default leave balances — used when Supabase has no records for this employee/year
+  const DEFAULT_BALANCES: LeaveBalance[] = [
+    { typeKey: "annual", total: 21, used: 0, remaining: 21 },
+    { typeKey: "sick", total: 10, used: 0, remaining: 10 },
+    { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
+  ];
+
   const refreshLeaveBalances = useCallback(async () => {
     try {
       const currentYear = new Date().getFullYear();
@@ -404,7 +411,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         .from("leave_balances")
         .select("*")
         .eq("year", currentYear);
-      if (!data || data.length === 0) return;
+      if (!data || data.length === 0) {
+        // No records in Supabase — use defaults
+        setState((prev) => ({ ...prev, leaveBalances: DEFAULT_BALANCES }));
+        return;
+      }
       const mapped: LeaveBalance[] = data.map((r: Record<string, unknown>) => ({
         typeKey: r.type_key as string,
         total: r.total as number,
@@ -412,7 +423,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         remaining: (r.total as number) - (r.used as number),
       }));
       setState((prev) => ({ ...prev, leaveBalances: mapped }));
-    } catch { /* */ }
+    } catch {
+      // Supabase unavailable — use defaults
+      setState((prev) => prev.leaveBalances.length === 0 ? { ...prev, leaveBalances: DEFAULT_BALANCES } : prev);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Fetch ALL data from Supabase on hydration ──
