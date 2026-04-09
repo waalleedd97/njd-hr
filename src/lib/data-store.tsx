@@ -76,6 +76,7 @@ interface AppSettings {
 interface DataState {
   employees: Employee[];
   todayAttendance: AttRecord[];
+  attendanceDate: string; // YYYY-MM-DD — tracks which day todayAttendance belongs to
   leaveBalances: LeaveBalance[];
   leaveRequests: LeaveReq[];
   employeeRequests: EmpReq[];
@@ -95,6 +96,7 @@ function getDefaultState(): DataState {
   return {
     employees: [...defaultEmployees],
     todayAttendance: [...defaultAttendance] as AttRecord[],
+    attendanceDate: new Date().toISOString().split("T")[0],
     leaveBalances: [...defaultBalances],
     leaveRequests: [...defaultLeaveReqs] as LeaveReq[],
     employeeRequests: [...defaultEmpReqs] as EmpReq[],
@@ -235,6 +237,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const today = new Date().toISOString().split("T")[0];
+        // Reset attendance if it belongs to a previous day
+        if (parsed.attendanceDate && parsed.attendanceDate !== today) {
+          parsed.todayAttendance = [];
+          parsed.attendanceDate = today;
+        }
         setState((defaults) => ({ ...defaults, ...parsed }));
       }
     } catch {
