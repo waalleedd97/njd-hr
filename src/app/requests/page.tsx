@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import type { Employee } from "@/lib/mock-data";
@@ -52,9 +53,15 @@ export default function RequestsPage() {
   const { isAdmin, user } = useAuth();
   const store = useData();
   const isAr = lang === "ar";
+  const searchParams = useSearchParams();
 
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  // Initialize filters from URL query params (e.g. /requests?status=pending&type=leaveRequest)
+  const [typeFilter, setTypeFilter] = useState<string>(
+    () => searchParams?.get("type") || "all"
+  );
+  const [statusFilter, setStatusFilter] = useState<string>(
+    () => searchParams?.get("status") || "all"
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newReqType, setNewReqType] = useState<string>("leaveRequest");
   const [newReqDesc, setNewReqDesc] = useState("");

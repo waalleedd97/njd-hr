@@ -45,6 +45,7 @@ interface StatCardData {
   label: string;
   trend?: string;
   trendTone?: "success" | "warning" | "info" | "primary";
+  trendHref?: string;
   iconBg: string;
   iconColor: string;
 }
@@ -137,6 +138,7 @@ export default function DashboardPage() {
       label: t.stats.pendingRequests,
       trend: t.stats.needsAction,
       trendTone: "warning",
+      trendHref: "/requests?status=pending",
       iconBg: "bg-amber-500/15",
       iconColor: "text-amber-600 dark:text-amber-400",
     },
@@ -330,9 +332,21 @@ export default function DashboardPage() {
                 <Icon name={stat.iconName} size={28} fill />
               </div>
               {stat.trend && (
-                <Badge variant={stat.trendTone === "warning" ? "warning" : stat.trendTone === "success" ? "success" : "info"}>
-                  {stat.trend}
-                </Badge>
+                stat.trendHref ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); router.push(stat.trendHref!); }}
+                    className="cursor-pointer hover:scale-105 active:scale-95 transition-transform focus-visible:ring-2 focus-visible:ring-primary/40 rounded-full outline-none"
+                    aria-label={stat.trend}
+                  >
+                    <Badge variant={stat.trendTone === "warning" ? "warning" : stat.trendTone === "success" ? "success" : "info"}>
+                      {stat.trend}
+                    </Badge>
+                  </button>
+                ) : (
+                  <Badge variant={stat.trendTone === "warning" ? "warning" : stat.trendTone === "success" ? "success" : "info"}>
+                    {stat.trend}
+                  </Badge>
+                )
               )}
             </div>
             <p className="text-on-surface-variant text-sm font-medium mb-1">
