@@ -134,17 +134,36 @@ export default function RequestsPage() {
     return counts;
   }, [allRequests]);
 
-  const filteredRequests = useMemo(() => {
+  // Filter by role + type only (status is handled by splitting into 3 sections)
+  const filteredByTypeAndRole = useMemo(() => {
     let list = allRequests;
     if (!isAdmin) {
       list = list.filter((req) => req.employeeId === user.id || req.employeeId === user.email);
     }
-    return list.filter((req) => {
-      if (typeFilter !== "all" && req.typeKey !== typeFilter) return false;
-      if (statusFilter !== "all" && req.status !== statusFilter) return false;
-      return true;
-    });
-  }, [allRequests, typeFilter, statusFilter, isAdmin, user.email, user.id]);
+    if (typeFilter !== "all") {
+      list = list.filter((req) => req.typeKey === typeFilter);
+    }
+    return list;
+  }, [allRequests, typeFilter, isAdmin, user.email, user.id]);
+
+  // Split into 3 sections by status (already sorted newest-first via allRequests)
+  const pendingRequests = useMemo(
+    () => filteredByTypeAndRole.filter((r) => r.status === "pending" || r.status === "in-review"),
+    [filteredByTypeAndRole]
+  );
+  const approvedRequests = useMemo(
+    () => filteredByTypeAndRole.filter((r) => r.status === "approved"),
+    [filteredByTypeAndRole]
+  );
+  const rejectedRequests = useMemo(
+    () => filteredByTypeAndRole.filter((r) => r.status === "rejected"),
+    [filteredByTypeAndRole]
+  );
+
+  // Which sections to show based on statusFilter (from URL or dropdown)
+  const showPending = statusFilter === "all" || statusFilter === "pending" || statusFilter === "in-review";
+  const showApproved = statusFilter === "all" || statusFilter === "approved";
+  const showRejected = statusFilter === "all" || statusFilter === "rejected";
 
   const resetForm = () => {
     setNewReqType("leaveRequest");
@@ -277,127 +296,170 @@ export default function RequestsPage() {
         </select>
       </div>
 
-      {/* Requests Table */}
-      <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px]">
-            <thead>
-              <tr className="bg-surface-container/30">
-                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.requestNo}</th>
-                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
-                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.type}</th>
-                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.date}</th>
-                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.status}</th>
-                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.details}</th>
-                {isAdmin && <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.actions}</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRequests.length === 0 ? (
-                <tr>
-                  <td colSpan={isAdmin ? 7 : 6} className="py-14 text-center text-on-surface-variant">
-                    <Icon name="inbox" size={44} className="mb-3 opacity-40" />
-                    <p className="text-sm font-medium">{t.common.noData}</p>
-                  </td>
-                </tr>
-              ) : (
-                filteredRequests.map((req) => {
-                  const emp = resolveEmployee(req.employeeId);
-                  const tconfig = typeConfig[req.typeKey];
-                  return (
-                    <tr key={req.id} className="hover:bg-surface-container-low transition-colors">
-                      <td className="px-6 py-4 text-xs font-mono text-on-surface-variant font-bold">{req.id}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <Avatar className="w-8 h-8">
-                            <AvatarFallback className={cn("text-white text-[11px] font-bold", emp.color)}>
-                              {emp.initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm font-bold">{isAr ? emp.nameAr : emp.nameEn}</span>
-                        </div>
+      {/* Section renderer */}
+      {(() => {
+        const renderSection = (
+          titleAr: string,
+          titleEn: string,
+          accentClass: string,
+          countBadgeVariant: "warning" | "success" | "destructive",
+          iconName: string,
+          requests: UnifiedRequest[],
+          showActions: boolean
+        ) => (
+          <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
+            {/* Section header */}
+            <div className="flex items-center justify-between px-6 py-4">
+              <div className="flex items-center gap-3">
+                <span className={cn("w-1.5 h-7 rounded-full", accentClass)} />
+                <Icon name={iconName} size={22} className="text-on-surface-variant" />
+                <h3 className="font-headline font-bold text-xl">{isAr ? titleAr : titleEn}</h3>
+                <Badge variant={countBadgeVariant}>
+                  {requests.length}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[700px]">
+                <thead>
+                  <tr className="bg-surface-container/30">
+                    <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.requestNo}</th>
+                    <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
+                    <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.type}</th>
+                    <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.date}</th>
+                    <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.details}</th>
+                    {showActions && isAdmin && <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.actions}</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {requests.length === 0 ? (
+                    <tr>
+                      <td colSpan={showActions && isAdmin ? 6 : 5} className="py-10 text-center text-on-surface-variant">
+                        <Icon name="inbox" size={36} className="mb-2 opacity-40" />
+                        <p className="text-sm font-medium">{t.common.noData}</p>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          {tconfig && <Icon name={tconfig.iconName} size={18} className={tconfig.icon} />}
-                          <span className="text-sm font-medium">
-                            {t.requestTypes[req.typeKey as keyof typeof t.requestTypes]}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-on-surface-variant tabular-nums font-medium">{req.date}</td>
-                      <td className="px-6 py-4">
-                        <Badge variant={statusBadgeVariant[req.status] ?? "warning"}>
-                          {getStatusLabel(req.status)}
-                        </Badge>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-on-surface-variant max-w-[200px] truncate">
-                        {isAr ? req.detailsAr : req.detailsEn}
-                      </td>
-                      {isAdmin && (
-                        <td className="px-6 py-4">
-                          {(req.status === "pending" || req.status === "in-review") && (
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={async () => {
-                                  if (!confirm(isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?")) return;
-                                  try {
-                                    if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
-                                      await store.approveLeaveRequest(req.id);
-                                    } else {
-                                      const collection =
-                                        req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
-                                        : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
-                                        : "employeeRequests" as const;
-                                      await store.approveItem(collection, req.id);
-                                    }
-                                  } catch (e) {
-                                    console.error("[HR] approve failed:", e);
-                                    alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
-                                  }
-                                }}
-                                className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-colors"
-                                title={isAr ? "موافقة" : "Approve"}
-                                aria-label={isAr ? "موافقة" : "Approve"}
-                              >
-                                <Icon name="check_circle" size={18} fill />
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  if (!confirm(isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?")) return;
-                                  try {
-                                    if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
-                                      await store.rejectLeaveRequest(req.id);
-                                    } else {
-                                      const collection =
-                                        req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
-                                        : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
-                                        : "employeeRequests" as const;
-                                      await store.rejectItem(collection, req.id);
-                                    }
-                                  } catch (e) {
-                                    console.error("[HR] reject failed:", e);
-                                    alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
-                                  }
-                                }}
-                                className="p-2 rounded-full text-md-error hover:bg-error-container/20 transition-colors"
-                                title={isAr ? "رفض" : "Reject"}
-                                aria-label={isAr ? "رفض" : "Reject"}
-                              >
-                                <Icon name="cancel" size={18} fill />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      )}
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  ) : (
+                    requests.map((req) => {
+                      const emp = resolveEmployee(req.employeeId);
+                      const tconfig = typeConfig[req.typeKey];
+                      return (
+                        <tr key={req.id} className="hover:bg-surface-container-low transition-colors">
+                          <td className="px-6 py-4 text-xs font-mono text-on-surface-variant font-bold">{req.id}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="w-8 h-8">
+                                <AvatarFallback className={cn("text-white text-[11px] font-bold", emp.color)}>
+                                  {emp.initials}
+                                </AvatarFallback>
+                              </Avatar>
+                              <span className="text-sm font-bold">{isAr ? emp.nameAr : emp.nameEn}</span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <div className="flex items-center gap-2">
+                              {tconfig && <Icon name={tconfig.iconName} size={18} className={tconfig.icon} />}
+                              <span className="text-sm font-medium">
+                                {t.requestTypes[req.typeKey as keyof typeof t.requestTypes]}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm text-on-surface-variant tabular-nums font-medium">{req.date}</td>
+                          <td className="px-6 py-4 text-sm text-on-surface-variant max-w-[200px] truncate">
+                            {isAr ? req.detailsAr : req.detailsEn}
+                          </td>
+                          {showActions && isAdmin && (
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?")) return;
+                                    try {
+                                      if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
+                                        await store.approveLeaveRequest(req.id);
+                                      } else {
+                                        const collection =
+                                          req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
+                                          : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
+                                          : "employeeRequests" as const;
+                                        await store.approveItem(collection, req.id);
+                                      }
+                                    } catch (e) {
+                                      console.error("[HR] approve failed:", e);
+                                      alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
+                                    }
+                                  }}
+                                  className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                                  title={isAr ? "موافقة" : "Approve"}
+                                  aria-label={isAr ? "موافقة" : "Approve"}
+                                >
+                                  <Icon name="check_circle" size={18} fill />
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!confirm(isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?")) return;
+                                    try {
+                                      if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
+                                        await store.rejectLeaveRequest(req.id);
+                                      } else {
+                                        const collection =
+                                          req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
+                                          : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
+                                          : "employeeRequests" as const;
+                                        await store.rejectItem(collection, req.id);
+                                      }
+                                    } catch (e) {
+                                      console.error("[HR] reject failed:", e);
+                                      alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
+                                    }
+                                  }}
+                                  className="p-2 rounded-full text-md-error hover:bg-error-container/20 transition-colors"
+                                  title={isAr ? "رفض" : "Reject"}
+                                  aria-label={isAr ? "رفض" : "Reject"}
+                                >
+                                  <Icon name="cancel" size={18} fill />
+                                </button>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+
+        return (
+          <div className="space-y-6">
+            {showPending && renderSection(
+              "يحتاج إجراء", "Needs Action",
+              "bg-amber-500", "warning",
+              "pending_actions",
+              pendingRequests,
+              true // show approve/reject buttons
+            )}
+            {showApproved && renderSection(
+              "الموافَق عليها", "Approved",
+              "bg-emerald-500", "success",
+              "check_circle",
+              approvedRequests,
+              false
+            )}
+            {showRejected && renderSection(
+              "المرفوضة", "Rejected",
+              "bg-md-error", "destructive",
+              "cancel",
+              rejectedRequests,
+              false
+            )}
+          </div>
+        );
+      })()}
 
       {/* New Request Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
