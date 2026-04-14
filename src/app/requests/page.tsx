@@ -384,7 +384,7 @@ export default function RequestsPage() {
                             {req.endDate && req.endDate !== req.date ? (
                               <span dir="ltr" className="inline-flex items-center gap-1">
                                 {req.date}
-                                <Icon name={isAr ? "arrow_back" : "arrow_forward"} size={14} className="opacity-60" />
+                                <Icon name="arrow_forward" size={14} className="opacity-60" />
                                 {req.endDate}
                               </span>
                             ) : (
