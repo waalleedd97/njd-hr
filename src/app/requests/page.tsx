@@ -42,7 +42,9 @@ interface UnifiedRequest {
   id: string;
   employeeId: string;
   typeKey: string;
+  subTypeKey?: string;   // e.g. for leaves: "annual" | "sick" | "unpaid" | "marriage" | "paternity"
   date: string;
+  endDate?: string;      // for leaves (date range)
   status: string;
   detailsAr: string;
   detailsEn: string;
@@ -117,9 +119,15 @@ export default function RequestsPage() {
       detailsEn: s.amount.toLocaleString() + " SAR",
     }));
     const leaveMapped: UnifiedRequest[] = store.leaveRequests.map((lr) => ({
-      id: lr.id, employeeId: lr.employeeId, typeKey: "leaveRequest", date: lr.startDate, status: lr.status,
-      detailsAr: lr.reasonAr || (lr.startDate + " → " + lr.endDate + " (" + lr.days + " أيام)"),
-      detailsEn: lr.reasonEn || (lr.startDate + " → " + lr.endDate + " (" + lr.days + " days)"),
+      id: lr.id,
+      employeeId: lr.employeeId,
+      typeKey: "leaveRequest",
+      subTypeKey: lr.typeKey,    // "annual" | "sick" | "unpaid" | "marriage" | "paternity"
+      date: lr.startDate,
+      endDate: lr.endDate,
+      status: lr.status,
+      detailsAr: lr.reasonAr || (lr.days + " أيام"),
+      detailsEn: lr.reasonEn || (lr.days + " days"),
     }));
     const combined = [...base, ...adjMapped, ...advMapped, ...leaveMapped];
     combined.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
@@ -345,9 +353,17 @@ export default function RequestsPage() {
                     requests.map((req) => {
                       const emp = resolveEmployee(req.employeeId);
                       const tconfig = typeConfig[req.typeKey];
+                      // Short display ID: first 8 chars of UUID (full in title tooltip)
+                      const shortId = req.id.length > 8 ? req.id.slice(0, 8).toUpperCase() : req.id.toUpperCase();
+                      // Type label: for leaves, show sub-type (annual/sick/etc.); else main type
+                      const typeLabel = req.subTypeKey
+                        ? (t.lev[req.subTypeKey as keyof typeof t.lev] as string | undefined) ?? t.requestTypes[req.typeKey as keyof typeof t.requestTypes]
+                        : t.requestTypes[req.typeKey as keyof typeof t.requestTypes];
                       return (
                         <tr key={req.id} className="hover:bg-surface-container-low transition-colors">
-                          <td className="px-6 py-4 text-xs font-mono text-on-surface-variant font-bold">{req.id}</td>
+                          <td className="px-6 py-4 text-xs font-mono text-on-surface-variant font-bold" title={req.id}>
+                            {shortId}
+                          </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-3">
                               <Avatar className="w-8 h-8">
@@ -361,12 +377,20 @@ export default function RequestsPage() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               {tconfig && <Icon name={tconfig.iconName} size={18} className={tconfig.icon} />}
-                              <span className="text-sm font-medium">
-                                {t.requestTypes[req.typeKey as keyof typeof t.requestTypes]}
-                              </span>
+                              <span className="text-sm font-medium">{typeLabel}</span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-on-surface-variant tabular-nums font-medium">{req.date}</td>
+                          <td className="px-6 py-4 text-sm text-on-surface-variant tabular-nums font-medium whitespace-nowrap">
+                            {req.endDate && req.endDate !== req.date ? (
+                              <span dir="ltr" className="inline-flex items-center gap-1">
+                                {req.date}
+                                <Icon name={isAr ? "arrow_back" : "arrow_forward"} size={14} className="opacity-60" />
+                                {req.endDate}
+                              </span>
+                            ) : (
+                              req.date
+                            )}
+                          </td>
                           <td className="px-6 py-4 text-sm text-on-surface-variant max-w-[200px] truncate">
                             {isAr ? req.detailsAr : req.detailsEn}
                           </td>
