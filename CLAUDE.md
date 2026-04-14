@@ -236,6 +236,16 @@ Dialog/Sheet headers include `pe-8` / `pe-12` padding to prevent overlap with cl
 5. **`detectSessionInUrl: false`** is set in the Supabase client config — URL hash tokens are handled manually in the auth guard.
 6. **Hydration mismatch**: DataProvider uses a hydration pattern (`hydrated` state) — don't render data-dependent UI before hydration completes.
 7. **`location_required` must always be fetched fresh from the Supabase `profiles` table** — never read from localStorage, DataProvider, or mock data. The admin controls this setting from the Landing Page admin panel, so cached values would be stale. Attendance page fetches it via `session.user.id`; employees page resolves the Supabase UUID via `admin_list_users` RPC first.
+8. **🚫 Async data flickers (transient zeros)** — `useData()` arrays are EMPTY on first render and populate after Supabase fetches resolve. NEVER render counts/sums/totals directly from `store.*` without guarding on the `initialLoaded` flag exposed by `useData()`. Otherwise the UI shows `0` for a split second before the real number arrives, which looks like real data but is a false empty state.
+   ```tsx
+   // ❌ BAD — "0" flashes before real count loads
+   <p>{store.leaveRequests.filter(r => r.status === "pending").length}</p>
+
+   // ✅ GOOD — skeleton/placeholder until initial load completes
+   const { initialLoaded } = useData();
+   {initialLoaded ? count : <span className="inline-block w-16 h-7 rounded-lg bg-surface-container-highest animate-pulse" />}
+   ```
+   Applies to: Dashboard stat cards, Reports KPIs, Employees counters, Payroll totals, Requests category summaries, anything computed from `store.employees`/`store.leaveRequests`/`store.employeeRequests`/`store.salaryAdvances`/`store.attendanceAdjustments`/`store.pendingInvitations`/`store.leaveBalances`/`store.todayAttendance`. When adding a new page or widget that reads these, **hard-refresh with Slow 3G throttling in DevTools and verify no zero flashes**.
 
 ## Project Structure
 

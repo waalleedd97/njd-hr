@@ -54,6 +54,7 @@ export default function DashboardPage() {
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
   const store = useData();
+  const { initialLoaded } = store;
   const router = useRouter();
   const isAr = lang === "ar";
 
@@ -352,8 +353,15 @@ export default function DashboardPage() {
             <p className="text-on-surface-variant text-sm font-medium mb-1">
               {stat.label}
             </p>
-            <h3 className="font-headline text-3xl font-black text-on-surface tracking-tight">
-              {stat.value}
+            <h3 className="font-headline text-3xl font-black text-on-surface tracking-tight min-h-[36px]">
+              {initialLoaded ? (
+                stat.value
+              ) : (
+                <span
+                  className="inline-block w-16 h-7 rounded-lg bg-surface-container-highest animate-pulse align-middle"
+                  aria-label={isAr ? "جاري التحميل" : "Loading"}
+                />
+              )}
             </h3>
           </div>
         ))}

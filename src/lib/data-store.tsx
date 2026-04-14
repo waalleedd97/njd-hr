@@ -158,6 +158,10 @@ async function getSessionUserId(): Promise<string> {
 // ─── Context ─────────────────────────────────────────────────────────
 
 interface DataContextType extends DataState {
+  // true once the initial batch of Supabase refreshes has settled.
+  // Guard UI counts/totals against this to avoid rendering transient zeros.
+  initialLoaded: boolean;
+
   // Attendance (Supabase)
   clockIn: (time: string) => Promise<void>;
   clockOut: (time: string) => Promise<void>;
@@ -249,6 +253,7 @@ const SETTINGS_KEY = "njd-hr-settings"; // Only settings cached locally
 export function DataProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<DataState>(getDefaultState);
   const [hydrated, setHydrated] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(false);
 
   // Hydrate settings from localStorage (only settings — everything else from Supabase)
   useEffect(() => {
@@ -450,13 +455,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!hydrated) return;
-    refreshAttendance();
-    refreshLeaveRequests();
-    refreshEmployeeRequests();
-    refreshSalaryAdvances();
-    refreshAttendanceAdjustments();
-    refreshInvitations();
-    refreshLeaveBalances();
+    let cancelled = false;
+    (async () => {
+      await Promise.allSettled([
+        refreshAttendance(),
+        refreshLeaveRequests(),
+        refreshEmployeeRequests(),
+        refreshSalaryAdvances(),
+        refreshAttendanceAdjustments(),
+        refreshInvitations(),
+        refreshLeaveBalances(),
+      ]);
+      if (!cancelled) setInitialLoaded(true);
+    })();
+    return () => { cancelled = true; };
   }, [hydrated, refreshAttendance, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments, refreshInvitations, refreshLeaveBalances]);
 
   // Sync employees from Supabase
@@ -1001,6 +1013,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const value: DataContextType = {
     ...state,
+    initialLoaded,
     clockIn,
     clockOut,
     refreshAttendance,
