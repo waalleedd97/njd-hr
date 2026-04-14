@@ -5,12 +5,7 @@ import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { cn } from "@/lib/utils";
 import type { UploadedDocument, Employee } from "@/lib/mock-data";
-import {
-  User,
-  Upload,
-  CheckCircle,
-  FileText,
-} from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 
 type DocKey = "nationalIdDoc" | "cv" | "qualification" | "passport";
@@ -78,7 +73,6 @@ export default function CompleteProfilePage() {
 
   const handleSubmit = async () => {
     if (!employeeId || !requiredFilled) return;
-
     try {
       await store.completeProfile(employeeId, {
         fullNameAr,
@@ -97,7 +91,6 @@ export default function CompleteProfilePage() {
         initials: fullNameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
         documents: documents as Employee["documents"],
       });
-      // Force a fresh auth/profile sync after completion.
       window.location.href = "/";
     } catch (error) {
       console.error("[HR] profile completion failed:", error);
@@ -105,68 +98,71 @@ export default function CompleteProfilePage() {
   };
 
   const inputClass =
-    "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/30 transition-colors";
+    "h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40";
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-2xl mx-auto space-y-6 pb-8">
       <input ref={fileInputRef} type="file" accept="image/*,.pdf" className="hidden" onChange={handleFileSelect} />
 
       {/* Header */}
-      <div className="glass-card rounded-2xl p-6">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <User className="w-6 h-6 text-primary" />
+      <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-primary-container/40 flex items-center justify-center">
+            <Icon name="person" size={30} fill className="text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold">{t.profile.completeTitle}</h1>
-            <p className="text-sm text-muted-foreground">{t.profile.completeDesc}</p>
+            <h1 className="font-headline text-2xl font-bold tracking-tight">{t.profile.completeTitle}</h1>
+            <p className="text-sm text-on-surface-variant mt-1">{t.profile.completeDesc}</p>
           </div>
         </div>
       </div>
 
       {/* Personal Information */}
-      <div className="glass-card rounded-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold">{t.emp.personalInfo}</h2>
+      <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm space-y-5">
+        <div className="flex items-center gap-3">
+          <span className="w-1.5 h-7 bg-primary rounded-full" />
+          <h2 className="font-headline font-bold text-lg">{t.emp.personalInfo}</h2>
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.fullName} ({isAr ? "عربي" : "Arabic"})</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.fullName} ({isAr ? "عربي" : "Arabic"})</label>
             <input type="text" value={fullNameAr} onChange={(e) => setFullNameAr(e.target.value)} dir="rtl" className={inputClass} />
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.fullName} ({isAr ? "إنجليزي" : "English"})</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.fullName} ({isAr ? "إنجليزي" : "English"})</label>
             <input type="text" value={fullNameEn} onChange={(e) => setFullNameEn(e.target.value)} dir="ltr" className={inputClass} />
           </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.maritalStatus}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.maritalStatus}</label>
             <select value={maritalStatus} onChange={(e) => setMaritalStatus(e.target.value)} className={inputClass}>
               <option value="">--</option>
               {maritalOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.dateOfBirth}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.dateOfBirth}</label>
             <input type="date" value={dateOfBirth} onChange={(e) => setDateOfBirth(e.target.value)} className={inputClass} />
           </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.mobileNumber}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.mobileNumber}</label>
             <input type="tel" dir="ltr" value={mobileNumber} onChange={(e) => setMobileNumber(e.target.value)} placeholder="+966 5x xxx xxxx" className={inputClass} />
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.nationalId}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.nationalId}</label>
             <input type="text" dir="ltr" value={nationalId} onChange={(e) => setNationalId(e.target.value)} className={inputClass} />
           </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.nationality}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.nationality}</label>
             <select value={nationality} onChange={(e) => setNationality(e.target.value)} className={inputClass}>
               <option value="">--</option>
               {[
@@ -196,30 +192,36 @@ export default function CompleteProfilePage() {
             </select>
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.salary} ({t.common.sar})</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.salary} ({t.common.sar})</label>
             <input type="number" dir="ltr" value={salary} onChange={(e) => setSalary(e.target.value)} className={inputClass} />
           </div>
         </div>
       </div>
 
       {/* Bank Information */}
-      <div className="glass-card rounded-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold">{t.profile.bankName} & {t.profile.iban}</h2>
+      <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm space-y-5">
+        <div className="flex items-center gap-3">
+          <span className="w-1.5 h-7 bg-emerald-500 rounded-full" />
+          <h2 className="font-headline font-bold text-lg">{t.profile.bankName} & {t.profile.iban}</h2>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.bankName}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.bankName}</label>
             <input type="text" value={bankName} onChange={(e) => setBankName(e.target.value)} className={inputClass} />
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">{t.profile.iban}</label>
+            <label className="text-sm font-bold block mb-1.5">{t.profile.iban}</label>
             <input type="text" dir="ltr" value={iban} onChange={(e) => setIban(e.target.value)} placeholder="SA..." className={inputClass} />
           </div>
         </div>
       </div>
 
       {/* Document Uploads */}
-      <div className="glass-card rounded-2xl p-6 space-y-4">
-        <h2 className="text-lg font-bold">{t.profile.documents}</h2>
+      <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm space-y-5">
+        <div className="flex items-center gap-3">
+          <span className="w-1.5 h-7 bg-tertiary rounded-full" />
+          <h2 className="font-headline font-bold text-lg">{t.profile.documents}</h2>
+        </div>
         <div className="grid gap-3 sm:grid-cols-2">
           {docFields.filter((d) => d.required || nationality !== "سعودي").map((doc) => {
             const uploaded = documents[doc.key];
@@ -229,30 +231,32 @@ export default function CompleteProfilePage() {
                 type="button"
                 onClick={() => triggerUpload(doc.key)}
                 className={cn(
-                  "flex items-center gap-3 p-4 rounded-xl border-2 border-dashed transition-colors text-start",
+                  "flex items-center gap-3 p-4 rounded-2xl transition-all text-start",
                   uploaded
-                    ? "border-emerald-300 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-500/5"
-                    : "border-border hover:border-primary/50 hover:bg-accent/30"
+                    ? "bg-emerald-500/10 ring-2 ring-emerald-500/30"
+                    : "bg-surface-container-high hover:bg-surface-container-highest ring-2 ring-transparent hover:ring-primary/20"
                 )}
               >
                 <div className={cn(
-                  "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                  uploaded ? "bg-emerald-100 dark:bg-emerald-500/15" : "bg-muted"
+                  "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
+                  uploaded ? "bg-emerald-500/20" : "bg-surface-container-lowest"
                 )}>
-                  {uploaded ? (
-                    <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                  ) : (
-                    <Upload className="w-5 h-5 text-muted-foreground" />
-                  )}
+                  <Icon
+                    name={uploaded ? "check_circle" : "cloud_upload"}
+                    fill={!!uploaded}
+                    size={24}
+                    className={uploaded ? "text-emerald-600 dark:text-emerald-400" : "text-on-surface-variant"}
+                  />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{doc.label}</p>
+                  <p className="text-sm font-bold truncate">{doc.label}</p>
                   {uploaded ? (
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400 truncate">
-                      <FileText className="w-3 h-3 inline me-1" />{uploaded.name}
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400 truncate font-medium mt-0.5 flex items-center gap-1">
+                      <Icon name="description" size={12} />
+                      {uploaded.name}
                     </p>
                   ) : (
-                    <p className="text-xs text-muted-foreground">{t.profile.uploadFile}</p>
+                    <p className="text-xs text-on-surface-variant mt-0.5 font-medium">{t.profile.uploadFile}</p>
                   )}
                 </div>
               </button>
@@ -262,14 +266,9 @@ export default function CompleteProfilePage() {
       </div>
 
       {/* Submit */}
-      <div className="flex justify-end pb-6">
-        <Button
-          size="lg"
-          disabled={!requiredFilled}
-          onClick={handleSubmit}
-          className="gap-2"
-        >
-          <CheckCircle className="w-4 h-4" />
+      <div className="flex justify-end">
+        <Button size="lg" disabled={!requiredFilled} onClick={handleSubmit}>
+          <Icon name="check_circle" size={20} fill />
           {t.profile.completeProfile}
         </Button>
       </div>

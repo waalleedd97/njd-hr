@@ -104,6 +104,7 @@ export function calcDuration(checkIn: string | null, checkOut: string | null): s
 }
 
 export const GOSI_RATE = 0.0975;
+export const GOSI_RATE_COMPANY = 0.1225;
 
 export interface Notification {
   id: string;

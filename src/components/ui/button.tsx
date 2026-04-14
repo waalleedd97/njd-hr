@@ -6,33 +6,38 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-xl border border-transparent bg-clip-padding text-sm font-semibold whitespace-nowrap transition-all outline-none select-none focus-visible:ring-2 focus-visible:ring-primary/40 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
-        default: "njd-gradient-fill text-white shadow-sm hover:shadow-lg hover:translate-y-[-1px]",
+        // Primary CTA — gradient from primary → primary-container at 135deg, with glow
+        default:
+          "gradient-btn text-on-primary shadow-sm hover:shadow-primary-glow-lg hover:-translate-y-0.5",
+        // Glassmorphic secondary
+        glass:
+          "glass-surface text-on-surface hover:bg-surface-container-lowest/80",
         outline:
-          "border-[var(--njd-gray-200)] bg-transparent text-[var(--njd-gray-500)] hover:bg-[#F5F3FF] hover:border-[#DDD6FE] hover:text-[#6D28D9] aria-expanded:bg-primary/5 aria-expanded:text-primary",
+          "bg-transparent text-on-surface-variant ring-1 ring-outline-variant/50 hover:bg-primary-container/20 hover:text-primary hover:ring-primary/30",
         secondary:
-          "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
+          "bg-secondary-container text-on-secondary-container hover:bg-secondary-fixed-dim",
         ghost:
-          "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:hover:bg-muted/50",
+          "text-on-surface hover:bg-surface-container-low hover:text-primary aria-expanded:bg-surface-container-low",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
+          "bg-error-container/20 text-md-error hover:bg-error-container/30 focus-visible:ring-destructive/30",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
-        icon: "size-8",
-        "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+          "h-10 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3 has-data-[icon=inline-start]:pl-3",
+        xs: "h-7 gap-1 rounded-lg px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3",
+        sm: "h-8 gap-1 rounded-lg px-3 text-[0.8rem] [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-12 gap-2 rounded-xl px-6 text-base [&_svg:not([class*='size-'])]:size-5",
+        xl: "h-14 gap-2 rounded-2xl px-8 text-base font-bold [&_svg:not([class*='size-'])]:size-5",
+        icon: "size-10 rounded-xl",
+        "icon-xs": "size-7 rounded-lg [&_svg:not([class*='size-'])]:size-3",
+        "icon-sm": "size-8 rounded-lg",
+        "icon-lg": "size-12 rounded-xl",
+        pill: "h-10 gap-1.5 rounded-full px-5",
       },
     },
     defaultVariants: {

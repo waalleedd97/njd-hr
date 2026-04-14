@@ -11,8 +11,9 @@ import { NotificationsPanel } from "./notifications-panel";
 import { Shield } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
-// TypeScript declaration for the web component
-declare global {
+// TypeScript declaration for the njd-navbar web component
+// (React 19 reads JSX.IntrinsicElements from the "react" module namespace)
+declare module "react" {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
@@ -122,7 +123,15 @@ function NJDNavbar() {
 // ─── App Shell ───────────────────────────────────────────────────────
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try { return localStorage.getItem("njd-hr-sidebar-collapsed") === "1"; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("njd-hr-sidebar-collapsed", collapsed ? "1" : "0"); }
+    catch { /* quota */ }
+  }, [collapsed]);
   const { dir, lang, t } = useLanguage();
   const { role, user, isAuthenticated } = useAuth();
   const pathname = usePathname();
@@ -170,19 +179,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div className={cn(
           "min-h-[calc(100dvh-var(--njd-navbar-height, 64px))] flex flex-col transition-all duration-300",
-          collapsed ? "lg:ms-[72px]" : "lg:ms-64"
+          collapsed ? "lg:ms-[72px]" : "lg:ms-72"
         )}>
           <main className="flex-1 px-4 pt-5 lg:px-6 lg:pt-6 pb-20 lg:pb-6 overflow-x-hidden">
             {isBlocked ? (
               <div className="flex flex-col items-center justify-center h-[60vh] text-center gap-4">
-                <div className="w-16 h-16 rounded-2xl bg-red-100 dark:bg-red-500/15 flex items-center justify-center">
-                  <Shield className="w-8 h-8 text-red-500" />
+                <div className="w-20 h-20 rounded-3xl bg-error-container/20 flex items-center justify-center">
+                  <Shield className="w-10 h-10 text-md-error" />
                 </div>
                 <div>
-                  <p className="text-lg font-bold text-foreground">
+                  <p className="font-headline text-xl font-bold text-on-surface">
                     {t.role.accessDenied}
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">
+                  <p className="text-sm text-on-surface-variant mt-1">
                     {t.role.redirecting}
                   </p>
                 </div>

@@ -12,44 +12,36 @@ import {
   markAllReadInDB,
   normalizeNotificationRow,
 } from "@/lib/notifications";
-import {
-  Bell,
-  CheckCircle,
-  FileText,
-  Banknote,
-  AlertTriangle,
-  Info,
-  Check,
-} from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 
 const typeConfig: Record<
   SupaNotification["type"],
-  { icon: typeof Bell; color: string; bg: string }
+  { iconName: string; color: string; bg: string }
 > = {
   leave: {
-    icon: CheckCircle,
+    iconName: "event_available",
     color: "text-emerald-600 dark:text-emerald-400",
     bg: "bg-emerald-100 dark:bg-emerald-500/15",
   },
   request: {
-    icon: FileText,
+    iconName: "description",
     color: "text-blue-600 dark:text-blue-400",
     bg: "bg-blue-100 dark:bg-blue-500/15",
   },
   payroll: {
-    icon: Banknote,
-    color: "text-purple-600 dark:text-purple-400",
-    bg: "bg-purple-100 dark:bg-purple-500/15",
+    iconName: "payments",
+    color: "text-primary",
+    bg: "bg-primary-container/40",
   },
   attendance: {
-    icon: AlertTriangle,
+    iconName: "schedule",
     color: "text-amber-600 dark:text-amber-400",
     bg: "bg-amber-100 dark:bg-amber-500/15",
   },
   system: {
-    icon: Info,
-    color: "text-rose-600 dark:text-rose-400",
-    bg: "bg-rose-100 dark:bg-rose-500/15",
+    iconName: "info",
+    color: "text-tertiary",
+    bg: "bg-tertiary-container/40",
   },
 };
 
@@ -80,12 +72,10 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
 
   const unreadCount = items.filter((n) => !n.read).length;
 
-  // Push unread count upstream whenever it changes
   useEffect(() => {
     onUnreadCountChange(unreadCount);
   }, [unreadCount, onUnreadCountChange]);
 
-  // Fetch notifications from Supabase
   useEffect(() => {
     if (!user.id) return;
 
@@ -95,7 +85,6 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
     }
     load();
 
-    // Realtime subscription for new notifications
     const channel = supabase
       .channel("hr-notifications")
       .on(
@@ -119,14 +108,23 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") {
+          console.log("[HR] Realtime: notifications channel subscribed ✓");
+        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          console.warn(
+            "[HR] Realtime: notifications channel status =",
+            status,
+            err ? err.message : "— live notifications won't work. Ensure 'notifications' is added to supabase_realtime publication (run supabase/migrations/006_notifications_fix.sql)."
+          );
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [user.id, isAr]);
 
-  // Close on click outside
   useEffect(() => {
     if (!open) return;
     function handleClick(e: MouseEvent) {
@@ -138,7 +136,6 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open, onClose]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     function handleKey(e: KeyboardEvent) {
@@ -173,27 +170,27 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
 
   return (
     <>
-      {/* Backdrop on mobile */}
       <div
-        className="fixed inset-0 z-[200] bg-black/20 lg:hidden"
+        className="fixed inset-0 z-[200] bg-inverse-surface/20 backdrop-blur-sm lg:hidden"
         onClick={onClose}
       />
 
-      {/* Dropdown — anchored to top-end of viewport */}
       <div
         ref={panelRef}
         className={cn(
-          "fixed top-[var(--njd-navbar-height,64px)] z-[201] w-[calc(100vw-2rem)] sm:w-96 max-h-[70vh] rounded-xl border border-border bg-card shadow-xl overflow-hidden",
-          "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-150",
+          "fixed top-[var(--njd-navbar-height,64px)] z-[201] w-[calc(100vw-2rem)] sm:w-96 max-h-[70vh] rounded-2xl glass-strong shadow-2xl shadow-primary/10 overflow-hidden",
+          "animate-in fade-in-0 zoom-in-95 slide-in-from-top-2 duration-200",
           "end-4 sm:end-6"
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/20">
           <div className="flex items-center gap-2">
-            <h3 className="font-bold text-sm">{t.notif.title}</h3>
+            <h3 className="font-headline font-bold text-base text-on-surface">
+              {t.notif.title}
+            </h3>
             {unreadCount > 0 && (
-              <span className="bg-primary/10 text-primary text-[11px] font-bold px-1.5 py-0.5 rounded-full">
+              <span className="gradient-btn text-[11px] font-bold px-2 py-0.5 rounded-full">
                 {unreadCount}
               </span>
             )}
@@ -201,42 +198,41 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
           {unreadCount > 0 && (
             <button
               onClick={handleMarkAllRead}
-              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 font-medium transition-colors"
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary-dim font-bold transition-colors"
             >
-              <Check className="w-3.5 h-3.5" />
+              <Icon name="done_all" size={16} />
               {t.notif.markAllRead}
             </button>
           )}
         </div>
 
-        {/* Notification list */}
-        <div className="overflow-y-auto max-h-[calc(70vh-56px)]">
+        {/* List */}
+        <div className="overflow-y-auto max-h-[calc(70vh-64px)]">
           {items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
-              <Bell className="w-8 h-8 mb-2 opacity-40" />
-              <p className="text-sm">{t.notif.noNotifications}</p>
+            <div className="flex flex-col items-center justify-center py-14 text-on-surface-variant">
+              <Icon name="notifications_off" size={40} className="mb-3 opacity-40" />
+              <p className="text-sm font-medium">{t.notif.noNotifications}</p>
             </div>
           ) : (
             items.map((notification) => {
               const config = typeConfig[notification.type];
-              const Icon = config.icon;
 
               return (
                 <button
                   key={notification.id}
                   onClick={() => handleNotificationClick(notification)}
                   className={cn(
-                    "w-full flex items-start gap-3 p-4 text-start border-b border-border/50 last:border-0 transition-colors hover:bg-accent/40",
-                    !notification.read && "bg-primary/[0.03]"
+                    "w-full flex items-start gap-3 px-5 py-4 text-start border-b border-outline-variant/15 last:border-0 transition-colors hover:bg-surface-container-low",
+                    !notification.read && "bg-primary-container/10"
                   )}
                 >
                   <div
                     className={cn(
-                      "shrink-0 w-9 h-9 rounded-lg flex items-center justify-center mt-0.5",
+                      "shrink-0 w-10 h-10 rounded-2xl flex items-center justify-center mt-0.5",
                       config.bg
                     )}
                   >
-                    <Icon className={cn("w-4.5 h-4.5", config.color)} />
+                    <Icon name={config.iconName} fill size={20} className={config.color} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between gap-2">
@@ -244,20 +240,20 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
                         className={cn(
                           "text-sm leading-snug",
                           !notification.read
-                            ? "font-semibold text-foreground"
-                            : "font-medium text-muted-foreground"
+                            ? "font-bold text-on-surface"
+                            : "font-medium text-on-surface-variant"
                         )}
                       >
                         {isAr ? notification.title_ar : notification.title_en}
                       </p>
                       {!notification.read && (
-                        <div className="shrink-0 w-2 h-2 rounded-full bg-primary mt-1.5" />
+                        <div className="shrink-0 w-2 h-2 rounded-full bg-primary mt-1.5 shadow-primary-glow" />
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
+                    <p className="text-xs text-on-surface-variant mt-0.5 line-clamp-2 leading-relaxed">
                       {isAr ? notification.desc_ar : notification.desc_en}
                     </p>
-                    <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+                    <p className="text-[11px] text-on-surface-variant/70 mt-1.5 font-medium">
                       {formatTime(notification.created_at, isAr)}
                     </p>
                   </div>

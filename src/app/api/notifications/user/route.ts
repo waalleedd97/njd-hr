@@ -6,15 +6,23 @@ export const dynamic = "force-dynamic";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://iauulqfgrbegwcnfatmx.supabase.co";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "sb_publishable_Dvk_dI_FY6oxhyOw7__06Q_wzDmwguJ";
 
-// Hardcoded admin emails as ultimate fallback
-const ADMIN_EMAILS = ["waleed@njdstudio.net", "salman@njdstudio.net"];
-
+/**
+ * Create a notification for a specific user, bypassing RLS via service role.
+ *
+ * Used when one user needs to send a notification to another (e.g. admin
+ * approving a leave request → notify the employee). Client-side direct
+ * inserts fail because RLS only allows users to see/update their own rows,
+ * not insert for others.
+ */
 export async function POST(req: NextRequest) {
   try {
     // 1. Validate service role key exists
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!serviceRoleKey) {
-      return NextResponse.json({ error: "SUPABASE_SERVICE_ROLE_KEY not configured" }, { status: 503 });
+      return NextResponse.json(
+        { error: "SUPABASE_SERVICE_ROLE_KEY not configured in .env.local" },
+        { status: 503 }
+      );
     }
 
     // 2. Validate caller has a valid session
@@ -24,7 +32,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing access token" }, { status: 401 });
     }
 
-    // Verify token
     const anonClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: false } });
     const { data: { user }, error: userError } = await anonClient.auth.getUser(token);
     if (userError || !user) {
@@ -33,48 +40,20 @@ export async function POST(req: NextRequest) {
 
     // 3. Parse body
     const body = await req.json().catch(() => null);
-    if (!body?.type || !body.titleAr || !body.titleEn) {
-      return NextResponse.json({ error: "Missing notification payload" }, { status: 400 });
+    if (!body?.userId || !body.type || !body.titleAr || !body.titleEn) {
+      return NextResponse.json(
+        { error: "Missing required fields: userId, type, titleAr, titleEn" },
+        { status: 400 }
+      );
     }
 
     // 4. Create admin client (bypasses RLS)
     const adminClient = createClient(SUPABASE_URL, serviceRoleKey, { auth: { persistSession: false } });
 
-    // 5. Find all admin user IDs
-    const adminIds = new Set<string>();
-
-    // Method A: Query user_roles table
-    const { data: roleRows } = await adminClient
-      .from("user_roles")
-      .select("user_id")
-      .eq("role_name", "super_admin");
-
-    if (roleRows) {
-      for (const row of roleRows) {
-        if (row.user_id) adminIds.add(row.user_id);
-      }
-    }
-
-    // Method B: Find by email (fallback)
-    if (adminIds.size === 0) {
-      const { data: usersData } = await adminClient.auth.admin.listUsers({ page: 1, perPage: 200 });
-      if (usersData) {
-        for (const u of usersData.users) {
-          if (u.email && ADMIN_EMAILS.includes(u.email.toLowerCase())) {
-            adminIds.add(u.id);
-          }
-        }
-      }
-    }
-
-    if (adminIds.size === 0) {
-      return NextResponse.json({ error: "No admin recipients found" }, { status: 404 });
-    }
-
-    // 6. Insert notifications for each admin — using Landing's schema:
+    // 5. Insert notification — using Landing's schema:
     //    body_ar/body_en (not desc_*), link (not href), is_read (not read)
-    const rows = Array.from(adminIds).map((adminId) => ({
-      user_id: adminId,
+    const row: Record<string, unknown> = {
+      user_id: body.userId,
       app_name: "hr",
       type: body.type,
       title_ar: body.titleAr,
@@ -83,15 +62,15 @@ export async function POST(req: NextRequest) {
       body_en: body.descEn || "",
       link: body.href || null,
       is_read: false,
-    }));
+    };
 
-    let { error } = await adminClient.from("notifications").insert(rows);
+    let { error } = await adminClient.from("notifications").insert(row);
 
-    // Fallback: some deployments use alternate schema (desc_*, href, read)
+    // Fallback: some deployments might use the alternate schema (desc_*, href, read)
     if (error && error.code === "42703") {
       console.warn("[HR] Landing schema mismatch, trying alternate column names:", error.message);
-      const altRows = Array.from(adminIds).map((adminId) => ({
-        user_id: adminId,
+      const alt: Record<string, unknown> = {
+        user_id: body.userId,
         app_name: "hr",
         type: body.type,
         title_ar: body.titleAr,
@@ -100,19 +79,19 @@ export async function POST(req: NextRequest) {
         desc_en: body.descEn || "",
         href: body.href || null,
         read: false,
-      }));
-      const retry = await adminClient.from("notifications").insert(altRows);
+      };
+      const retry = await adminClient.from("notifications").insert(alt);
       error = retry.error;
     }
 
     if (error) {
-      console.error("[HR] admin notification insert error:", error.message, error.code, error.details);
-      return NextResponse.json({ error: "Failed to insert notifications", detail: error.message }, { status: 500 });
+      console.error("[HR] user notification insert error:", error.message, error.code, error.details);
+      return NextResponse.json({ error: "Failed to insert notification", detail: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, recipients: rows.length });
+    return NextResponse.json({ success: true });
   } catch (e) {
-    console.error("[HR] admin notifications route error:", e);
+    console.error("[HR] user notification route error:", e);
     return NextResponse.json({ error: "Unexpected error" }, { status: 500 });
   }
 }

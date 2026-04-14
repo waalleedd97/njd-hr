@@ -15,81 +15,26 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import {
-  Plus,
-  FileText,
-  Award,
-  Clock,
-  File,
-  Filter,
-  CalendarClock,
-  Banknote,
-  CheckCircle,
-  XCircle,
-} from "lucide-react";
 
-const statusStyles: Record<string, string> = {
-  pending:
-    "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border-0",
-  "in-review":
-    "bg-blue-100 text-blue-800 dark:bg-blue-500/15 dark:text-blue-400 border-0",
-  approved:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border-0",
-  rejected:
-    "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400 border-0",
+const statusBadgeVariant: Record<string, "warning" | "info" | "success" | "destructive"> = {
+  pending: "warning",
+  "in-review": "info",
+  approved: "success",
+  rejected: "destructive",
 };
 
-const typeIcons: Record<string, typeof FileText> = {
-  leaveRequest: Clock,
-  salaryCert: Award,
-  permission: FileText,
-  docRequest: File,
-  attendanceAdjust: CalendarClock,
-  salaryAdvance: Banknote,
+const typeConfig: Record<string, { iconName: string; bg: string; icon: string }> = {
+  leaveRequest: { iconName: "event_busy", bg: "bg-blue-500/15", icon: "text-blue-600 dark:text-blue-400" },
+  salaryCert: { iconName: "workspace_premium", bg: "bg-emerald-500/15", icon: "text-emerald-600 dark:text-emerald-400" },
+  permission: { iconName: "description", bg: "bg-amber-500/15", icon: "text-amber-600 dark:text-amber-400" },
+  docRequest: { iconName: "article", bg: "bg-tertiary-container/40", icon: "text-tertiary" },
+  attendanceAdjust: { iconName: "edit_calendar", bg: "bg-cyan-500/15", icon: "text-cyan-600 dark:text-cyan-400" },
+  salaryAdvance: { iconName: "payments", bg: "bg-primary-container/40", icon: "text-primary" },
 };
 
-const typeColors: Record<string, { bg: string; text: string; icon: string }> = {
-  leaveRequest: {
-    bg: "bg-blue-100 dark:bg-blue-500/15",
-    text: "text-blue-700 dark:text-blue-400",
-    icon: "text-blue-600 dark:text-blue-400",
-  },
-  salaryCert: {
-    bg: "bg-emerald-100 dark:bg-emerald-500/15",
-    text: "text-emerald-700 dark:text-emerald-400",
-    icon: "text-emerald-600 dark:text-emerald-400",
-  },
-  permission: {
-    bg: "bg-amber-100 dark:bg-amber-500/15",
-    text: "text-amber-700 dark:text-amber-400",
-    icon: "text-amber-600 dark:text-amber-400",
-  },
-  docRequest: {
-    bg: "bg-purple-100 dark:bg-purple-500/15",
-    text: "text-purple-700 dark:text-purple-400",
-    icon: "text-purple-600 dark:text-purple-400",
-  },
-  attendanceAdjust: {
-    bg: "bg-teal-100 dark:bg-teal-500/15",
-    text: "text-teal-700 dark:text-teal-400",
-    icon: "text-teal-600 dark:text-teal-400",
-  },
-  salaryAdvance: {
-    bg: "bg-violet-100 dark:bg-violet-500/15",
-    text: "text-violet-700 dark:text-violet-400",
-    icon: "text-violet-600 dark:text-violet-400",
-  },
-};
-
-const typeKeys = [
-  "leaveRequest",
-  "salaryCert",
-  "permission",
-  "docRequest",
-  "attendanceAdjust",
-  "salaryAdvance",
-] as const;
+const typeKeys = ["leaveRequest", "salaryCert", "permission", "docRequest", "attendanceAdjust", "salaryAdvance"] as const;
 const statusKeys = ["pending", "in-review", "approved", "rejected"] as const;
 
 interface UnifiedRequest {
@@ -113,15 +58,15 @@ export default function RequestsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newReqType, setNewReqType] = useState<string>("leaveRequest");
   const [newReqDesc, setNewReqDesc] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
 
-  // Attendance adjustment form state
   const [adjDate, setAdjDate] = useState("");
   const [adjOriginalIn, setAdjOriginalIn] = useState("");
   const [adjRequestedIn, setAdjRequestedIn] = useState("");
   const [adjOriginalOut, setAdjOriginalOut] = useState("");
   const [adjRequestedOut, setAdjRequestedOut] = useState("");
 
-  // Salary advance form state
   const [advAmount, setAdvAmount] = useState<number>(0);
   const [advRepaymentMonths, setAdvRepaymentMonths] = useState<number>(3);
 
@@ -150,48 +95,25 @@ export default function RequestsPage() {
       profileCompleted: true,
     };
 
-  // Build unified requests list
   const allRequests: UnifiedRequest[] = useMemo(() => {
     const base: UnifiedRequest[] = store.employeeRequests.map((r) => ({
-      id: r.id,
-      employeeId: r.employeeId,
-      typeKey: r.typeKey,
-      date: r.date,
-      status: r.status,
-      detailsAr: r.detailsAr,
-      detailsEn: r.detailsEn,
+      id: r.id, employeeId: r.employeeId, typeKey: r.typeKey, date: r.date, status: r.status, detailsAr: r.detailsAr, detailsEn: r.detailsEn,
     }));
-
     const adjMapped: UnifiedRequest[] = store.attendanceAdjustments.map((a) => ({
-      id: a.id,
-      employeeId: a.employeeId,
-      typeKey: "attendanceAdjust",
-      date: a.date,
-      status: a.status,
+      id: a.id, employeeId: a.employeeId, typeKey: "attendanceAdjust", date: a.date, status: a.status,
       detailsAr: "تعديل حضور — " + a.originalIn + " → " + a.requestedIn,
       detailsEn: "Adjustment — " + a.originalIn + " → " + a.requestedIn,
     }));
-
     const advMapped: UnifiedRequest[] = store.salaryAdvances.map((s) => ({
-      id: s.id,
-      employeeId: s.employeeId,
-      typeKey: "salaryAdvance",
-      date: s.requestDate,
-      status: s.status,
+      id: s.id, employeeId: s.employeeId, typeKey: "salaryAdvance", date: s.requestDate, status: s.status,
       detailsAr: s.amount.toLocaleString() + " ر.س",
       detailsEn: s.amount.toLocaleString() + " SAR",
     }));
-
     const leaveMapped: UnifiedRequest[] = store.leaveRequests.map((lr) => ({
-      id: lr.id,
-      employeeId: lr.employeeId,
-      typeKey: "leaveRequest",
-      date: lr.startDate,
-      status: lr.status,
+      id: lr.id, employeeId: lr.employeeId, typeKey: "leaveRequest", date: lr.startDate, status: lr.status,
       detailsAr: lr.reasonAr || (lr.startDate + " → " + lr.endDate + " (" + lr.days + " أيام)"),
       detailsEn: lr.reasonEn || (lr.startDate + " → " + lr.endDate + " (" + lr.days + " days)"),
     }));
-
     const combined = [...base, ...adjMapped, ...advMapped, ...leaveMapped];
     combined.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
     return combined;
@@ -207,12 +129,9 @@ export default function RequestsPage() {
 
   const filteredRequests = useMemo(() => {
     let list = allRequests;
-
-    // Role-based filtering: non-admin sees only their own requests
     if (!isAdmin) {
       list = list.filter((req) => req.employeeId === user.id || req.employeeId === user.email);
     }
-
     return list.filter((req) => {
       if (typeFilter !== "all" && req.typeKey !== typeFilter) return false;
       if (statusFilter !== "all" && req.status !== statusFilter) return false;
@@ -223,273 +142,243 @@ export default function RequestsPage() {
   const resetForm = () => {
     setNewReqType("leaveRequest");
     setNewReqDesc("");
-    setAdjDate("");
-    setAdjOriginalIn("");
-    setAdjRequestedIn("");
-    setAdjOriginalOut("");
-    setAdjRequestedOut("");
-    setAdvAmount(0);
-    setAdvRepaymentMonths(3);
+    setAdjDate(""); setAdjOriginalIn(""); setAdjRequestedIn(""); setAdjOriginalOut(""); setAdjRequestedOut("");
+    setAdvAmount(0); setAdvRepaymentMonths(3);
   };
 
   const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitError("");
+    setSubmitting(true);
     const today = new Date().toISOString().split("T")[0];
-
     try {
       if (newReqType === "attendanceAdjust") {
         await store.submitAdjustment({
-          employeeId: user.id,
-          date: adjDate || today,
-          originalIn: adjOriginalIn,
-          requestedIn: adjRequestedIn,
-          originalOut: adjOriginalOut,
-          requestedOut: adjRequestedOut,
-          reasonAr: newReqDesc,
-          reasonEn: newReqDesc,
-          status: "pending",
+          employeeId: user.id, date: adjDate || today,
+          originalIn: adjOriginalIn, requestedIn: adjRequestedIn,
+          originalOut: adjOriginalOut, requestedOut: adjRequestedOut,
+          reasonAr: newReqDesc, reasonEn: newReqDesc, status: "pending",
         });
       } else if (newReqType === "salaryAdvance") {
         await store.submitAdvance({
-          employeeId: user.id,
-          amount: advAmount,
-          reasonAr: newReqDesc,
-          reasonEn: newReqDesc,
-          requestDate: today,
-          status: "pending",
+          employeeId: user.id, amount: advAmount,
+          reasonAr: newReqDesc, reasonEn: newReqDesc,
+          requestDate: today, status: "pending",
           repaymentMonths: advRepaymentMonths,
           monthlyDeduction: calculatedMonthlyDeduction,
-          remainingBalance: advAmount,
-          paidMonths: 0,
+          remainingBalance: advAmount, paidMonths: 0,
         });
       } else {
         await store.submitEmployeeRequest({
-          employeeId: user.id,
-          typeKey: newReqType,
-          date: today,
-          status: "pending",
-          detailsAr: newReqDesc,
-          detailsEn: newReqDesc,
+          employeeId: user.id, typeKey: newReqType, date: today, status: "pending",
+          detailsAr: newReqDesc, detailsEn: newReqDesc,
         });
       }
     } catch (error) {
       console.error("[HR] request submission failed:", error);
+      setSubmitError(isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again.");
+      setSubmitting(false);
       return;
     }
-
+    store.addNotification({
+      type: "system",
+      titleAr: "تم إرسال الطلب",
+      titleEn: "Request Submitted",
+      descAr: "سيتم مراجعة طلبك من قبل المسؤول",
+      descEn: "Your request will be reviewed by the administrator",
+      time: 0,
+      read: false,
+    });
+    setSubmitting(false);
     setDialogOpen(false);
     resetForm();
   };
 
-  const categoryCards = typeKeys.map((key) => {
-    const Icon = typeIcons[key];
-    const colors = typeColors[key];
-    return { key, Icon, colors, count: typeCounts[key] };
-  });
-
   const getStatusLabel = (status: string) => {
-    if (status === "in-review") {
-      return t.statuses["in-review"];
-    }
+    if (status === "in-review") return t.statuses["in-review"];
     return t.statuses[status as keyof typeof t.statuses];
   };
 
   const typeSelectLabels: Record<string, string> = {
-    leaveRequest: t.req.leaveReq,
-    salaryCert: t.req.salaryCert,
-    permission: t.req.permission,
-    docRequest: t.req.docRequest,
-    attendanceAdjust: t.requestTypes.attendanceAdjust,
-    salaryAdvance: t.requestTypes.salaryAdvance,
+    leaveRequest: t.req.leaveReq, salaryCert: t.req.salaryCert, permission: t.req.permission,
+    docRequest: t.req.docRequest, attendanceAdjust: t.requestTypes.attendanceAdjust, salaryAdvance: t.requestTypes.salaryAdvance,
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Page Header */}
+    <div className="max-w-7xl mx-auto space-y-8 pb-8">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">{t.req.title}</h1>
-          <p className="text-sm text-muted-foreground mt-1">{t.req.myRequests}</p>
+          <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
+            {t.req.title}
+          </h1>
+          <p className="text-sm text-on-surface-variant mt-2">{t.req.myRequests}</p>
         </div>
         <Button size="lg" onClick={() => setDialogOpen(true)}>
-          <Plus className="w-4 h-4" />
+          <Icon name="add" size={20} />
           {t.req.newRequest}
         </Button>
       </div>
 
-      {/* Category Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {categoryCards.map(({ key, Icon, colors, count }) => (
-          <div
-            key={key}
-            className="accent-card hover-lift rounded-xl p-4 cursor-default"
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={cn(
-                  "w-10 h-10 rounded-xl flex items-center justify-center",
-                  colors.bg
-                )}
-              >
-                <Icon className={cn("w-5 h-5", colors.icon)} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-2xl font-bold text-foreground">{count}</p>
-                <p className="text-sm text-muted-foreground truncate">
-                  {t.requestTypes[key as keyof typeof t.requestTypes]}
-                </p>
+      {/* Category cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        {typeKeys.map((key) => {
+          const config = typeConfig[key];
+          return (
+            <div key={key} className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm hover:shadow-primary-glow-lg transition-all group">
+              <div className="flex items-center gap-4">
+                <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform", config.bg, config.icon)}>
+                  <Icon name={config.iconName} size={26} fill />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-headline text-3xl font-black text-on-surface tabular-nums">{typeCounts[key]}</p>
+                  <p className="text-sm text-on-surface-variant truncate font-medium">
+                    {t.requestTypes[key as keyof typeof t.requestTypes]}
+                  </p>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-muted-foreground" />
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        <div className="flex items-center gap-2 text-on-surface-variant">
+          <Icon name="filter_list" size={18} />
+          <span className="text-sm font-bold">{t.common.filter}:</span>
         </div>
         <select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
-          className="h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none"
+          className="h-10 rounded-xl bg-surface-container-high px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/40"
         >
           <option value="all">{t.req.allTypes}</option>
           {typeKeys.map((key) => (
-            <option key={key} value={key}>
-              {t.requestTypes[key]}
-            </option>
+            <option key={key} value={key}>{t.requestTypes[key]}</option>
           ))}
         </select>
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
-          className="h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none"
+          className="h-10 rounded-xl bg-surface-container-high px-4 text-sm font-medium outline-none focus:ring-2 focus:ring-primary/40"
         >
           <option value="all">{t.common.all}</option>
           {statusKeys.map((key) => (
-            <option key={key} value={key}>
-              {getStatusLabel(key)}
-            </option>
+            <option key={key} value={key}>{getStatusLabel(key)}</option>
           ))}
         </select>
       </div>
 
       {/* Requests Table */}
-      <div className="glass-card rounded-xl p-5 lg:p-6">
-        <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
+      <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[700px]">
             <thead>
-              <tr className="text-xs text-muted-foreground border-b border-border">
-                <th className="text-start pb-3 font-medium">{t.req.requestNo}</th>
-                <th className="text-start pb-3 font-medium">{t.common.name}</th>
-                <th className="text-start pb-3 font-medium">{t.common.type}</th>
-                <th className="text-start pb-3 font-medium">{t.common.date}</th>
-                <th className="text-start pb-3 font-medium">{t.common.status}</th>
-                <th className="text-start pb-3 font-medium">{t.req.details}</th>
-                {isAdmin && <th className="text-start pb-3 font-medium">{t.common.actions}</th>}
+              <tr className="bg-surface-container/30">
+                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.requestNo}</th>
+                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
+                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.type}</th>
+                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.date}</th>
+                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.status}</th>
+                <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.details}</th>
+                {isAdmin && <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.actions}</th>}
               </tr>
             </thead>
             <tbody>
               {filteredRequests.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={isAdmin ? 7 : 6}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    {t.common.noData}
+                  <td colSpan={isAdmin ? 7 : 6} className="py-14 text-center text-on-surface-variant">
+                    <Icon name="inbox" size={44} className="mb-3 opacity-40" />
+                    <p className="text-sm font-medium">{t.common.noData}</p>
                   </td>
                 </tr>
               ) : (
                 filteredRequests.map((req) => {
                   const emp = resolveEmployee(req.employeeId);
+                  const tconfig = typeConfig[req.typeKey];
                   return (
-                    <tr
-                      key={req.id}
-                      className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
-                    >
-                      <td className="py-3 text-sm font-mono text-muted-foreground">
-                        {req.id}
-                      </td>
-                      <td className="py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar className="w-7 h-7">
-                            <AvatarFallback
-                              className={cn(
-                                "text-white text-[10px] font-bold",
-                                emp.color
-                              )}
-                            >
+                    <tr key={req.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4 text-xs font-mono text-on-surface-variant font-bold">{req.id}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="w-8 h-8">
+                            <AvatarFallback className={cn("text-white text-[11px] font-bold", emp.color)}>
                               {emp.initials}
                             </AvatarFallback>
                           </Avatar>
+                          <span className="text-sm font-bold">{isAr ? emp.nameAr : emp.nameEn}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          {tconfig && <Icon name={tconfig.iconName} size={18} className={tconfig.icon} />}
                           <span className="text-sm font-medium">
-                            {isAr ? emp.nameAr : emp.nameEn}
+                            {t.requestTypes[req.typeKey as keyof typeof t.requestTypes]}
                           </span>
                         </div>
                       </td>
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {t.requestTypes[req.typeKey as keyof typeof t.requestTypes]}
-                      </td>
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {req.date}
-                      </td>
-                      <td className="py-3">
-                        <Badge
-                          className={cn(
-                            "text-[11px] font-medium",
-                            statusStyles[req.status]
-                          )}
-                        >
+                      <td className="px-6 py-4 text-sm text-on-surface-variant tabular-nums font-medium">{req.date}</td>
+                      <td className="px-6 py-4">
+                        <Badge variant={statusBadgeVariant[req.status] ?? "warning"}>
                           {getStatusLabel(req.status)}
                         </Badge>
                       </td>
-                      <td className="py-3 text-sm text-muted-foreground max-w-[200px] truncate">
+                      <td className="px-6 py-4 text-sm text-on-surface-variant max-w-[200px] truncate">
                         {isAr ? req.detailsAr : req.detailsEn}
                       </td>
                       {isAdmin && (
-                        <td className="py-3">
+                        <td className="px-6 py-4">
                           {(req.status === "pending" || req.status === "in-review") && (
                             <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
-                                onClick={() => {
-                                  if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
-                                    store.approveLeaveRequest(req.id);
-                                  } else {
-                                    const collection =
-                                      req.typeKey === "attendanceAdjust"
-                                        ? "attendanceAdjustments" as const
-                                        : req.typeKey === "salaryAdvance"
-                                          ? "salaryAdvances" as const
-                                          : "employeeRequests" as const;
-                                    store.approveItem(collection, req.id);
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?")) return;
+                                  try {
+                                    if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
+                                      await store.approveLeaveRequest(req.id);
+                                    } else {
+                                      const collection =
+                                        req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
+                                        : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
+                                        : "employeeRequests" as const;
+                                      await store.approveItem(collection, req.id);
+                                    }
+                                  } catch (e) {
+                                    console.error("[HR] approve failed:", e);
+                                    alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
                                   }
                                 }}
+                                className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                                title={isAr ? "موافقة" : "Approve"}
+                                aria-label={isAr ? "موافقة" : "Approve"}
                               >
-                                <CheckCircle className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
-                                onClick={() => {
-                                  if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
-                                    store.rejectLeaveRequest(req.id);
-                                  } else {
-                                    const collection =
-                                      req.typeKey === "attendanceAdjust"
-                                        ? "attendanceAdjustments" as const
-                                        : req.typeKey === "salaryAdvance"
-                                          ? "salaryAdvances" as const
-                                          : "employeeRequests" as const;
-                                    store.rejectItem(collection, req.id);
+                                <Icon name="check_circle" size={18} fill />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?")) return;
+                                  try {
+                                    if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
+                                      await store.rejectLeaveRequest(req.id);
+                                    } else {
+                                      const collection =
+                                        req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
+                                        : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
+                                        : "employeeRequests" as const;
+                                      await store.rejectItem(collection, req.id);
+                                    }
+                                  } catch (e) {
+                                    console.error("[HR] reject failed:", e);
+                                    alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
                                   }
                                 }}
+                                className="p-2 rounded-full text-md-error hover:bg-error-container/20 transition-colors"
+                                title={isAr ? "رفض" : "Reject"}
+                                aria-label={isAr ? "رفض" : "Reject"}
                               >
-                                <XCircle className="w-4 h-4" />
-                              </Button>
+                                <Icon name="cancel" size={18} fill />
+                              </button>
                             </div>
                           )}
                         </td>
@@ -511,197 +400,144 @@ export default function RequestsPage() {
             <DialogDescription>{t.req.myRequests}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            {/* Request type selector */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t.req.requestType}</label>
+            <div className="space-y-1.5">
+              <label className="text-sm font-bold">{t.req.requestType}</label>
               <select
                 value={newReqType}
                 onChange={(e) => setNewReqType(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none"
+                className="w-full h-11 rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
               >
                 {typeKeys.map((key) => (
-                  <option key={key} value={key}>
-                    {typeSelectLabels[key]}
-                  </option>
+                  <option key={key} value={key}>{typeSelectLabels[key]}</option>
                 ))}
               </select>
             </div>
 
-            {/* Attendance Adjustment form fields */}
             {newReqType === "attendanceAdjust" && (
               <>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t.common.date}</label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.common.date}</label>
                   <input
                     type="date"
                     value={adjDate}
                     onChange={(e) => setAdjDate(e.target.value)}
-                    className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
+                    className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      {t.clock.originalTime} ({t.att.checkIn})
-                    </label>
-                    <input
-                      type="time"
-                      value={adjOriginalIn}
-                      onChange={(e) => setAdjOriginalIn(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                    />
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold">{t.clock.originalTime} ({t.att.checkIn})</label>
+                    <input type="time" value={adjOriginalIn} onChange={(e) => setAdjOriginalIn(e.target.value)} className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      {t.clock.requestedTime} ({t.att.checkIn})
-                    </label>
-                    <input
-                      type="time"
-                      value={adjRequestedIn}
-                      onChange={(e) => setAdjRequestedIn(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                    />
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold">{t.clock.requestedTime} ({t.att.checkIn})</label>
+                    <input type="time" value={adjRequestedIn} onChange={(e) => setAdjRequestedIn(e.target.value)} className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      {t.clock.originalTime} ({t.att.checkOut})
-                    </label>
-                    <input
-                      type="time"
-                      value={adjOriginalOut}
-                      onChange={(e) => setAdjOriginalOut(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                    />
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold">{t.clock.originalTime} ({t.att.checkOut})</label>
+                    <input type="time" value={adjOriginalOut} onChange={(e) => setAdjOriginalOut(e.target.value)} className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">
-                      {t.clock.requestedTime} ({t.att.checkOut})
-                    </label>
-                    <input
-                      type="time"
-                      value={adjRequestedOut}
-                      onChange={(e) => setAdjRequestedOut(e.target.value)}
-                      className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
-                    />
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold">{t.clock.requestedTime} ({t.att.checkOut})</label>
+                    <input type="time" value={adjRequestedOut} onChange={(e) => setAdjRequestedOut(e.target.value)} className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40" />
                   </div>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    {t.clock.adjustmentReason}
-                  </label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.clock.adjustmentReason}</label>
                   <textarea
                     value={newReqDesc}
                     onChange={(e) => setNewReqDesc(e.target.value)}
                     rows={3}
-                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none resize-none"
-                    placeholder={
-                      isAr
-                        ? "اكتب سبب طلب التعديل..."
-                        : "Enter reason for adjustment..."
-                    }
+                    placeholder={isAr ? "اكتب سبب طلب التعديل..." : "Enter reason for adjustment..."}
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm outline-none resize-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
               </>
             )}
 
-            {/* Salary Advance form fields */}
             {newReqType === "salaryAdvance" && (
               <>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    {t.advance.amount} ({t.common.sar})
-                  </label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.advance.amount} ({t.common.sar})</label>
                   <input
                     type="number"
                     min={0}
                     value={advAmount || ""}
                     onChange={(e) => setAdvAmount(Number(e.target.value))}
-                    className="h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary"
                     placeholder={isAr ? "أدخل المبلغ" : "Enter amount"}
+                    className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    {t.advance.repaymentMonths}
-                  </label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.advance.repaymentMonths}</label>
                   <select
                     value={advRepaymentMonths}
-                    onChange={(e) =>
-                      setAdvRepaymentMonths(Number(e.target.value))
-                    }
-                    className="w-full h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none"
+                    onChange={(e) => setAdvRepaymentMonths(Number(e.target.value))}
+                    className="w-full h-11 rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                   >
                     {[2, 3, 4, 5, 6].map((m) => (
-                      <option key={m} value={m}>
-                        {m} {isAr ? "أشهر" : "months"}
-                      </option>
+                      <option key={m} value={m}>{m} {isAr ? "أشهر" : "months"}</option>
                     ))}
                   </select>
                 </div>
                 {advAmount > 0 && (
-                  <div className="rounded-lg bg-accent/50 p-3 space-y-1">
+                  <div className="rounded-2xl bg-primary-container/20 p-4 space-y-2">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        {t.advance.monthlyDeduction}
-                      </span>
-                      <span className="font-semibold">
-                        {calculatedMonthlyDeduction.toLocaleString()}{" "}
-                        {t.common.sar}
+                      <span className="text-on-surface-variant font-medium">{t.advance.monthlyDeduction}</span>
+                      <span className="font-bold tabular-nums">
+                        {calculatedMonthlyDeduction.toLocaleString()} {t.common.sar}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        {t.advance.remainingBalance}
-                      </span>
-                      <span className="font-semibold">
+                      <span className="text-on-surface-variant font-medium">{t.advance.remainingBalance}</span>
+                      <span className="font-bold tabular-nums">
                         {advAmount.toLocaleString()} {t.common.sar}
                       </span>
                     </div>
                   </div>
                 )}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">{t.req.description}</label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.req.description}</label>
                   <textarea
                     value={newReqDesc}
                     onChange={(e) => setNewReqDesc(e.target.value)}
                     rows={3}
-                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none resize-none"
-                    placeholder={
-                      isAr ? "اكتب سبب طلب السلفة..." : "Enter reason for advance..."
-                    }
+                    placeholder={isAr ? "اكتب سبب طلب السلفة..." : "Enter reason for advance..."}
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm outline-none resize-none focus:ring-2 focus:ring-primary/40"
                   />
                 </div>
               </>
             )}
 
-            {/* Default form fields (leave, salary cert, permission, doc) */}
-            {newReqType !== "attendanceAdjust" &&
-              newReqType !== "salaryAdvance" && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">
-                    {t.req.description}
-                  </label>
-                  <textarea
-                    value={newReqDesc}
-                    onChange={(e) => setNewReqDesc(e.target.value)}
-                    rows={4}
-                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm outline-none resize-none"
-                    placeholder={
-                      isAr
-                        ? "اكتب تفاصيل الطلب..."
-                        : "Enter request details..."
-                    }
-                  />
-                </div>
-              )}
+            {newReqType !== "attendanceAdjust" && newReqType !== "salaryAdvance" && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-bold">{t.req.description}</label>
+                <textarea
+                  value={newReqDesc}
+                  onChange={(e) => setNewReqDesc(e.target.value)}
+                  rows={4}
+                  placeholder={isAr ? "اكتب تفاصيل الطلب..." : "Enter request details..."}
+                  className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm outline-none resize-none focus:ring-2 focus:ring-primary/40"
+                />
+              </div>
+            )}
+            {submitError && (
+              <p className="text-sm text-md-error font-bold flex items-center gap-2" role="alert">
+                <Icon name="error" size={16} fill />
+                {submitError}
+              </p>
+            )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
               {t.common.cancel}
             </Button>
-            <Button onClick={handleSubmit}>{t.req.submitRequest}</Button>
+            <Button onClick={handleSubmit} disabled={submitting}>
+              {submitting && <Icon name="progress_activity" size={18} className="animate-spin" />}
+              {submitting ? (isAr ? "جاري الإرسال..." : "Submitting...") : t.req.submitRequest}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

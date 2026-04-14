@@ -16,81 +16,61 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import {
-  Plus,
-  Calendar,
-  Palmtree,
-  Stethoscope,
-  User,
-  Ban,
-  Heart,
-  Baby,
-  Star,
-  Check,
-  X,
-  CheckCircle,
-} from "lucide-react";
 
 // ---------- constants ----------
 
-const typeColors: Record<string, { bg: string; bar: string; icon: string }> = {
+const typeConfig: Record<string, { iconName: string; bg: string; bar: string; icon: string }> = {
   annual: {
-    bg: "bg-emerald-50 dark:bg-emerald-500/10",
-    bar: "bg-emerald-500",
+    iconName: "beach_access",
+    bg: "bg-emerald-500/15",
+    bar: "from-emerald-400 to-emerald-600",
     icon: "text-emerald-600 dark:text-emerald-400",
   },
   sick: {
-    bg: "bg-red-50 dark:bg-red-500/10",
-    bar: "bg-red-500",
-    icon: "text-red-600 dark:text-red-400",
+    iconName: "medical_services",
+    bg: "bg-rose-500/15",
+    bar: "from-rose-400 to-rose-600",
+    icon: "text-rose-600 dark:text-rose-400",
   },
   personal: {
-    bg: "bg-blue-50 dark:bg-blue-500/10",
-    bar: "bg-blue-500",
+    iconName: "person",
+    bg: "bg-blue-500/15",
+    bar: "from-blue-400 to-blue-600",
     icon: "text-blue-600 dark:text-blue-400",
   },
   unpaid: {
-    bg: "bg-gray-50 dark:bg-gray-500/10",
-    bar: "bg-gray-500",
-    icon: "text-gray-600 dark:text-gray-400",
+    iconName: "block",
+    bg: "bg-surface-container",
+    bar: "from-gray-400 to-gray-600",
+    icon: "text-on-surface-variant",
   },
   marriage: {
-    bg: "bg-pink-50 dark:bg-pink-500/10",
-    bar: "bg-pink-500",
+    iconName: "favorite",
+    bg: "bg-pink-500/15",
+    bar: "from-pink-400 to-pink-600",
     icon: "text-pink-600 dark:text-pink-400",
   },
   paternity: {
-    bg: "bg-cyan-50 dark:bg-cyan-500/10",
-    bar: "bg-cyan-500",
+    iconName: "child_care",
+    bg: "bg-cyan-500/15",
+    bar: "from-cyan-400 to-cyan-600",
     icon: "text-cyan-600 dark:text-cyan-400",
   },
 };
 
-const typeIcons: Record<string, React.ElementType> = {
-  annual: Palmtree,
-  sick: Stethoscope,
-  personal: User,
-  unpaid: Ban,
-  marriage: Heart,
-  paternity: Baby,
-};
-
-const statusStyles: Record<string, string> = {
-  pending:
-    "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400 border-0",
-  approved:
-    "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border-0",
-  rejected:
-    "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400 border-0",
+const statusBadgeVariant: Record<string, "warning" | "success" | "destructive" | "info"> = {
+  pending: "warning",
+  "in-review": "info",
+  approved: "success",
+  rejected: "destructive",
 };
 
 // ---------- helpers ----------
 
-// getEmployee is now inside the component to use store.employees
-
 function getWeekDays(refDate: Date) {
-  const day = refDate.getDay(); // 0=Sun
+  const day = refDate.getDay();
   const sun = new Date(refDate);
   sun.setDate(refDate.getDate() - day);
   return Array.from({ length: 7 }, (_, i) => {
@@ -101,11 +81,7 @@ function getWeekDays(refDate: Date) {
 }
 
 function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
 function isDateInRange(date: Date, start: string, end: string) {
@@ -123,7 +99,6 @@ function fmtDate(dateStr: string, lang: "ar" | "en") {
   });
 }
 
-/** Check if a given date falls within any Saudi holiday range */
 function getHolidayForDate(date: Date) {
   return saudiHolidays.find((h) => isDateInRange(date, h.startDate, h.endDate));
 }
@@ -158,7 +133,6 @@ export default function LeavesPage() {
     };
   const isAr = lang === "ar";
 
-  // Employees see only their own leave records
   const leaveRequests = isAdmin
     ? allLeaveRequests
     : allLeaveRequests.filter((lr) => lr.employeeId === user.id || lr.employeeId === user.email);
@@ -166,7 +140,6 @@ export default function LeavesPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("balance");
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // form state
   const [submitError, setSubmitError] = useState("");
   const [formType, setFormType] = useState("annual");
   const [formStart, setFormStart] = useState("");
@@ -175,13 +148,7 @@ export default function LeavesPage() {
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
   const weekDays = useMemo(() => getWeekDays(new Date()), []);
-
-  const today = useMemo(() => new Date(), []);
-
-  const totalHolidayDays = useMemo(
-    () => saudiHolidays.reduce((sum, h) => sum + h.days, 0),
-    []
-  );
+  const totalHolidayDays = useMemo(() => saudiHolidays.reduce((sum, h) => sum + h.days, 0), []);
 
   const tabs: { key: TabKey; label: string }[] = isAdmin
     ? [
@@ -194,14 +161,7 @@ export default function LeavesPage() {
         { key: "requests", label: t.lev.requests },
       ];
 
-  const leaveTypeOptions = [
-    "annual",
-    "sick",
-    "unpaid",
-    "marriage",
-    "paternity",
-  ] as const;
-
+  const leaveTypeOptions = ["annual", "sick", "unpaid", "marriage", "paternity"] as const;
   const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -209,14 +169,12 @@ export default function LeavesPage() {
     if (!formStart || !formEnd) return;
     setSubmitError("");
 
-    // Calculate days between start and end
     const start = new Date(formStart + "T00:00:00");
     const end = new Date(formEnd + "T00:00:00");
     if (end < start) return;
     const diffMs = end.getTime() - start.getTime();
     const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
 
-    // Validate against remaining balance (skip for unpaid leave)
     if (formType !== "unpaid") {
       const balance = leaveBalances.find((b) => b.typeKey === formType);
       const remaining = balance ? balance.remaining : 0;
@@ -248,7 +206,6 @@ export default function LeavesPage() {
       return;
     }
 
-    // Show success, then auto-close after 5s
     setSubmitSuccess(true);
     setTimeout(() => {
       setSubmitSuccess(false);
@@ -260,56 +217,37 @@ export default function LeavesPage() {
     }, 5000);
   }
 
-  /** Format a holiday date range for display */
   function formatHolidayRange(startDate: string, endDate: string) {
-    const start = formatDate(startDate + "T00:00:00", lang, {
-      month: "long",
-      day: "numeric",
-    });
+    const start = formatDate(startDate + "T00:00:00", lang, { month: "long", day: "numeric" });
     if (startDate === endDate) return start;
-    const end = formatDate(endDate + "T00:00:00", lang, {
-      month: "long",
-      day: "numeric",
-    });
+    const end = formatDate(endDate + "T00:00:00", lang, { month: "long", day: "numeric" });
     return `${start} — ${end}`;
   }
 
-  /** Check if a holiday is upcoming (end date >= today) */
-  function isUpcoming(endDate: string) {
-    const end = new Date(endDate + "T00:00:00");
-    const todayNorm = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate()
-    );
-    return end >= todayNorm;
-  }
-
-  // ---------- render ----------
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto space-y-8 pb-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">{t.lev.title}</h1>
-        </div>
-        <Button onClick={() => setDialogOpen(true)}>
-          <Plus className="w-4 h-4" />
+        <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
+          {t.lev.title}
+        </h1>
+        <Button size="lg" onClick={() => setDialogOpen(true)}>
+          <Icon name="add" size={20} />
           {t.lev.applyLeave}
         </Button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2">
+      {/* Tabs (pill style) */}
+      <div className="inline-flex items-center bg-surface-container rounded-full p-1">
         {tabs.map((tab) => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={cn(
-              "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+              "px-5 py-2 rounded-full text-sm font-bold transition-all",
               activeTab === tab.key
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground hover:text-foreground"
+                ? "gradient-btn shadow-primary-glow"
+                : "text-on-surface-variant hover:text-on-surface"
             )}
           >
             {tab.label}
@@ -317,58 +255,43 @@ export default function LeavesPage() {
         ))}
       </div>
 
-      {/* ==================== BALANCE TAB ==================== */}
+      {/* ── BALANCE TAB ───────────────────────────────── */}
       {activeTab === "balance" && (
         <div className="space-y-6">
           {/* Leave Balance Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {leaveBalances.map((lb) => {
-              const colors = typeColors[lb.typeKey] ?? typeColors.annual;
-              const Icon = typeIcons[lb.typeKey] ?? Palmtree;
-              const pct = lb.total > 0 ? (lb.used / lb.total) * 100 : 0;
+              const config = typeConfig[lb.typeKey] ?? typeConfig.annual;
+              const pct = lb.total > 0 ? (lb.remaining / lb.total) * 100 : 0;
               const levKey = lb.typeKey as keyof typeof t.lev;
 
               return (
                 <div
                   key={lb.typeKey}
-                  className="glass-card rounded-xl p-5 hover-lift"
+                  className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm hover:shadow-primary-glow-lg transition-all group"
                 >
-                  {/* icon + title */}
                   <div className="flex items-center gap-3 mb-4">
-                    <div
-                      className={cn(
-                        "w-10 h-10 rounded-xl flex items-center justify-center",
-                        colors.bg
-                      )}
-                    >
-                      <Icon className={cn("w-5 h-5", colors.icon)} />
+                    <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform", config.bg, config.icon)}>
+                      <Icon name={config.iconName} size={26} fill />
                     </div>
-                    <h3 className="font-semibold">{t.lev[levKey]}</h3>
+                    <h3 className="font-headline font-bold text-base">{t.lev[levKey]}</h3>
                   </div>
 
-                  {/* numbers */}
                   <div className="flex items-end justify-between mb-3">
                     <div>
-                      <span className="text-3xl font-bold">{lb.remaining}</span>
-                      <span className="text-sm text-muted-foreground ms-1">
-                        {t.lev.days}
-                      </span>
+                      <span className="font-headline text-4xl font-black tabular-nums">{lb.remaining}</span>
+                      <span className="text-sm text-on-surface-variant ms-2 font-medium">{t.lev.days}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t.lev.used} {lb.used} / {t.lev.total} {lb.total}
+                    <p className="text-xs text-on-surface-variant font-medium">
+                      {t.lev.used} {lb.used} / {lb.total}
                     </p>
                   </div>
 
-                  {/* progress bar (styled div, NOT shadcn Progress) */}
-                  <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full transition-all", colors.bar)}
-                      style={{ width: `${pct}%` }}
-                    />
+                  <div className="h-2 w-full rounded-full bg-surface-container-highest overflow-hidden">
+                    <div className={cn("h-full rounded-full bg-gradient-to-r transition-all shadow-primary-glow", config.bar)} style={{ width: `${pct}%` }} />
                   </div>
 
-                  {/* label */}
-                  <p className="text-xs text-muted-foreground mt-2">
+                  <p className="text-xs text-on-surface-variant mt-2 font-medium">
                     {t.lev.remaining}: {lb.remaining} {t.lev.days}
                   </p>
                 </div>
@@ -376,86 +299,49 @@ export default function LeavesPage() {
             })}
           </div>
 
-          {/* Saudi Public Holidays Section */}
-          <div className="glass-card rounded-xl p-5 lg:p-6">
+          {/* Saudi Public Holidays */}
+          <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-amber-50 dark:bg-amber-500/10">
-                <Star className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-amber-500/15">
+                <Icon name="star" size={26} fill className="text-amber-600 dark:text-amber-400" />
               </div>
               <div>
-                <h3 className="font-bold text-lg">{t.holiday.saudiHolidays}</h3>
-                <p className="text-xs text-muted-foreground">
+                <h3 className="font-headline font-bold text-xl">{t.holiday.saudiHolidays}</h3>
+                <p className="text-xs text-on-surface-variant mt-0.5">
                   {totalHolidayDays} {t.lev.days} {t.holiday.title.toLowerCase()}
                 </p>
               </div>
             </div>
 
             <div className="space-y-3">
-              {saudiHolidays.map((h) => {
-                const upcoming = isUpcoming(h.endDate);
-                return (
-                  <div
-                    key={h.id}
-                    className={cn(
-                      "flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors",
-                      upcoming
-                        ? "border-emerald-200 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
-                        : "border-border/50 bg-muted/30"
-                    )}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={cn(
-                          "w-2 h-2 rounded-full flex-shrink-0",
-                          upcoming
-                            ? "bg-emerald-500"
-                            : "bg-gray-300 dark:bg-gray-600"
-                        )}
-                      />
-                      <div className="min-w-0">
-                        <p
-                          className={cn(
-                            "font-semibold text-sm",
-                            !upcoming && "text-muted-foreground"
-                          )}
-                        >
-                          {isAr ? h.nameAr : h.nameEn}
-                        </p>
-                        <p
-                          className={cn(
-                            "text-xs mt-0.5",
-                            upcoming
-                              ? "text-muted-foreground"
-                              : "text-muted-foreground/60"
-                          )}
-                        >
-                          {formatHolidayRange(h.startDate, h.endDate)}
-                        </p>
-                      </div>
+              {saudiHolidays.map((h) => (
+                <div
+                  key={h.id}
+                  className="flex items-center justify-between gap-4 rounded-2xl p-4 transition-colors bg-surface-container/50"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-2 h-2 rounded-full flex-shrink-0 bg-on-surface-variant/40" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-sm">
+                        {isAr ? h.nameAr : h.nameEn}
+                      </p>
+                      <p className="text-xs mt-0.5 text-on-surface-variant">
+                        {formatHolidayRange(h.startDate, h.endDate)}
+                      </p>
                     </div>
-
-                    <Badge
-                      className={cn(
-                        "text-[11px] font-medium flex-shrink-0 border-0",
-                        upcoming
-                          ? "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-400"
-                          : "bg-gray-100 text-gray-500 dark:bg-gray-500/15 dark:text-gray-400"
-                      )}
-                    >
-                      {h.days}{" "}
-                      {h.days === 1 ? t.holiday.day : t.holiday.daysCount}
-                    </Badge>
                   </div>
-                );
-              })}
+                  <Badge variant="outline">
+                    {h.days} {h.days === 1 ? t.holiday.day : t.holiday.daysCount}
+                  </Badge>
+                </div>
+              ))}
             </div>
 
-            {/* Total holiday days footer */}
-            <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
-              <span className="text-sm font-medium text-muted-foreground">
+            <div className="mt-5 pt-5 flex items-center justify-between">
+              <span className="text-sm font-bold text-on-surface-variant">
                 {t.lev.total} {t.holiday.title}
               </span>
-              <span className="text-sm font-bold">
+              <span className="font-headline text-lg font-black tabular-nums">
                 {totalHolidayDays} {t.lev.days}
               </span>
             </div>
@@ -463,115 +349,85 @@ export default function LeavesPage() {
         </div>
       )}
 
-      {/* ==================== REQUESTS TAB ==================== */}
+      {/* ── REQUESTS TAB ──────────────────────────────── */}
       {activeTab === "requests" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
-          <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[640px]">
               <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border">
-                  <th className="text-start pb-3 font-medium">
-                    {t.common.name}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.lev.leaveType}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.lev.startDate}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.lev.endDate}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.lev.daysCount}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.common.status}
-                  </th>
-                  {isAdmin && (
-                    <th className="text-start pb-3 font-medium">
-                      {t.common.actions}
-                    </th>
-                  )}
+                <tr className="bg-surface-container/30">
+                  <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
+                  <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.lev.leaveType}</th>
+                  <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.lev.startDate}</th>
+                  <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.lev.endDate}</th>
+                  <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.lev.daysCount}</th>
+                  <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.status}</th>
+                  {isAdmin && <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.actions}</th>}
                 </tr>
               </thead>
               <tbody>
+                {leaveRequests.length === 0 && (
+                  <tr>
+                    <td colSpan={isAdmin ? 7 : 6} className="text-center py-14 text-on-surface-variant">
+                      <Icon name="event_busy" size={44} className="mb-3 opacity-40" />
+                      <p className="text-sm font-medium">{t.common.noData}</p>
+                    </td>
+                  </tr>
+                )}
                 {leaveRequests.map((lr) => {
                   const emp = resolveEmployee(lr.employeeId);
                   const levKey = lr.typeKey as keyof typeof t.lev;
                   const statusKey = lr.status as keyof typeof t.statuses;
 
                   return (
-                    <tr
-                      key={lr.id}
-                      className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
-                    >
-                      {/* Employee */}
-                      <td className="py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar className="w-7 h-7">
-                            <AvatarFallback
-                              className={cn(
-                                "text-white text-[10px] font-bold",
-                                emp.color
-                              )}
-                            >
+                    <tr key={lr.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="w-8 h-8">
+                            <AvatarFallback className={cn("text-white text-[11px] font-bold", emp.color)}>
                               {emp.initials}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-medium">
-                            {isAr ? emp.nameAr : emp.nameEn}
-                          </span>
+                          <span className="text-sm font-bold">{isAr ? emp.nameAr : emp.nameEn}</span>
                         </div>
                       </td>
-                      {/* Type */}
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {t.lev[levKey]}
-                      </td>
-                      {/* Start */}
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {fmtDate(lr.startDate, lang)}
-                      </td>
-                      {/* End */}
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {fmtDate(lr.endDate, lang)}
-                      </td>
-                      {/* Days */}
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {lr.days} {t.lev.days}
-                      </td>
-                      {/* Status */}
-                      <td className="py-3">
-                        <Badge
-                          className={cn(
-                            "text-[11px] font-medium",
-                            statusStyles[lr.status]
-                          )}
-                        >
+                      <td className="px-6 py-4 text-sm text-on-surface-variant font-medium">{t.lev[levKey]}</td>
+                      <td className="px-6 py-4 text-sm text-on-surface-variant font-medium tabular-nums">{fmtDate(lr.startDate, lang)}</td>
+                      <td className="px-6 py-4 text-sm text-on-surface-variant font-medium tabular-nums">{fmtDate(lr.endDate, lang)}</td>
+                      <td className="px-6 py-4 text-sm text-on-surface-variant font-medium">{lr.days} {t.lev.days}</td>
+                      <td className="px-6 py-4">
+                        <Badge variant={statusBadgeVariant[lr.status] ?? "warning"}>
                           {t.statuses[statusKey]}
                         </Badge>
                       </td>
-                      {/* Admin Actions */}
                       {isAdmin && (
-                        <td className="py-3">
+                        <td className="px-6 py-4">
                           {lr.status === "pending" && (
                             <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
-                                onClick={() => store.approveLeaveRequest(lr.id)}
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?")) return;
+                                  try { await store.approveLeaveRequest(lr.id); }
+                                  catch (e) { console.error("[HR] approve failed:", e); alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed"); }
+                                }}
+                                className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-colors"
+                                title={isAr ? "موافقة" : "Approve"}
+                                aria-label={isAr ? "موافقة" : "Approve"}
                               >
-                                <Check className="w-4 h-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 w-7 p-0 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-500/10"
-                                onClick={() => store.rejectLeaveRequest(lr.id)}
+                                <Icon name="check" size={18} />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?")) return;
+                                  try { await store.rejectLeaveRequest(lr.id); }
+                                  catch (e) { console.error("[HR] reject failed:", e); alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed"); }
+                                }}
+                                className="p-2 rounded-full text-md-error hover:bg-error-container/20 transition-colors"
+                                title={isAr ? "رفض" : "Reject"}
+                                aria-label={isAr ? "رفض" : "Reject"}
                               >
-                                <X className="w-4 h-4" />
-                              </Button>
+                                <Icon name="close" size={18} />
+                              </button>
                             </div>
                           )}
                         </td>
@@ -585,88 +441,67 @@ export default function LeavesPage() {
         </div>
       )}
 
-      {/* ==================== TEAM CALENDAR TAB ==================== */}
+      {/* ── TEAM CALENDAR TAB ─────────────────────────── */}
       {activeTab === "calendar" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
-          <div className="flex items-center gap-2 mb-5">
-            <Calendar className="w-5 h-5 text-primary" />
-            <h3 className="font-bold text-lg">{t.lev.teamCalendar}</h3>
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-5">
+            <span className="w-1.5 h-7 bg-primary rounded-full" />
+            <Icon name="calendar_month" size={22} className="text-primary" />
+            <h3 className="font-headline font-bold text-xl">{t.lev.teamCalendar}</h3>
           </div>
 
           <div className="grid grid-cols-7 gap-2">
-            {/* Day headers */}
             {weekDays.map((wd, i) => {
               const isToday = isSameDay(wd, new Date());
               return (
                 <div key={i} className="text-center">
-                  <p className="text-xs font-medium text-muted-foreground mb-1">
-                    {t.days[dayKeys[i]]}
-                  </p>
-                  <p
-                    className={cn(
-                      "text-sm font-semibold mb-2 inline-flex items-center justify-center w-7 h-7 rounded-full",
-                      isToday && "bg-primary text-primary-foreground"
-                    )}
-                  >
+                  <p className="text-xs font-bold uppercase text-on-surface-variant mb-1.5">{t.days[dayKeys[i]]}</p>
+                  <p className={cn(
+                    "text-sm font-bold mb-2 inline-flex items-center justify-center w-8 h-8 rounded-full tabular-nums transition-all",
+                    isToday ? "gradient-btn shadow-primary-glow" : "text-on-surface"
+                  )}>
                     {wd.getDate()}
                   </p>
                 </div>
               );
             })}
 
-            {/* People on leave per day + holiday markers */}
             {weekDays.map((wd, i) => {
               const onLeave = leaveRequests
-                .filter(
-                  (lr) =>
-                    lr.status === "approved" &&
-                    isDateInRange(wd, lr.startDate, lr.endDate)
-                )
+                .filter((lr) => lr.status === "approved" && isDateInRange(wd, lr.startDate, lr.endDate))
                 .map((lr) => resolveEmployee(lr.employeeId));
-
               const holiday = getHolidayForDate(wd);
 
               return (
                 <div
                   key={`ppl-${i}`}
                   className={cn(
-                    "min-h-[80px] rounded-lg border border-border/50 p-1.5 space-y-1",
-                    isSameDay(wd, new Date()) && "bg-primary/5 border-primary/20",
-                    holiday && !isSameDay(wd, new Date()) && "bg-amber-50/50 dark:bg-amber-500/5 border-amber-200/50 dark:border-amber-500/15"
+                    "min-h-[90px] rounded-2xl p-2 space-y-1",
+                    isSameDay(wd, new Date()) ? "bg-primary-container/20" :
+                    holiday ? "bg-amber-500/10" : "bg-surface-container-low"
                   )}
                 >
-                  {/* Holiday badge */}
                   {holiday && (
-                    <div className="flex items-center gap-1 rounded-md bg-amber-100 dark:bg-amber-500/15 px-1.5 py-1">
-                      <Star className="w-3 h-3 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                      <span className="text-[10px] font-medium text-amber-700 dark:text-amber-400 truncate">
+                    <div className="flex items-center gap-1 rounded-xl bg-amber-500/20 px-2 py-1">
+                      <Icon name="star" size={12} fill className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 truncate">
                         {isAr ? holiday.nameAr : holiday.nameEn}
                       </span>
                     </div>
                   )}
 
                   {onLeave.length === 0 && !holiday && (
-                    <p className="text-[10px] text-muted-foreground/50 text-center mt-4">
-                      -
-                    </p>
+                    <p className="text-xs text-on-surface-variant/50 text-center mt-6">-</p>
                   )}
                   {onLeave.map((emp) => (
-                    <div
-                      key={emp.id}
-                      className="flex items-center gap-1 rounded-md bg-accent/50 px-1.5 py-1"
-                    >
+                    <div key={emp.id} className="flex items-center gap-1 rounded-xl bg-surface-container-lowest px-2 py-1">
                       <Avatar className="w-5 h-5" size="sm">
-                        <AvatarFallback
-                          className={cn(
-                            "text-white text-[8px] font-bold",
-                            emp!.color
-                          )}
-                        >
-                          {emp!.initials}
+                        <AvatarFallback className={cn("text-white text-[8px] font-bold", emp.color)}>
+                          {emp.initials}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-[10px] font-medium truncate">
-                        {isAr ? emp!.nameAr.split(" ")[0] : emp!.nameEn.split(" ")[0]}
+                      <span className="text-[10px] font-bold truncate">
+                        {isAr ? emp.nameAr.split(" ")[0] : emp.nameEn.split(" ")[0]}
                       </span>
                     </div>
                   ))}
@@ -677,108 +512,95 @@ export default function LeavesPage() {
         </div>
       )}
 
-      {/* ==================== APPLY LEAVE DIALOG ==================== */}
+      {/* ── APPLY LEAVE DIALOG ────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={(v) => { if (!submitSuccess) setDialogOpen(v); }}>
         <DialogContent className="sm:max-w-md">
           {submitSuccess ? (
             <div className="flex flex-col items-center justify-center py-8 gap-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center">
-                <CheckCircle className="w-8 h-8 text-emerald-500" />
+              <div className="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center shadow-[0_0_30px_rgba(16,185,129,0.4)]">
+                <Icon name="check_circle" size={48} fill className="text-emerald-500" />
               </div>
               <div className="text-center">
-                <p className="text-lg font-bold text-foreground">
+                <p className="font-headline text-xl font-bold text-on-surface">
                   {isAr ? "تم إرسال الطلب بنجاح" : "Request Submitted Successfully"}
                 </p>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-sm text-on-surface-variant mt-2">
                   {isAr ? "سيتم مراجعة طلبك من قبل المسؤول" : "Your request will be reviewed by the administrator"}
                 </p>
               </div>
             </div>
           ) : (
-          <>
-          <DialogHeader>
-            <DialogTitle>{t.lev.applyLeave}</DialogTitle>
-            <DialogDescription>
-              {isAr
-                ? "قم بتعبئة البيانات التالية لتقديم طلب الإجازة"
-                : "Fill in the details below to submit your leave request"}
-            </DialogDescription>
-          </DialogHeader>
+            <>
+              <DialogHeader>
+                <DialogTitle>{t.lev.applyLeave}</DialogTitle>
+                <DialogDescription>
+                  {isAr ? "قم بتعبئة البيانات التالية لتقديم طلب الإجازة" : "Fill in the details below to submit your leave request"}
+                </DialogDescription>
+              </DialogHeader>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Leave Type */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t.lev.leaveType}</label>
-              <select
-                value={formType}
-                onChange={(e) => setFormType(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-              >
-                {leaveTypeOptions.map((opt) => {
-                  const levKey = opt as keyof typeof t.lev;
-                  return (
-                    <option key={opt} value={opt}>
-                      {t.lev[levKey]}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.lev.leaveType}</label>
+                  <select
+                    value={formType}
+                    onChange={(e) => setFormType(e.target.value)}
+                    className="w-full h-11 rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                  >
+                    {leaveTypeOptions.map((opt) => (
+                      <option key={opt} value={opt}>{t.lev[opt as keyof typeof t.lev]}</option>
+                    ))}
+                  </select>
+                </div>
 
-            {/* Start Date */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t.lev.startDate}</label>
-              <input
-                type="date"
-                required
-                value={formStart}
-                onChange={(e) => setFormStart(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.lev.startDate}</label>
+                  <input
+                    type="date"
+                    required
+                    value={formStart}
+                    onChange={(e) => setFormStart(e.target.value)}
+                    className="w-full h-11 rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
 
-            {/* End Date */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t.lev.endDate}</label>
-              <input
-                type="date"
-                required
-                value={formEnd}
-                onChange={(e) => setFormEnd(e.target.value)}
-                className="w-full h-9 rounded-lg border border-border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.lev.endDate}</label>
+                  <input
+                    type="date"
+                    required
+                    value={formEnd}
+                    onChange={(e) => setFormEnd(e.target.value)}
+                    className="w-full h-11 rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
 
-            {/* Reason */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">{t.lev.reason}</label>
-              <textarea
-                value={formReason}
-                onChange={(e) => setFormReason(e.target.value)}
-                rows={3}
-                className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none resize-none focus:border-ring focus:ring-2 focus:ring-ring/50"
-                placeholder={
-                  isAr ? "اكتب سبب الإجازة..." : "Enter leave reason..."
-                }
-              />
-            </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">{t.lev.reason}</label>
+                  <textarea
+                    value={formReason}
+                    onChange={(e) => setFormReason(e.target.value)}
+                    rows={3}
+                    placeholder={isAr ? "اكتب سبب الإجازة..." : "Enter leave reason..."}
+                    className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm outline-none resize-none focus:ring-2 focus:ring-primary/40"
+                  />
+                </div>
 
-            {submitError && (
-              <p className="text-sm text-red-500 font-medium">{submitError}</p>
-            )}
+                {submitError && (
+                  <p className="text-sm text-md-error font-bold">{submitError}</p>
+                )}
 
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => { setDialogOpen(false); setSubmitError(""); }}
-              >
-                {t.common.cancel}
-              </Button>
-              <Button type="submit">{t.common.submit}</Button>
-            </DialogFooter>
-          </form>
-          </>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => { setDialogOpen(false); setSubmitError(""); }}
+                  >
+                    {t.common.cancel}
+                  </Button>
+                  <Button type="submit">{t.common.submit}</Button>
+                </DialogFooter>
+              </form>
+            </>
           )}
         </DialogContent>
       </Dialog>

@@ -87,7 +87,14 @@ export async function notifyAdmins(params: {
 
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
-      console.error("[HR] notifyAdmins failed:", response.status, body.error || response.statusText);
+      if (response.status === 503) {
+        console.error(
+          "[HR] notifyAdmins failed (503): SUPABASE_SERVICE_ROLE_KEY is not set in .env.local. " +
+          "Add it and restart the dev server."
+        );
+      } else {
+        console.error("[HR] notifyAdmins failed:", response.status, body.error || response.statusText);
+      }
     }
   } catch (e) {
     console.error("[HR] notifyAdmins error:", e);
@@ -95,6 +102,11 @@ export async function notifyAdmins(params: {
 }
 
 // ─── Create Single Notification (for employee-targeted notifications) ──
+//
+// Goes through /api/notifications/user which uses service role to bypass RLS.
+// Direct client-side inserts fail because RLS only permits users to manage
+// their OWN rows — but we often need to create a notification FOR ANOTHER user
+// (e.g. admin approving leave → notify the employee).
 
 export async function createNotification(params: {
   userId: string;
@@ -105,30 +117,41 @@ export async function createNotification(params: {
   descEn: string;
   href?: string;
 }) {
-  // Try with all columns (Landing Page schema has app_name, desc_ar, etc.)
-  const row: Record<string, unknown> = {
-    user_id: params.userId,
-    app_name: "hr",
-    type: params.type,
-    title_ar: params.titleAr,
-    title_en: params.titleEn,
-    desc_ar: params.descAr,
-    desc_en: params.descEn,
-    href: params.href || null,
-    read: false,
-  };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      console.warn("[HR] createNotification — no session, skipping");
+      return { error: new Error("No session") };
+    }
 
-  let { error } = await supabase.from("notifications").insert(row);
+    const response = await fetch("/api/notifications/user", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(params),
+    });
 
-  // Fallback: remove app_name if column doesn't exist
-  if (error && (error.code === "42703" || error.message?.includes("column"))) {
-    delete row.app_name;
-    const retry = await supabase.from("notifications").insert(row);
-    error = retry.error;
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      const err = new Error(body.error || response.statusText);
+      if (response.status === 503) {
+        console.error(
+          "[HR] createNotification failed (503): SUPABASE_SERVICE_ROLE_KEY is not set in .env.local. " +
+          "Add it and restart the dev server."
+        );
+      } else {
+        console.error("[HR] createNotification failed:", response.status, body.error || response.statusText, body.detail || "");
+      }
+      return { error: err };
+    }
+
+    return { error: null };
+  } catch (e) {
+    console.error("[HR] createNotification error:", e);
+    return { error: e as Error };
   }
-
-  if (error) console.error("[HR] createNotification error:", error.message);
-  return { error };
 }
 
 // ─── Fetch Notifications ─────────────────────────────────────────────
@@ -161,27 +184,27 @@ export async function fetchNotifications(userId: string) {
 // ─── Mark Read ───────────────────────────────────────────────────────
 
 export async function markNotificationReadInDB(id: string) {
-  // Try 'read' column first (our schema), fall back to 'is_read'
-  const { error } = await supabase.from("notifications").update({ read: true }).eq("id", id);
+  // Landing schema uses `is_read`; fall back to `read` for alternate deployments
+  const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", id);
   if (error) {
-    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    await supabase.from("notifications").update({ read: true }).eq("id", id);
   }
 }
 
 export async function markAllReadInDB(userId: string) {
-  // Try with app_name filter
+  // Landing schema uses `is_read`
   const { error } = await supabase
     .from("notifications")
-    .update({ read: true })
+    .update({ is_read: true })
     .eq("user_id", userId)
-    .eq("read", false);
+    .eq("is_read", false);
 
   if (error) {
     await supabase
       .from("notifications")
-      .update({ is_read: true })
+      .update({ read: true })
       .eq("user_id", userId)
-      .eq("is_read", false);
+      .eq("read", false);
   }
 }
 

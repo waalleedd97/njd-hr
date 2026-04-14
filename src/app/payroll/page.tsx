@@ -5,6 +5,7 @@ import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import {
   GOSI_RATE,
+  GOSI_RATE_COMPANY,
   calcPenalty,
   calcDailySalary,
   penaltyRules,
@@ -20,19 +21,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import {
-  DollarSign,
-  TrendingUp,
-  ArrowDownRight,
-  Shield,
-  CheckCircle,
-  Eye,
-  AlertTriangle,
-  Wallet,
-  BookOpen,
-  Info,
-} from "lucide-react";
 
 export default function PayrollPage() {
   const { t, lang } = useLanguage();
@@ -43,9 +33,7 @@ export default function PayrollPage() {
   const todayAttendance = store.todayAttendance;
   const salaryAdvances = store.salaryAdvances;
   const isAr = lang === "ar";
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(
-    null
-  );
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
   const {
     totalPayroll,
@@ -64,16 +52,13 @@ export default function PayrollPage() {
       const gross = basic + housing + transport + other;
       const gosi = Math.round(basic * GOSI_RATE * 100) / 100;
 
-      // Penalty calculation
       let penalty = 0;
-      const attendance = todayAttendance.find(
-        (a) => a.employeeId === emp.id
-      );
+      const attendance = todayAttendance.find((a) => a.employeeId === emp.id);
       if (attendance) {
         if (attendance.status === "late" && attendance.checkIn) {
           const [h, m] = attendance.checkIn.split(":").map(Number);
           const checkInMinutes = h * 60 + m;
-          const minutesLate = checkInMinutes - 600; // 10:00 AM = 600 min
+          const minutesLate = checkInMinutes - 600;
           if (minutesLate > 0) {
             const percentage = calcPenalty(minutesLate);
             penalty = Math.round(calcDailySalary(emp) * percentage / 100);
@@ -83,42 +68,21 @@ export default function PayrollPage() {
         }
       }
 
-      // Advance deduction
       let advanceDeduction = 0;
-      const advance = salaryAdvances.find(
-        (a) => a.employeeId === emp.id && a.status === "approved"
-      );
+      const advance = salaryAdvances.find((a) => a.employeeId === emp.id && a.status === "approved");
       if (advance && advance.remainingBalance > 0) {
         advanceDeduction = advance.monthlyDeduction;
       }
 
       const net = gross - gosi - penalty - advanceDeduction;
-
-      return {
-        employee: emp,
-        basic,
-        housing,
-        transport,
-        other,
-        gross,
-        gosi,
-        penalty,
-        advanceDeduction,
-        net,
-      };
+      return { employee: emp, basic, housing, transport, other, gross, gosi, penalty, advanceDeduction, net };
     });
 
     const totalNet = payroll.reduce((sum, p) => sum + p.net, 0);
     const avg = payroll.length > 0 ? totalNet / payroll.length : 0;
-    const allowances = payroll.reduce(
-      (sum, p) => sum + p.housing + p.transport + p.other,
-      0
-    );
+    const allowances = payroll.reduce((sum, p) => sum + p.housing + p.transport + p.other, 0);
     const deductions = payroll.reduce((sum, p) => sum + p.gosi, 0);
-    const gosiCompany = payroll.reduce(
-      (sum, p) => sum + p.employee.salary.basic * 0.1225,
-      0
-    );
+    const gosiCompany = payroll.reduce((sum, p) => sum + p.employee.salary.basic * GOSI_RATE_COMPANY, 0);
     const penalties = payroll.reduce((sum, p) => sum + p.penalty, 0);
     const approved = salaryAdvances.filter((a) => a.status === "approved");
 
@@ -135,7 +99,6 @@ export default function PayrollPage() {
     };
   }, [employees, salaryAdvances, todayAttendance]);
 
-  // For employees: filter to only their own data
   const visiblePayroll = useMemo(() => {
     if (isAdmin) return employeePayroll;
     return employeePayroll.filter((p) => p.employee.email === user.email || p.employee.id === user.id);
@@ -143,149 +106,90 @@ export default function PayrollPage() {
 
   const selectedPayroll = useMemo(() => {
     if (!selectedEmployeeId) return null;
-    return (
-      employeePayroll.find((p) => p.employee.id === selectedEmployeeId) ?? null
-    );
+    return employeePayroll.find((p) => p.employee.id === selectedEmployeeId) ?? null;
   }, [selectedEmployeeId, employeePayroll]);
 
-  const formatCurrency = (value: number) =>
-    value.toLocaleString("en-US") + " " + t.common.sar;
+  const formatCurrency = (value: number) => value.toLocaleString("en-US") + " " + t.common.sar;
 
   const totalGosiEmployee = totalDeductions;
   const totalGosiCombined = totalGosiEmployee + totalGosiCompany;
 
   const stats = [
-    {
-      icon: DollarSign,
-      label: t.pay.totalPayroll,
-      value: formatCurrency(totalPayroll),
-      color: "bg-primary/10 text-primary",
-    },
-    {
-      icon: TrendingUp,
-      label: t.pay.avgSalary,
-      value: formatCurrency(Math.round(avgSalary)),
-      color: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    },
-    {
-      icon: DollarSign,
-      label: t.pay.totalAllowances,
-      value: formatCurrency(totalAllowances),
-      color: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    },
-    {
-      icon: ArrowDownRight,
-      label: t.pay.totalDeductions,
-      value: formatCurrency(totalDeductions),
-      color: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    },
-    {
-      icon: AlertTriangle,
-      label: t.penalty.totalPenalties,
-      value: formatCurrency(totalPenalties),
-      color: "bg-red-500/10 text-red-600 dark:text-red-400",
-    },
+    { iconName: "payments", label: t.pay.totalPayroll, value: formatCurrency(totalPayroll), bg: "bg-primary-container/40", color: "text-primary" },
+    { iconName: "trending_up", label: t.pay.avgSalary, value: formatCurrency(Math.round(avgSalary)), bg: "bg-emerald-500/15", color: "text-emerald-600 dark:text-emerald-400" },
+    { iconName: "account_balance_wallet", label: t.pay.totalAllowances, value: formatCurrency(totalAllowances), bg: "bg-blue-500/15", color: "text-blue-600 dark:text-blue-400" },
+    { iconName: "south_east", label: t.pay.totalDeductions, value: formatCurrency(totalDeductions), bg: "bg-amber-500/15", color: "text-amber-600 dark:text-amber-400" },
+    { iconName: "warning", label: t.penalty.totalPenalties, value: formatCurrency(totalPenalties), bg: "bg-error-container/20", color: "text-md-error" },
   ];
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto space-y-8 pb-8">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{t.pay.title}</h1>
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
+          {t.pay.title}
+        </h1>
         {isAdmin && (
           <Button
+            size="lg"
             onClick={processPayroll}
             disabled={payrollProcessed}
-            className={payrollProcessed ? "bg-emerald-600 hover:bg-emerald-600" : ""}
+            className={payrollProcessed ? "!bg-emerald-600 !bg-none" : ""}
           >
-            {payrollProcessed ? (
-              <CheckCircle className="w-4 h-4" />
-            ) : (
-              <DollarSign className="w-4 h-4" />
-            )}
-            {payrollProcessed
-              ? (isAr ? "✓ تمت المعالجة" : "✓ Processed")
-              : t.pay.runPayroll}
+            {payrollProcessed ? <Icon name="check_circle" size={20} fill /> : <Icon name="payments" size={20} />}
+            {payrollProcessed ? (isAr ? "✓ تمت المعالجة" : "✓ Processed") : t.pay.runPayroll}
           </Button>
         )}
       </div>
 
-      {/* Stats Row — 5 cards (admin only) */}
-      {isAdmin && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        {stats.map((stat, i) => {
-          const Icon = stat.icon;
-          return (
-            <div
-              key={i}
-              className="accent-card rounded-xl p-4 hover-lift cursor-default"
-            >
+      {/* Stats row (admin only) */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          {stats.map((stat, i) => (
+            <div key={i} className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm hover:shadow-primary-glow-lg transition-all group">
               <div className="flex items-start gap-3">
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                    stat.color
-                  )}
-                >
-                  <Icon className="w-5 h-5" />
+                <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform", stat.bg, stat.color)}>
+                  <Icon name={stat.iconName} size={24} fill />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-lg font-bold text-foreground truncate">
+                  <p className="font-headline text-base font-black text-on-surface truncate tabular-nums">
                     {stat.value}
                   </p>
-                  <p className="text-sm text-muted-foreground mt-0.5 truncate">
+                  <p className="text-xs text-on-surface-variant mt-0.5 truncate font-medium">
                     {stat.label}
                   </p>
                 </div>
               </div>
             </div>
-          );
-        })}
-      </div>}
+          ))}
+        </div>
+      )}
 
-      {/* Main Content Grid */}
+      {/* Main Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Salary Table */}
-        <div className={cn("glass-card rounded-xl p-5 lg:p-6", isAdmin ? "lg:col-span-2" : "lg:col-span-3")}>
-          <div className="flex items-center justify-between mb-5">
-            <h3 className="font-bold text-lg">{t.pay.title}</h3>
-            <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border-0 text-[11px] font-medium">
-              {t.pay.currentMonth}
-            </Badge>
+        {/* Payroll table */}
+        <div className={cn("bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden", isAdmin ? "lg:col-span-2" : "lg:col-span-3")}>
+          <div className="flex items-center justify-between px-6 pt-6 pb-4">
+            <div className="flex items-center gap-3">
+              <span className="w-1.5 h-7 bg-primary rounded-full" />
+              <h3 className="font-headline font-bold text-xl">{t.pay.title}</h3>
+            </div>
+            <Badge variant="success">{t.pay.currentMonth}</Badge>
           </div>
-          <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
+          <div className="overflow-x-auto">
             <table className="w-full min-w-[900px]">
               <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border">
-                  <th className="text-start pb-3 font-medium">
-                    {t.common.name}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.basic}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.housing}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.transport}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.otherAllowances}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.gosiDeduction}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.penalty.title}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.advance.title}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.net}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.pay.payslip}
-                  </th>
+                <tr className="bg-surface-container/30">
+                  <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.basic}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.housing}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.transport}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.otherAllowances}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.gosiDeduction}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.penalty.title}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.advance.title}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.net}</th>
+                  <th className="text-start px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.pay.payslip}</th>
                 </tr>
               </thead>
               <tbody>
@@ -293,63 +197,39 @@ export default function PayrollPage() {
                   const emp = row.employee;
                   const name = isAr ? emp.nameAr : emp.nameEn;
                   return (
-                    <tr
-                      key={emp.id}
-                      className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
-                    >
-                      <td className="py-3">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar className="w-7 h-7">
-                            <AvatarFallback
-                              className={cn(
-                                "text-white text-[10px] font-bold",
-                                emp.color
-                              )}
-                            >
+                    <tr key={emp.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="px-6 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="w-8 h-8">
+                            <AvatarFallback className={cn("text-white text-[11px] font-bold", emp.color)}>
                               {emp.initials}
                             </AvatarFallback>
                           </Avatar>
-                          <span className="text-sm font-medium whitespace-nowrap">
-                            {name}
-                          </span>
+                          <span className="text-sm font-bold whitespace-nowrap">{name}</span>
                         </div>
                       </td>
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {row.basic.toLocaleString("en-US")}
+                      <td className="px-4 py-3 text-sm text-on-surface-variant tabular-nums">{row.basic.toLocaleString("en-US")}</td>
+                      <td className="px-4 py-3 text-sm text-on-surface-variant tabular-nums">{row.housing.toLocaleString("en-US")}</td>
+                      <td className="px-4 py-3 text-sm text-on-surface-variant tabular-nums">{row.transport.toLocaleString("en-US")}</td>
+                      <td className="px-4 py-3 text-sm text-on-surface-variant tabular-nums">{row.other.toLocaleString("en-US")}</td>
+                      <td className="px-4 py-3 text-sm text-md-error tabular-nums font-medium">-{row.gosi.toLocaleString("en-US")}</td>
+                      <td className="px-4 py-3 text-sm text-md-error tabular-nums font-medium">
+                        {row.penalty > 0 ? `-${row.penalty.toLocaleString("en-US")}` : "-"}
                       </td>
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {row.housing.toLocaleString("en-US")}
+                      <td className="px-4 py-3 text-sm text-tertiary tabular-nums font-medium">
+                        {row.advanceDeduction > 0 ? `-${row.advanceDeduction.toLocaleString("en-US")}` : "-"}
                       </td>
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {row.transport.toLocaleString("en-US")}
-                      </td>
-                      <td className="py-3 text-sm text-muted-foreground">
-                        {row.other.toLocaleString("en-US")}
-                      </td>
-                      <td className="py-3 text-sm text-red-600 dark:text-red-400">
-                        -{row.gosi.toLocaleString("en-US")}
-                      </td>
-                      <td className="py-3 text-sm text-red-600 dark:text-red-400">
-                        {row.penalty > 0
-                          ? `-${row.penalty.toLocaleString("en-US")}`
-                          : "-"}
-                      </td>
-                      <td className="py-3 text-sm text-purple-600 dark:text-purple-400">
-                        {row.advanceDeduction > 0
-                          ? `-${row.advanceDeduction.toLocaleString("en-US")}`
-                          : "-"}
-                      </td>
-                      <td className="py-3 text-sm font-semibold text-foreground">
+                      <td className="px-4 py-3 text-sm font-black text-on-surface tabular-nums">
                         {row.net.toLocaleString("en-US")}
                       </td>
-                      <td className="py-3">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
+                      <td className="px-4 py-3">
+                        <button
                           onClick={() => setSelectedEmployeeId(emp.id)}
+                          className="p-2 rounded-full text-primary hover:bg-primary-container/30 transition-colors"
+                          title={t.pay.viewPayslip}
                         >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                          <Icon name="visibility" size={18} />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -360,316 +240,250 @@ export default function PayrollPage() {
         </div>
 
         {/* Right Column — admin only */}
-        {isAdmin && <div className="space-y-6">
-          {/* WPS Status Card */}
-          <div className="glass-card rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              <h3 className="font-bold">{t.pay.wpsStatus}</h3>
+        {isAdmin && (
+          <div className="space-y-6">
+            {/* WPS Status */}
+            <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-emerald-500/15">
+                  <Icon name="verified" size={22} fill className="text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h3 className="font-headline font-bold">{t.pay.wpsStatus}</h3>
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-on-surface-variant font-medium">{t.pay.wpsCompliant}</span>
+                  <Badge variant="success">{isAr ? "متوافق" : "Compliant"}</Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-on-surface-variant font-medium">{t.pay.lastTransfer}</span>
+                  <span className="text-sm font-bold tabular-nums">2026-03-01</span>
+                </div>
+              </div>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {t.pay.wpsCompliant}
-                </span>
-                <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border-0 text-[11px] font-medium">
-                  {isAr ? "متوافق" : "Compliant"}
-                </Badge>
+
+            {/* GOSI Summary */}
+            <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-primary-container/40">
+                  <Icon name="shield" size={22} fill className="text-primary" />
+                </div>
+                <h3 className="font-headline font-bold">{t.pay.gosiSummary}</h3>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {t.pay.lastTransfer}
-                </span>
-                <span className="text-sm font-medium">2026-03-01</span>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-on-surface-variant font-medium">{t.pay.employeeShare}</span>
+                  <span className="text-sm font-bold tabular-nums">{formatCurrency(totalGosiEmployee)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-on-surface-variant font-medium">{t.pay.companyShare}</span>
+                  <span className="text-sm font-bold tabular-nums">{formatCurrency(totalGosiCompany)}</span>
+                </div>
+                <div className="pt-3 flex items-center justify-between">
+                  <span className="text-sm font-bold">{t.pay.totalGosi}</span>
+                  <span className="font-headline text-lg font-black text-primary tabular-nums">
+                    {formatCurrency(totalGosiCombined)}
+                  </span>
+                </div>
               </div>
+            </div>
+
+            {/* Advance Tracking */}
+            <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-tertiary-container/40">
+                  <Icon name="wallet" size={22} fill className="text-tertiary" />
+                </div>
+                <h3 className="font-headline font-bold">{t.advance.advanceHistory}</h3>
+              </div>
+              {approvedAdvances.length > 0 ? (
+                <div className="space-y-3">
+                  {approvedAdvances.map((adv) => {
+                    const emp = employees.find((e) => e.id === adv.employeeId) ?? {
+                      id: adv.employeeId,
+                      nameAr: "موظف غير مربوط",
+                      nameEn: "Unlinked Employee",
+                      color: "bg-slate-500",
+                      initials: (adv.employeeId[0] || "?").toUpperCase(),
+                    };
+                    const name = isAr ? emp.nameAr : emp.nameEn;
+                    return (
+                      <div key={adv.id} className="bg-surface-container-low rounded-2xl p-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-bold">{name}</span>
+                          <Badge variant="tertiary">{formatCurrency(adv.amount)}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-on-surface-variant">
+                          <span className="font-medium">{t.advance.remainingBalance}</span>
+                          <span className="font-bold text-on-surface tabular-nums">{formatCurrency(adv.remainingBalance)}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-on-surface-variant">
+                          <span className="font-medium">{t.advance.paidMonths}</span>
+                          <span className="font-bold text-on-surface tabular-nums">{adv.paidMonths} / {adv.repaymentMonths}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-on-surface-variant text-center py-4 font-medium">
+                  {t.advance.noAdvances}
+                </p>
+              )}
             </div>
           </div>
-
-          {/* GOSI Summary Card */}
-          <div className="glass-card rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Shield className="w-5 h-5 text-primary" />
-              <h3 className="font-bold">{t.pay.gosiSummary}</h3>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {t.pay.employeeShare}
-                </span>
-                <span className="text-sm font-medium">
-                  {formatCurrency(totalGosiEmployee)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {t.pay.companyShare}
-                </span>
-                <span className="text-sm font-medium">
-                  {formatCurrency(totalGosiCompany)}
-                </span>
-              </div>
-              <div className="border-t border-border pt-3 flex items-center justify-between">
-                <span className="text-sm font-semibold">
-                  {t.pay.totalGosi}
-                </span>
-                <span className="text-sm font-bold text-primary">
-                  {formatCurrency(totalGosiCombined)}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Advance Tracking Card */}
-          <div className="glass-card rounded-xl p-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Wallet className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-              <h3 className="font-bold">{t.advance.advanceHistory}</h3>
-            </div>
-            {approvedAdvances.length > 0 ? (
-              <div className="space-y-4">
-                {approvedAdvances.map((adv) => {
-                  const emp = employees.find((e) => e.id === adv.employeeId) ?? {
-                    id: adv.employeeId,
-                    nameAr: "موظف غير مربوط",
-                    nameEn: "Unlinked Employee",
-                    positionAr: "",
-                    positionEn: "",
-                    department: "",
-                    email: "",
-                    phone: "",
-                    status: "active" as const,
-                    joinDate: "",
-                    salary: { basic: 0, housing: 0, transport: 0, other: 0 },
-                    initials: (adv.employeeId[0] || "?").toUpperCase(),
-                    color: "bg-slate-500",
-                    profileCompleted: true,
-                  };
-                  const name = isAr ? emp.nameAr : emp.nameEn;
-                  return (
-                    <div
-                      key={adv.id}
-                      className="border border-border/50 rounded-lg p-3 space-y-2"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium">{name}</span>
-                        <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-500/15 dark:text-purple-400 border-0 text-[11px] font-medium">
-                          {formatCurrency(adv.amount)}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{t.advance.remainingBalance}</span>
-                        <span className="font-medium text-foreground">
-                          {formatCurrency(adv.remainingBalance)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>{t.advance.paidMonths}</span>
-                        <span className="font-medium text-foreground">
-                          {adv.paidMonths} / {adv.repaymentMonths}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                {t.advance.noAdvances}
-              </p>
-            )}
-          </div>
-
-        </div>}
+        )}
       </div>
 
-      {/* Penalty Rules — visible to all users */}
+      {/* Penalty Rules */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Late Arrival */}
-        <div className="glass-card rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <BookOpen className="w-5 h-5 text-red-600 dark:text-red-400" />
-            <h3 className="font-bold text-sm">{isAr ? "جزاءات التأخر" : "Late Arrival Penalties"}</h3>
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <Icon name="gavel" size={20} className="text-md-error" />
+            <h3 className="font-headline font-bold text-sm">{isAr ? "جزاءات التأخر" : "Late Arrival Penalties"}</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.condition}</th>
-                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.deduction}</th>
+          <table className="w-full text-xs">
+            <thead>
+              <tr>
+                <th className="text-start pb-2 font-bold text-on-surface-variant uppercase tracking-wider text-[10px]">{t.penalty.condition}</th>
+                <th className="text-start pb-2 font-bold text-on-surface-variant uppercase tracking-wider text-[10px]">{t.penalty.deduction}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {penaltyRules.map((r) => (
+                <tr key={r.id} className="hover:bg-surface-container-low transition-colors">
+                  <td className="py-2 text-on-surface font-medium">{isAr ? r.conditionAr : r.conditionEn}</td>
+                  <td className={cn("py-2 font-bold", r.percentage > 0 ? "text-md-error" : "text-on-surface-variant")}>
+                    {isAr ? r.deductionAr : r.deductionEn}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {penaltyRules.map((r) => (
-                  <tr key={r.id} className="border-b border-border/50 last:border-0">
-                    <td className="py-1.5 text-foreground">{isAr ? r.conditionAr : r.conditionEn}</td>
-                    <td className={cn("py-1.5", r.percentage > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>{isAr ? r.deductionAr : r.deductionEn}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
 
-        {/* Early Departure */}
-        <div className="glass-card rounded-xl p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <BookOpen className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-            <h3 className="font-bold text-sm">{isAr ? "جزاءات الانصراف المبكر" : "Early Departure Penalties"}</h3>
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <Icon name="logout" size={20} className="text-amber-600 dark:text-amber-400" />
+            <h3 className="font-headline font-bold text-sm">{isAr ? "جزاءات الانصراف المبكر" : "Early Departure Penalties"}</h3>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.condition}</th>
-                  <th className="text-start pb-2 font-medium text-muted-foreground">{t.penalty.deduction}</th>
+          <table className="w-full text-xs">
+            <thead>
+              <tr>
+                <th className="text-start pb-2 font-bold text-on-surface-variant uppercase tracking-wider text-[10px]">{t.penalty.condition}</th>
+                <th className="text-start pb-2 font-bold text-on-surface-variant uppercase tracking-wider text-[10px]">{t.penalty.deduction}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {earlyDepartureRules.map((r) => (
+                <tr key={r.id} className="hover:bg-surface-container-low transition-colors">
+                  <td className="py-2 text-on-surface font-medium">{isAr ? r.conditionAr : r.conditionEn}</td>
+                  <td className={cn("py-2 font-bold", r.percentage > 0 ? "text-md-error" : "text-on-surface-variant")}>
+                    {isAr ? r.deductionAr : r.deductionEn}
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {earlyDepartureRules.map((r) => (
-                  <tr key={r.id} className="border-b border-border/50 last:border-0">
-                    <td className="py-1.5 text-foreground">{isAr ? r.conditionAr : r.conditionEn}</td>
-                    <td className={cn("py-1.5", r.percentage > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground")}>{isAr ? r.deductionAr : r.deductionEn}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* Exemption note */}
-      <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20">
-        <p className="text-xs font-medium text-blue-700 dark:text-blue-400 flex items-center gap-1.5">
-          <Info className="w-3.5 h-3.5 shrink-0" />
+      <div className="p-4 rounded-2xl bg-blue-500/10">
+        <p className="text-xs font-bold text-blue-700 dark:text-blue-300 flex items-center gap-2">
+          <Icon name="info" size={16} fill />
           {isAr ? "الموظفون عن بُعد معفيون من قواعد الجزاءات" : "Remote employees are exempt from penalty rules"}
         </p>
       </div>
 
       {/* Payslip Dialog */}
-      <Dialog
-        open={selectedEmployeeId !== null}
-        onOpenChange={(open) => {
-          if (!open) setSelectedEmployeeId(null);
-        }}
-      >
+      <Dialog open={selectedEmployeeId !== null} onOpenChange={(open) => { if (!open) setSelectedEmployeeId(null); }}>
         <DialogContent className="sm:max-w-md">
           {selectedPayroll && (
             <>
               <DialogHeader>
                 <DialogTitle>{t.pay.viewPayslip}</DialogTitle>
               </DialogHeader>
-              <div className="space-y-4">
-                {/* Employee Info */}
-                <div className="flex items-center gap-3 pb-3 border-b border-border">
-                  <Avatar>
-                    <AvatarFallback
-                      className={cn(
-                        "text-white text-xs font-bold",
-                        selectedPayroll.employee.color
-                      )}
-                    >
+              <div className="space-y-5">
+                <div className="flex items-center gap-3 pb-4">
+                  <Avatar className="w-12 h-12">
+                    <AvatarFallback className={cn("text-white text-sm font-bold", selectedPayroll.employee.color)}>
                       {selectedPayroll.employee.initials}
                     </AvatarFallback>
                   </Avatar>
                   <div>
-                    <p className="font-semibold">
-                      {isAr
-                        ? selectedPayroll.employee.nameAr
-                        : selectedPayroll.employee.nameEn}
+                    <p className="font-headline font-bold">
+                      {isAr ? selectedPayroll.employee.nameAr : selectedPayroll.employee.nameEn}
                     </p>
-                    <p className="text-xs text-muted-foreground">
-                      {selectedPayroll.employee.id}
-                    </p>
+                    <p className="text-xs text-on-surface-variant tabular-nums">{selectedPayroll.employee.id}</p>
                   </div>
                 </div>
 
-                {/* Earnings */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {t.pay.basic}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {formatCurrency(selectedPayroll.basic)}
-                    </span>
+                <div className="space-y-2.5">
+                  <p className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                    {isAr ? "الاستحقاقات" : "Earnings"}
+                  </p>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-sm text-on-surface-variant font-medium">{t.pay.basic}</span>
+                    <span className="text-sm font-bold tabular-nums">{formatCurrency(selectedPayroll.basic)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {t.pay.housing}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {formatCurrency(selectedPayroll.housing)}
-                    </span>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-sm text-on-surface-variant font-medium">{t.pay.housing}</span>
+                    <span className="text-sm font-bold tabular-nums">{formatCurrency(selectedPayroll.housing)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {t.pay.transport}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {formatCurrency(selectedPayroll.transport)}
-                    </span>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-sm text-on-surface-variant font-medium">{t.pay.transport}</span>
+                    <span className="text-sm font-bold tabular-nums">{formatCurrency(selectedPayroll.transport)}</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
-                      {t.pay.otherAllowances}
-                    </span>
-                    <span className="text-sm font-medium">
-                      {formatCurrency(selectedPayroll.other)}
-                    </span>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-sm text-on-surface-variant font-medium">{t.pay.otherAllowances}</span>
+                    <span className="text-sm font-bold tabular-nums">{formatCurrency(selectedPayroll.other)}</span>
                   </div>
                 </div>
 
-                {/* Deductions */}
-                <div className="border-t border-border pt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">
+                <div className="pt-4 space-y-2.5 border-t-2 border-outline-variant/15">
+                  <p className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                    {isAr ? "الخصومات" : "Deductions"}
+                  </p>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-sm text-on-surface-variant font-medium">
                       {t.pay.gosiDeduction} ({(GOSI_RATE * 100).toFixed(2)}%)
                     </span>
-                    <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                    <span className="text-sm font-bold text-md-error tabular-nums">
                       -{formatCurrency(selectedPayroll.gosi)}
                     </span>
                   </div>
                   {selectedPayroll.penalty > 0 && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        {t.penalty.title}
-                      </span>
-                      <span className="text-sm font-medium text-red-600 dark:text-red-400">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-sm text-on-surface-variant font-medium">{t.penalty.title}</span>
+                      <span className="text-sm font-bold text-md-error tabular-nums">
                         -{formatCurrency(selectedPayroll.penalty)}
                       </span>
                     </div>
                   )}
                   {selectedPayroll.advanceDeduction > 0 && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-muted-foreground">
-                        {t.advance.monthlyDeduction}
-                      </span>
-                      <span className="text-sm font-medium text-purple-600 dark:text-purple-400">
+                    <div className="flex items-center justify-between py-1">
+                      <span className="text-sm text-on-surface-variant font-medium">{t.advance.monthlyDeduction}</span>
+                      <span className="text-sm font-bold text-tertiary tabular-nums">
                         -{formatCurrency(selectedPayroll.advanceDeduction)}
                       </span>
                     </div>
                   )}
                 </div>
 
-                {/* Net Pay */}
-                <div className="border-t border-border pt-3 flex items-center justify-between">
-                  <span className="text-sm font-semibold">{t.pay.net}</span>
-                  <span className="text-base font-bold text-primary">
+                <div className="pt-4 flex items-center justify-between bg-primary-container/20 -mx-6 px-6 py-4 rounded-2xl">
+                  <span className="font-headline text-base font-bold">{t.pay.net}</span>
+                  <span className="font-headline text-2xl font-black text-primary tabular-nums">
                     {formatCurrency(selectedPayroll.net)}
                   </span>
                 </div>
               </div>
-              <DialogFooter className="gap-2 sm:gap-0">
-                <Button
-                  variant="outline"
-                  onClick={() => window.print()}
-                >
+              <DialogFooter className="gap-2 sm:gap-2">
+                <Button variant="outline" onClick={() => window.print()}>
+                  <Icon name="print" size={18} />
                   {isAr ? "طباعة" : "Print"}
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedEmployeeId(null)}
-                >
+                <Button variant="outline" onClick={() => setSelectedEmployeeId(null)}>
                   {isAr ? "إغلاق" : "Close"}
                 </Button>
               </DialogFooter>
