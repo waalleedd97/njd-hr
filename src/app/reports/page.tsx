@@ -3,35 +3,26 @@
 import { useLanguage } from "@/components/providers";
 import { GOSI_RATE } from "@/lib/mock-data";
 import { useData } from "@/lib/data-store";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import { Users, TrendingDown, Clock, CheckCircle } from "lucide-react";
 
-const barColors = [
-  "bg-blue-500",
-  "bg-emerald-500",
-  "bg-amber-500",
-  "bg-rose-500",
-  "bg-purple-500",
-  "bg-cyan-500",
-  "bg-orange-500",
+const deptBarColors = [
+  "from-blue-400 to-blue-600",
+  "from-emerald-400 to-emerald-600",
+  "from-amber-400 to-amber-600",
+  "from-rose-400 to-rose-600",
+  "from-purple-400 to-purple-600",
+  "from-cyan-400 to-cyan-600",
+  "from-orange-400 to-orange-600",
 ];
 
 const leaveColorMap: Record<string, string> = {
-  annual: "bg-emerald-500",
-  sick: "bg-red-500",
-  personal: "bg-blue-500",
-  unpaid: "bg-gray-400",
-  marriage: "bg-pink-500",
-  paternity: "bg-cyan-500",
-};
-
-const leaveTrackMap: Record<string, string> = {
-  annual: "bg-emerald-100 dark:bg-emerald-500/20",
-  sick: "bg-red-100 dark:bg-red-500/20",
-  personal: "bg-blue-100 dark:bg-blue-500/20",
-  unpaid: "bg-gray-100 dark:bg-gray-500/20",
-  marriage: "bg-pink-100 dark:bg-pink-500/20",
-  paternity: "bg-cyan-100 dark:bg-cyan-500/20",
+  annual: "from-emerald-400 to-emerald-600",
+  sick: "from-rose-400 to-rose-600",
+  personal: "from-blue-400 to-blue-600",
+  unpaid: "from-gray-400 to-gray-600",
+  marriage: "from-pink-400 to-pink-600",
+  paternity: "from-cyan-400 to-cyan-600",
 };
 
 export default function ReportsPage() {
@@ -43,8 +34,6 @@ export default function ReportsPage() {
   const leaveBalances = store.leaveBalances;
   const isAr = lang === "ar";
 
-  // --- KPI Calculations ---
-
   const headcount = employees.length;
 
   const avgTenure = (() => {
@@ -54,7 +43,7 @@ export default function ReportsPage() {
       const diff = (now.getTime() - joined.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
       return sum + diff;
     }, 0);
-    return (totalYears / employees.length).toFixed(1);
+    return employees.length > 0 ? (totalYears / employees.length).toFixed(1) : "0";
   })();
 
   const attendanceRate = (() => {
@@ -65,52 +54,46 @@ export default function ReportsPage() {
     return Math.round((counted / employees.length) * 100);
   })();
 
-  // --- KPI Card Definitions ---
-
   const kpiCards = [
     {
-      icon: Users,
+      iconName: "group",
       label: t.rep.headcount,
       value: headcount.toString(),
+      bg: "bg-blue-500/15",
       color: "text-blue-600 dark:text-blue-400",
-      bg: "bg-blue-500/10",
     },
     {
-      icon: TrendingDown,
+      iconName: "trending_down",
       label: t.rep.turnoverRate,
-      value: headcount > 0 ? ((employees.filter(e => e.status === "inactive").length / headcount) * 100).toFixed(1) + "%" : "0%",
+      value: headcount > 0
+        ? ((employees.filter(e => e.status === "inactive").length / headcount) * 100).toFixed(1) + "%"
+        : "0%",
+      bg: "bg-amber-500/15",
       color: "text-amber-600 dark:text-amber-400",
-      bg: "bg-amber-500/10",
     },
     {
-      icon: Clock,
+      iconName: "schedule",
       label: t.rep.avgTenure,
       value: `${avgTenure} ${t.rep.years}`,
-      color: "text-purple-600 dark:text-purple-400",
-      bg: "bg-purple-500/10",
+      bg: "bg-tertiary-container/40",
+      color: "text-tertiary",
     },
     {
-      icon: CheckCircle,
+      iconName: "check_circle",
       label: t.rep.attendanceRate,
       value: `${attendanceRate}%`,
+      bg: "bg-emerald-500/15",
       color: "text-emerald-600 dark:text-emerald-400",
-      bg: "bg-emerald-500/10",
     },
   ];
 
-  // --- Weekly Attendance Data ---
-
-  // Weekly attendance — only today has real data, others show 0
-  // Historical data will populate as attendance records accumulate in Supabase
-  const todayDayIndex = new Date().getDay(); // 0=Sun, 1=Mon...
+  const todayDayIndex = new Date().getDay();
   const todayRate = employees.length > 0
     ? Math.round((todayAttendance.filter(r => r.status === "present" || r.status === "late" || r.status === "half-day").length / employees.length) * 100)
     : 0;
   const weeklyData = [0, 0, 0, 0, 0].map((_, i) => i === Math.min(todayDayIndex, 4) ? todayRate : 0);
   const dayKeys: Array<keyof typeof t.days> = ["sun", "mon", "tue", "wed", "thu"];
-  const maxBarHeight = 120;
-
-  // --- Department Distribution ---
+  const maxBarHeight = 140;
 
   const deptCounts: { key: string; name: string; count: number }[] = [];
   const deptMap: Record<string, number> = {};
@@ -125,16 +108,13 @@ export default function ReportsPage() {
     });
   }
   deptCounts.sort((a, b) => b.count - a.count);
-  const maxDeptCount = Math.max(...deptCounts.map((d) => d.count));
-
-  // --- Payroll Trend ---
+  const maxDeptCount = Math.max(...deptCounts.map((d) => d.count), 1);
 
   const currentMonthlyPayroll = employees.reduce((sum, emp) => {
     const gross = emp.salary.basic + emp.salary.housing + emp.salary.transport + emp.salary.other;
     const gosi = emp.salary.basic * GOSI_RATE;
     return sum + gross - gosi;
   }, 0);
-  // Payroll trend — only current month has real data. Historical will accumulate over time.
   const payrollData = [0, 0, 0, 0, 0, currentMonthlyPayroll];
   const now = new Date();
   const monthLabels = Array.from({ length: 6 }, (_, i) => {
@@ -144,59 +124,53 @@ export default function ReportsPage() {
   const maxPayroll = Math.max(...payrollData, 1);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Page Header */}
+    <div className="max-w-7xl mx-auto space-y-8 pb-8">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">{t.rep.title}</h1>
-        <p className="text-sm text-muted-foreground mt-1">{t.rep.workforceSummary}</p>
+        <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
+          {t.rep.title}
+        </h1>
+        <p className="text-sm text-on-surface-variant mt-2">{t.rep.workforceSummary}</p>
       </div>
 
-      {/* KPI Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {kpiCards.map((card, i) => {
-          const Icon = card.icon;
-          return (
-            <div
-              key={i}
-              className="accent-card rounded-xl p-4 hover-lift cursor-default"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                    card.bg
-                  )}
-                >
-                  <Icon className={cn("w-5 h-5", card.color)} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-2xl font-bold text-foreground">{card.value}</p>
-                  <p className="text-sm text-muted-foreground truncate">{card.label}</p>
-                </div>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {kpiCards.map((card, i) => (
+          <div key={i} className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm hover:shadow-primary-glow-lg transition-all group">
+            <div className="flex items-center gap-4">
+              <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform", card.bg, card.color)}>
+                <Icon name={card.iconName} size={26} fill />
+              </div>
+              <div className="min-w-0">
+                <p className="font-headline text-3xl font-black text-on-surface tabular-nums">
+                  {card.value}
+                </p>
+                <p className="text-sm text-on-surface-variant truncate font-medium">{card.label}</p>
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Weekly Attendance Bar Chart */}
-        <div className="glass-card rounded-xl p-5 lg:p-6">
-          <h3 className="font-bold text-lg mb-6">{t.rep.attendanceTrend}</h3>
+        {/* Weekly Attendance */}
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <span className="w-1.5 h-7 bg-primary rounded-full" />
+            <h3 className="font-headline font-bold text-xl">{t.rep.attendanceTrend}</h3>
+          </div>
           <div className="flex items-end justify-around gap-3" style={{ height: maxBarHeight + 40 }}>
             {weeklyData.map((value, i) => {
-              const barHeight = (value / 100) * maxBarHeight;
+              const barHeight = Math.max(4, (value / 100) * maxBarHeight);
               return (
                 <div key={i} className="flex flex-col items-center gap-2 flex-1">
-                  <span className="text-xs font-semibold text-foreground">{value}%</span>
+                  <span className="text-xs font-bold text-on-surface tabular-nums">{value}%</span>
                   <div
-                    className="w-full max-w-[40px] bg-primary rounded-t-md transition-all duration-500"
+                    className="w-full max-w-[48px] bg-gradient-to-t from-primary to-primary-container rounded-t-xl shadow-primary-glow transition-all duration-500"
                     style={{ height: barHeight }}
                   />
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {t.days[dayKeys[i]]}
-                  </span>
+                  <span className="text-xs text-on-surface-variant font-bold">{t.days[dayKeys[i]]}</span>
                 </div>
               );
             })}
@@ -204,21 +178,27 @@ export default function ReportsPage() {
         </div>
 
         {/* Department Distribution */}
-        <div className="glass-card rounded-xl p-5 lg:p-6">
-          <h3 className="font-bold text-lg mb-6">{t.rep.deptDistribution}</h3>
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <span className="w-1.5 h-7 bg-tertiary rounded-full" />
+            <h3 className="font-headline font-bold text-xl">{t.rep.deptDistribution}</h3>
+          </div>
           <div className="space-y-4">
+            {deptCounts.length === 0 && (
+              <p className="text-sm text-on-surface-variant text-center py-4 font-medium">{t.common.noData}</p>
+            )}
             {deptCounts.map((dept, i) => {
               const barWidth = (dept.count / maxDeptCount) * 100;
-              const color = barColors[i % barColors.length];
+              const color = deptBarColors[i % deptBarColors.length];
               return (
-                <div key={dept.key} className="space-y-1.5">
+                <div key={dept.key} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground font-medium">{dept.name}</span>
-                    <span className="text-muted-foreground font-semibold">{dept.count}</span>
+                    <span className="text-on-surface font-bold">{dept.name}</span>
+                    <span className="text-on-surface-variant font-bold tabular-nums">{dept.count}</span>
                   </div>
-                  <div className="w-full h-2.5 bg-secondary rounded-full overflow-hidden">
+                  <div className="w-full h-3 bg-surface-container-highest rounded-full overflow-hidden">
                     <div
-                      className={cn("h-full rounded-full transition-all duration-500", color)}
+                      className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", color)}
                       style={{ width: `${barWidth}%` }}
                     />
                   </div>
@@ -229,26 +209,27 @@ export default function ReportsPage() {
         </div>
 
         {/* Leave Usage */}
-        <div className="glass-card rounded-xl p-5 lg:p-6">
-          <h3 className="font-bold text-lg mb-6">{t.rep.leaveUsage}</h3>
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <span className="w-1.5 h-7 bg-emerald-500 rounded-full" />
+            <h3 className="font-headline font-bold text-xl">{t.rep.leaveUsage}</h3>
+          </div>
           <div className="space-y-4">
             {leaveBalances.map((item) => {
               const usagePercent = item.total > 0 ? (item.used / item.total) * 100 : 0;
-              const fillColor = leaveColorMap[item.typeKey] || "bg-gray-400";
-              const trackColor = leaveTrackMap[item.typeKey] || "bg-gray-100 dark:bg-gray-500/20";
-              const typeName =
-                t.lev[item.typeKey as keyof typeof t.lev] ?? item.typeKey;
+              const fillColor = leaveColorMap[item.typeKey] || "from-gray-400 to-gray-600";
+              const typeName = t.lev[item.typeKey as keyof typeof t.lev] ?? item.typeKey;
               return (
-                <div key={item.typeKey} className="space-y-1.5">
+                <div key={item.typeKey} className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground font-medium">{typeName}</span>
-                    <span className="text-muted-foreground">
+                    <span className="text-on-surface font-bold">{typeName}</span>
+                    <span className="text-on-surface-variant font-medium tabular-nums">
                       {item.used}/{item.total} {t.lev.days}
                     </span>
                   </div>
-                  <div className={cn("w-full h-2.5 rounded-full overflow-hidden", trackColor)}>
+                  <div className="w-full h-3 bg-surface-container-highest rounded-full overflow-hidden">
                     <div
-                      className={cn("h-full rounded-full transition-all duration-500", fillColor)}
+                      className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", fillColor)}
                       style={{ width: `${usagePercent}%` }}
                     />
                   </div>
@@ -259,23 +240,24 @@ export default function ReportsPage() {
         </div>
 
         {/* Payroll Trend */}
-        <div className="glass-card rounded-xl p-5 lg:p-6">
-          <h3 className="font-bold text-lg mb-6">{t.rep.payrollTrend}</h3>
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
+          <div className="flex items-center gap-3 mb-6">
+            <span className="w-1.5 h-7 bg-amber-500 rounded-full" />
+            <h3 className="font-headline font-bold text-xl">{t.rep.payrollTrend}</h3>
+          </div>
           <div className="flex items-end justify-around gap-3" style={{ height: maxBarHeight + 40 }}>
             {payrollData.map((value, i) => {
-              const barHeight = (value / maxPayroll) * maxBarHeight;
+              const barHeight = Math.max(4, (value / maxPayroll) * maxBarHeight);
               return (
                 <div key={i} className="flex flex-col items-center gap-2 flex-1">
-                  <span className="text-[10px] font-semibold text-foreground whitespace-nowrap">
-                    {value.toLocaleString("en-US")}
+                  <span className="text-[10px] font-bold text-on-surface tabular-nums whitespace-nowrap">
+                    {value > 0 ? value.toLocaleString("en-US") : "-"}
                   </span>
                   <div
-                    className="w-full max-w-[40px] bg-primary/80 rounded-t-md transition-all duration-500"
+                    className="w-full max-w-[48px] bg-gradient-to-t from-primary to-primary-container rounded-t-xl shadow-primary-glow transition-all duration-500"
                     style={{ height: barHeight }}
                   />
-                  <span className="text-xs text-muted-foreground font-medium">
-                    {monthLabels[i]}
-                  </span>
+                  <span className="text-xs text-on-surface-variant font-bold">{monthLabels[i]}</span>
                 </div>
               );
             })}

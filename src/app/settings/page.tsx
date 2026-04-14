@@ -29,6 +29,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import {
   Building2,
   Shield,
@@ -42,12 +43,10 @@ import {
   Locate,
   Radar,
   Plus,
-  X,
   Check,
   Layers,
   Pencil,
   Trash2,
-  Bell,
   Info,
 } from "lucide-react";
 
@@ -64,16 +63,16 @@ const tabs = [
 ] as const;
 type Tab = (typeof tabs)[number];
 
-const tabIcons: Record<Tab, React.ReactNode> = {
-  departments: <Layers className="w-4 h-4" />,
-  companyInfo: <Building2 className="w-4 h-4" />,
-  branches: <MapPin className="w-4 h-4" />,
-  rolesPermissions: <Users className="w-4 h-4" />,
-  compliance: <Shield className="w-4 h-4" />,
-  holidays: <Calendar className="w-4 h-4" />,
-  geofence: <Radar className="w-4 h-4" />,
-  penalties: <AlertTriangle className="w-4 h-4" />,
-  notifications: <Bell className="w-4 h-4" />,
+const tabIcons: Record<Tab, string> = {
+  departments: "category",
+  companyInfo: "business",
+  branches: "location_city",
+  rolesPermissions: "group",
+  compliance: "shield",
+  holidays: "event",
+  geofence: "my_location",
+  penalties: "gavel",
+  notifications: "notifications",
 };
 
 export default function SettingsPage() {
@@ -92,6 +91,7 @@ export default function SettingsPage() {
     payroll_updates: true,
   });
   const [notifSaved, setNotifSaved] = useState(false);
+  const [notifSaving, setNotifSaving] = useState(false);
 
   useEffect(() => {
     if (user.id) fetchPreferences(user.id).then(setNotifPrefs);
@@ -103,13 +103,19 @@ export default function SettingsPage() {
   }, []);
 
   const handleSaveNotifPrefs = useCallback(async () => {
-    await savePreferences(user.id, notifPrefs);
-    if (notifPrefs.push_notifications) {
-      await requestPushPermission(user.id);
+    if (notifSaving) return;
+    setNotifSaving(true);
+    try {
+      await savePreferences(user.id, notifPrefs);
+      if (notifPrefs.push_notifications) {
+        await requestPushPermission(user.id);
+      }
+      setNotifSaved(true);
+      setTimeout(() => setNotifSaved(false), 2000);
+    } finally {
+      setNotifSaving(false);
     }
-    setNotifSaved(true);
-    setTimeout(() => setNotifSaved(false), 2000);
-  }, [user.id, notifPrefs]);
+  }, [user.id, notifPrefs, notifSaving]);
 
   const [activeTab, setActiveTab] = useState<Tab>("companyInfo");
   const [geofenceEnabled, setGeofenceEnabled] = useState(settings.geofenceEnabled);
@@ -119,10 +125,18 @@ export default function SettingsPage() {
 
   // Holiday dialog state
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [customHolidays, setCustomHolidays] = useState<
-    { id: string; nameAr: string; nameEn: string; startDate: string; endDate: string; days: number }[]
-  >([]);
+  type CustomHoliday = { id: string; nameAr: string; nameEn: string; startDate: string; endDate: string; days: number };
+  const [customHolidays, setCustomHolidays] = useState<CustomHoliday[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem("njd-hr-custom-holidays");
+      return raw ? (JSON.parse(raw) as CustomHoliday[]) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("njd-hr-custom-holidays", JSON.stringify(customHolidays)); }
+    catch { /* quota exceeded or disabled */ }
+  }, [customHolidays]);
   const [newHolidayName, setNewHolidayName] = useState("");
   const [newHolidayStart, setNewHolidayStart] = useState("");
   const [newHolidayEnd, setNewHolidayEnd] = useState("");
@@ -139,22 +153,16 @@ export default function SettingsPage() {
   );
   const [crNumber, setCrNumber] = useState(settings.crNumber);
   const [address, setAddress] = useState(
-    isAr
-      ? "طريق الملك فهد"
-      : "King Fahd Road"
+    isAr ? settings.addressAr : settings.addressEn
   );
   const [city, setCity] = useState(
-    isAr ? "الرياض" : "Riyadh"
+    isAr ? settings.cityAr : settings.cityEn
   );
   const [country, setCountry] = useState(
-    isAr
-      ? "المملكة العربية السعودية"
-      : "Saudi Arabia"
+    isAr ? settings.countryAr : settings.countryEn
   );
   const [industry, setIndustry] = useState(
-    isAr
-      ? "تطوير الألعاب"
-      : "Game Development"
+    isAr ? settings.industryAr : settings.industryEn
   );
 
   // Department management state
@@ -177,7 +185,7 @@ export default function SettingsPage() {
   };
 
   const inputClass =
-    "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm outline-none focus:border-primary";
+    "h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40";
 
   // Compliance calculations
   const compliantCount = complianceItems.filter((item) => item.compliant).length;
@@ -220,24 +228,26 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-7xl mx-auto">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h1 className="text-2xl font-bold text-foreground">{t.set.title}</h1>
+        <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
+          {t.set.title}
+        </h1>
       </div>
 
       {/* Tab Navigation */}
-      <div className="glass-card rounded-xl p-2">
-        <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="overflow-x-auto">
+        <div className="inline-flex items-center bg-surface-container rounded-full p-1 gap-1">
           {tabs.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               className={cn(
-                "rounded-lg px-4 py-2 text-sm font-medium transition-colors flex items-center gap-2 shrink-0",
+                "rounded-full px-5 py-2 text-sm font-bold transition-all flex items-center gap-2 shrink-0",
                 activeTab === tab
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-muted text-muted-foreground hover:text-foreground"
+                  ? "gradient-btn shadow-primary-glow"
+                  : "text-on-surface-variant hover:text-on-surface"
               )}
             >
-              {tabIcons[tab]}
+              <Icon name={tabIcons[tab]} size={18} fill={activeTab === tab} />
               {tabLabels[tab]}
             </button>
           ))}
@@ -246,7 +256,7 @@ export default function SettingsPage() {
 
       {/* Tab Content */}
       {activeTab === "departments" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
@@ -270,10 +280,10 @@ export default function SettingsPage() {
             {Object.entries(store.departments).map(([key, dept]) => {
               const empCount = store.employees.filter((e) => e.department === key).length;
               return (
-                <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-accent/30 transition-colors">
+                <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-outline-variant/20 hover:bg-surface-container-low/30 transition-colors">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium">{isAr ? dept.ar : dept.en}</p>
-                    <p className="text-xs text-muted-foreground">{isAr ? dept.en : dept.ar} · {empCount} {isAr ? "موظف" : "employees"}</p>
+                    <p className="text-xs text-on-surface-variant">{isAr ? dept.en : dept.ar} · {empCount} {isAr ? "موظف" : "employees"}</p>
                   </div>
                   <div className="flex items-center gap-1">
                     <Button variant="ghost" size="sm" onClick={() => {
@@ -305,12 +315,12 @@ export default function SettingsPage() {
       )}
 
       {activeTab === "companyInfo" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
               <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             </div>
-            <h2 className="text-lg font-semibold text-foreground">
+            <h2 className="text-lg font-semibold text-on-surface">
               {t.set.companyInfo}
             </h2>
           </div>
@@ -318,7 +328,7 @@ export default function SettingsPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {/* Company Name */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+              <label className="text-sm font-medium text-on-surface">
                 {t.set.companyName}
               </label>
               <input
@@ -331,7 +341,7 @@ export default function SettingsPage() {
 
             {/* CR Number */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+              <label className="text-sm font-medium text-on-surface">
                 {t.set.crNumber}
               </label>
               <input
@@ -344,7 +354,7 @@ export default function SettingsPage() {
 
             {/* Address */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+              <label className="text-sm font-medium text-on-surface">
                 {t.set.address}
               </label>
               <input
@@ -357,7 +367,7 @@ export default function SettingsPage() {
 
             {/* City */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+              <label className="text-sm font-medium text-on-surface">
                 {t.set.city}
               </label>
               <input
@@ -370,7 +380,7 @@ export default function SettingsPage() {
 
             {/* Country */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+              <label className="text-sm font-medium text-on-surface">
                 {t.set.country}
               </label>
               <input
@@ -383,7 +393,7 @@ export default function SettingsPage() {
 
             {/* Industry */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+              <label className="text-sm font-medium text-on-surface">
                 {t.set.industry}
               </label>
               <input
@@ -396,7 +406,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Save Button */}
-          <div className="flex justify-end mt-6 pt-4 border-t border-border">
+          <div className="flex justify-end mt-6 pt-4 border-t border-outline-variant/20">
             <Button
               className="gap-2"
               onClick={() => {
@@ -404,6 +414,14 @@ export default function SettingsPage() {
                   companyNameAr: isAr ? companyName : settings.companyNameAr,
                   companyNameEn: isAr ? settings.companyNameEn : companyName,
                   crNumber,
+                  addressAr: isAr ? address : settings.addressAr,
+                  addressEn: isAr ? settings.addressEn : address,
+                  cityAr: isAr ? city : settings.cityAr,
+                  cityEn: isAr ? settings.cityEn : city,
+                  countryAr: isAr ? country : settings.countryAr,
+                  countryEn: isAr ? settings.countryEn : country,
+                  industryAr: isAr ? industry : settings.industryAr,
+                  industryEn: isAr ? settings.industryEn : industry,
                 });
                 addNotification({
                   type: "system",
@@ -432,13 +450,13 @@ export default function SettingsPage() {
       )}
 
       {activeTab === "branches" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
                 <MapPin className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold text-on-surface">
                 {t.set.branches}
               </h2>
             </div>
@@ -447,7 +465,7 @@ export default function SettingsPage() {
           <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
             <table className="w-full min-w-[500px]">
               <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border">
+                <tr className="text-xs text-on-surface-variant border-b border-outline-variant/20">
                   <th className="text-start pb-3 font-medium">
                     {t.set.branchName}
                   </th>
@@ -466,20 +484,20 @@ export default function SettingsPage() {
                 {branches.map((branch) => (
                   <tr
                     key={branch.id}
-                    className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
+                    className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors"
                   >
                     <td className="py-3">
                       <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-muted-foreground" />
+                        <Building2 className="w-4 h-4 text-on-surface-variant" />
                         <span className="text-sm font-medium">
                           {isAr ? branch.nameAr : branch.nameEn}
                         </span>
                       </div>
                     </td>
-                    <td className="py-3 text-sm text-muted-foreground">
+                    <td className="py-3 text-sm text-on-surface-variant">
                       {isAr ? branch.cityAr : branch.cityEn}
                     </td>
-                    <td className="py-3 text-sm text-muted-foreground">
+                    <td className="py-3 text-sm text-on-surface-variant">
                       {branch.employeeCount}
                     </td>
                     <td className="py-3">
@@ -488,7 +506,7 @@ export default function SettingsPage() {
                           {t.set.mainBranch}
                         </Badge>
                       ) : (
-                        <Badge className="bg-muted text-muted-foreground border-0 text-[11px]">
+                        <Badge className="bg-muted text-on-surface-variant border-0 text-[11px]">
                           {t.set.branches}
                         </Badge>
                       )}
@@ -502,12 +520,12 @@ export default function SettingsPage() {
       )}
 
       {activeTab === "rolesPermissions" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
               <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
             </div>
-            <h2 className="text-lg font-semibold text-foreground">
+            <h2 className="text-lg font-semibold text-on-surface">
               {t.set.rolesPermissions}
             </h2>
           </div>
@@ -515,7 +533,7 @@ export default function SettingsPage() {
           <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
             <table className="w-full min-w-[600px]">
               <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border">
+                <tr className="text-xs text-on-surface-variant border-b border-outline-variant/20">
                   <th className="text-start pb-3 font-medium">
                     {t.set.roleName}
                   </th>
@@ -531,14 +549,14 @@ export default function SettingsPage() {
                 {roles.map((role) => (
                   <tr
                     key={role.id}
-                    className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
+                    className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors"
                   >
                     <td className="py-3">
                       <span className="text-sm font-medium">
                         {isAr ? role.nameAr : role.nameEn}
                       </span>
                     </td>
-                    <td className="py-3 text-sm text-muted-foreground">
+                    <td className="py-3 text-sm text-on-surface-variant">
                       {role.users}
                     </td>
                     <td className="py-3">
@@ -565,16 +583,16 @@ export default function SettingsPage() {
       {activeTab === "compliance" && (
         <div className="space-y-6">
           {/* Compliance Score Card */}
-          <div className="accent-card rounded-xl p-5 lg:p-6 hover-lift">
+          <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6 hover-lift">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
                 <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-foreground">
+                <h2 className="text-lg font-semibold text-on-surface">
                   {t.set.complianceScore}
                 </h2>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-on-surface-variant">
                   {t.set.saudiLaborLaw}
                 </p>
               </div>
@@ -584,7 +602,7 @@ export default function SettingsPage() {
               <span className={cn("text-4xl font-bold", barTextColor)}>
                 {compliancePercentage}%
               </span>
-              <span className="text-sm text-muted-foreground pb-1">
+              <span className="text-sm text-on-surface-variant pb-1">
                 {compliantCount}/{totalComplianceItems} {t.set.compliant}
               </span>
             </div>
@@ -604,7 +622,7 @@ export default function SettingsPage() {
               <div
                 key={item.id}
                 className={cn(
-                  "glass-card rounded-xl p-4 hover-lift transition-all",
+                  "bg-surface-container-lowest rounded-2xl shadow-sm p-4 hover-lift transition-all",
                   item.compliant
                     ? "border-emerald-200 dark:border-emerald-500/20"
                     : "border-red-200 dark:border-red-500/20"
@@ -618,7 +636,7 @@ export default function SettingsPage() {
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2 mb-1">
-                      <h3 className="text-sm font-semibold text-foreground">
+                      <h3 className="text-sm font-semibold text-on-surface">
                         {isAr ? item.titleAr : item.titleEn}
                       </h3>
                       <Badge
@@ -632,7 +650,7 @@ export default function SettingsPage() {
                         {item.compliant ? t.set.compliant : t.set.notCompliant}
                       </Badge>
                     </div>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
                       {isAr ? item.descAr : item.descEn}
                     </p>
                   </div>
@@ -645,13 +663,13 @@ export default function SettingsPage() {
 
       {/* ─── Holidays Tab ─────────────────────────────────────────────── */}
       {activeTab === "holidays" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
                 <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold text-on-surface">
                 {t.holiday.saudiHolidays}
               </h2>
             </div>
@@ -666,117 +684,103 @@ export default function SettingsPage() {
           </div>
 
           {/* Add Custom Holiday Dialog */}
-          {showHolidayDialog && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-              <div className="glass-card rounded-xl p-6 w-full max-w-md mx-4 space-y-4 bg-card shadow-xl">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-foreground">
-                    {t.holiday.addCustom}
-                  </h3>
-                  <button
-                    onClick={() => {
-                      setShowHolidayDialog(false);
-                      setNewHolidayName("");
-                      setNewHolidayStart("");
-                      setNewHolidayEnd("");
-                    }}
-                    className="p-1 rounded-lg hover:bg-muted transition-colors"
-                  >
-                    <X className="w-4 h-4 text-muted-foreground" />
-                  </button>
+          <Dialog open={showHolidayDialog} onOpenChange={(v) => {
+            setShowHolidayDialog(v);
+            if (!v) { setNewHolidayName(""); setNewHolidayStart(""); setNewHolidayEnd(""); }
+          }}>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>{t.holiday.addCustom}</DialogTitle>
+                <DialogDescription className="sr-only">{t.holiday.addCustom}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-on-surface">
+                    {isAr ? "اسم العطلة" : "Holiday Name"}
+                  </label>
+                  <input
+                    type="text"
+                    value={newHolidayName}
+                    onChange={(e) => setNewHolidayName(e.target.value)}
+                    placeholder={isAr ? "أدخل اسم العطلة" : "Enter holiday name"}
+                    className={inputClass}
+                  />
                 </div>
-
-                <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <label className="text-sm font-medium text-foreground">
-                      {isAr ? "اسم العطلة" : "Holiday Name"}
+                    <label className="text-sm font-bold text-on-surface">
+                      {isAr ? "تاريخ البداية" : "Start Date"}
                     </label>
                     <input
-                      type="text"
-                      value={newHolidayName}
-                      onChange={(e) => setNewHolidayName(e.target.value)}
-                      placeholder={isAr ? "أدخل اسم العطلة" : "Enter holiday name"}
+                      type="date"
+                      value={newHolidayStart}
+                      onChange={(e) => setNewHolidayStart(e.target.value)}
                       className={inputClass}
                     />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-foreground">
-                        {isAr ? "تاريخ البداية" : "Start Date"}
-                      </label>
-                      <input
-                        type="date"
-                        value={newHolidayStart}
-                        onChange={(e) => setNewHolidayStart(e.target.value)}
-                        className={inputClass}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-sm font-medium text-foreground">
-                        {isAr ? "تاريخ النهاية" : "End Date"}
-                      </label>
-                      <input
-                        type="date"
-                        value={newHolidayEnd}
-                        onChange={(e) => setNewHolidayEnd(e.target.value)}
-                        className={inputClass}
-                      />
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-bold text-on-surface">
+                      {isAr ? "تاريخ النهاية" : "End Date"}
+                    </label>
+                    <input
+                      type="date"
+                      value={newHolidayEnd}
+                      onChange={(e) => setNewHolidayEnd(e.target.value)}
+                      className={inputClass}
+                    />
                   </div>
                 </div>
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setShowHolidayDialog(false);
-                      setNewHolidayName("");
-                      setNewHolidayStart("");
-                      setNewHolidayEnd("");
-                    }}
-                  >
-                    {isAr ? "إلغاء" : "Cancel"}
-                  </Button>
-                  <Button
-                    disabled={!newHolidayName || !newHolidayStart || !newHolidayEnd}
-                    onClick={() => {
-                      const start = new Date(newHolidayStart);
-                      const end = new Date(newHolidayEnd);
-                      const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                      setCustomHolidays((prev) => [
-                        ...prev,
-                        {
-                          id: `custom-${Date.now()}`,
-                          nameAr: newHolidayName,
-                          nameEn: newHolidayName,
-                          startDate: newHolidayStart,
-                          endDate: newHolidayEnd,
-                          days,
-                        },
-                      ]);
-                      addNotification({
-                        type: "system",
-                        titleAr: "تمت إضافة عطلة",
-                        titleEn: "Holiday Added",
-                        descAr: `تمت إضافة "${newHolidayName}" كعطلة مخصصة`,
-                        descEn: `"${newHolidayName}" added as custom holiday`,
-                        time: 0,
-                        read: false,
-                      });
-                      setShowHolidayDialog(false);
-                      setNewHolidayName("");
-                      setNewHolidayStart("");
-                      setNewHolidayEnd("");
-                    }}
-                    className="gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {isAr ? "إضافة" : "Add"}
-                  </Button>
-                </div>
               </div>
-            </div>
-          )}
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowHolidayDialog(false);
+                    setNewHolidayName("");
+                    setNewHolidayStart("");
+                    setNewHolidayEnd("");
+                  }}
+                >
+                  {isAr ? "إلغاء" : "Cancel"}
+                </Button>
+                <Button
+                  disabled={!newHolidayName || !newHolidayStart || !newHolidayEnd}
+                  onClick={() => {
+                    const start = new Date(newHolidayStart);
+                    const end = new Date(newHolidayEnd);
+                    const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+                    setCustomHolidays((prev) => [
+                      ...prev,
+                      {
+                        id: `custom-${Date.now()}`,
+                        nameAr: newHolidayName,
+                        nameEn: newHolidayName,
+                        startDate: newHolidayStart,
+                        endDate: newHolidayEnd,
+                        days,
+                      },
+                    ]);
+                    addNotification({
+                      type: "system",
+                      titleAr: "تمت إضافة عطلة",
+                      titleEn: "Holiday Added",
+                      descAr: `تمت إضافة "${newHolidayName}" كعطلة مخصصة`,
+                      descEn: `"${newHolidayName}" added as custom holiday`,
+                      time: 0,
+                      read: false,
+                    });
+                    setShowHolidayDialog(false);
+                    setNewHolidayName("");
+                    setNewHolidayStart("");
+                    setNewHolidayEnd("");
+                  }}
+                >
+                  <Plus className="w-4 h-4" />
+                  {isAr ? "إضافة" : "Add"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {saudiHolidays.map((h, idx) => {
@@ -787,10 +791,10 @@ export default function SettingsPage() {
                 <div
                   key={h.id}
                   className={cn(
-                    "glass-card rounded-xl p-4 hover-lift transition-all",
+                    "bg-surface-container-lowest rounded-2xl shadow-sm p-4 hover-lift transition-all",
                     isUpcoming
                       ? "border-blue-200 dark:border-blue-500/20"
-                      : "border-border opacity-75"
+                      : "border-outline-variant/20 opacity-75"
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -803,13 +807,13 @@ export default function SettingsPage() {
                       <Calendar
                         className={cn(
                           "w-5 h-5",
-                          isUpcoming ? color.text : "text-muted-foreground"
+                          isUpcoming ? color.text : "text-on-surface-variant"
                         )}
                       />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-foreground">
+                        <h3 className="text-sm font-semibold text-on-surface">
                           {isAr ? h.nameAr : h.nameEn}
                         </h3>
                         <div className="flex items-center gap-2 shrink-0">
@@ -821,7 +825,7 @@ export default function SettingsPage() {
                           <Badge
                             className={cn(
                               "border-0 text-[10px]",
-                              isUpcoming ? color.badge : "bg-muted text-muted-foreground"
+                              isUpcoming ? color.badge : "bg-muted text-on-surface-variant"
                             )}
                           >
                             {h.days === 1
@@ -831,7 +835,7 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       {h.startDate && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-on-surface-variant">
                           {formatDate(h.startDate, lang, { month: "long", day: "numeric" })}
                           {h.endDate && h.startDate !== h.endDate && (
                             <>
@@ -856,10 +860,10 @@ export default function SettingsPage() {
                 <div
                   key={h.id}
                   className={cn(
-                    "glass-card rounded-xl p-4 hover-lift transition-all",
+                    "bg-surface-container-lowest rounded-2xl shadow-sm p-4 hover-lift transition-all",
                     isUpcoming
                       ? "border-blue-200 dark:border-blue-500/20"
-                      : "border-border opacity-75"
+                      : "border-outline-variant/20 opacity-75"
                   )}
                 >
                   <div className="flex items-start gap-3">
@@ -872,13 +876,13 @@ export default function SettingsPage() {
                       <Calendar
                         className={cn(
                           "w-5 h-5",
-                          isUpcoming ? color.text : "text-muted-foreground"
+                          isUpcoming ? color.text : "text-on-surface-variant"
                         )}
                       />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <h3 className="text-sm font-semibold text-foreground">
+                        <h3 className="text-sm font-semibold text-on-surface">
                           {isAr ? h.nameAr : h.nameEn}
                         </h3>
                         <div className="flex items-center gap-2 shrink-0">
@@ -888,7 +892,7 @@ export default function SettingsPage() {
                           <Badge
                             className={cn(
                               "border-0 text-[10px]",
-                              isUpcoming ? color.badge : "bg-muted text-muted-foreground"
+                              isUpcoming ? color.badge : "bg-muted text-on-surface-variant"
                             )}
                           >
                             {h.days === 1
@@ -898,7 +902,7 @@ export default function SettingsPage() {
                         </div>
                       </div>
                       {h.startDate && (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-on-surface-variant">
                           {formatDate(h.startDate, lang, { month: "long", day: "numeric" })}
                           {h.endDate && h.startDate !== h.endDate && (
                             <>
@@ -916,11 +920,11 @@ export default function SettingsPage() {
           </div>
 
           {/* Total Holiday Days */}
-          <div className="mt-6 pt-4 border-t border-border flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">
+          <div className="mt-6 pt-4 border-t border-outline-variant/20 flex items-center justify-between">
+            <span className="text-sm text-on-surface-variant">
               {t.holiday.duration}
             </span>
-            <span className="text-sm font-semibold text-foreground">
+            <span className="text-sm font-semibold text-on-surface">
               {totalHolidayDays + customHolidays.reduce((sum, h) => sum + h.days, 0)} {t.holiday.daysCount}
             </span>
           </div>
@@ -929,16 +933,16 @@ export default function SettingsPage() {
 
       {/* ─── Geofence Tab ─────────────────────────────────────────────── */}
       {activeTab === "geofence" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center">
               <Radar className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold text-on-surface">
                 {t.clock.geofence}
               </h2>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-on-surface-variant">
                 {t.clock.officeLocation}
               </p>
             </div>
@@ -947,8 +951,8 @@ export default function SettingsPage() {
           {/* Toggle */}
           <div className="flex items-center justify-between p-4 rounded-xl bg-muted/50 mb-6">
             <div className="flex items-center gap-3">
-              <Locate className="w-5 h-5 text-muted-foreground" />
-              <span className="text-sm font-medium text-foreground">
+              <Locate className="w-5 h-5 text-on-surface-variant" />
+              <span className="text-sm font-medium text-on-surface">
                 {t.clock.geofence}
               </span>
             </div>
@@ -958,7 +962,7 @@ export default function SettingsPage() {
                   "border-0 text-[11px]",
                   geofenceEnabled
                     ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400"
-                    : "bg-muted text-muted-foreground"
+                    : "bg-muted text-on-surface-variant"
                 )}
               >
                 {geofenceEnabled
@@ -968,14 +972,16 @@ export default function SettingsPage() {
               <button
                 onClick={() => setGeofenceEnabled(!geofenceEnabled)}
                 className={cn(
-                  "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                  geofenceEnabled ? "bg-emerald-500" : "bg-muted-foreground/30"
+                  "relative h-6 w-11 rounded-full transition-colors",
+                  geofenceEnabled ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]" : "bg-surface-container-highest"
                 )}
+                aria-pressed={geofenceEnabled}
+                aria-label={geofenceEnabled ? (isAr ? "تعطيل النطاق الجغرافي" : "Disable geofence") : (isAr ? "تفعيل النطاق الجغرافي" : "Enable geofence")}
               >
                 <span
                   className={cn(
-                    "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                    geofenceEnabled ? "translate-x-6" : "translate-x-1"
+                    "absolute top-1 w-4 h-4 rounded-full bg-surface-container-lowest shadow transition-all",
+                    geofenceEnabled ? "start-[22px]" : "start-1"
                   )}
                 />
               </button>
@@ -987,12 +993,12 @@ export default function SettingsPage() {
             <div className="space-y-4">
               {/* Office Name */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <label className="text-xs font-medium text-on-surface-variant uppercase tracking-wide">
                   {t.clock.officeLocation}
                 </label>
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-                  <MapPin className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm font-medium text-foreground">
+                  <MapPin className="w-4 h-4 text-on-surface-variant shrink-0" />
+                  <span className="text-sm font-medium text-on-surface">
                     {isAr ? geofenceConfig.officeNameAr : geofenceConfig.officeNameEn}
                   </span>
                 </div>
@@ -1001,21 +1007,21 @@ export default function SettingsPage() {
               {/* Coordinates */}
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <label className="text-xs font-medium text-on-surface-variant uppercase tracking-wide">
                     Lat
                   </label>
                   <div className="p-3 rounded-lg bg-muted/50">
-                    <span className="text-sm font-mono text-foreground">
+                    <span className="text-sm font-mono text-on-surface">
                       {geofenceConfig.officeLat.toFixed(4)}
                     </span>
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                  <label className="text-xs font-medium text-on-surface-variant uppercase tracking-wide">
                     Lng
                   </label>
                   <div className="p-3 rounded-lg bg-muted/50">
-                    <span className="text-sm font-mono text-foreground">
+                    <span className="text-sm font-mono text-on-surface">
                       {geofenceConfig.officeLng.toFixed(4)}
                     </span>
                   </div>
@@ -1024,12 +1030,12 @@ export default function SettingsPage() {
 
               {/* Radius */}
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                <label className="text-xs font-medium text-on-surface-variant uppercase tracking-wide">
                   {t.clock.radius}
                 </label>
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
-                  <Radar className="w-4 h-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm font-medium text-foreground">
+                  <Radar className="w-4 h-4 text-on-surface-variant shrink-0" />
+                  <span className="text-sm font-medium text-on-surface">
                     {geofenceRadius} {t.clock.meters}
                   </span>
                 </div>
@@ -1071,7 +1077,7 @@ export default function SettingsPage() {
                           "w-6 h-6",
                           geofenceEnabled
                             ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-muted-foreground"
+                            : "text-on-surface-variant"
                         )}
                       />
                     </div>
@@ -1084,7 +1090,7 @@ export default function SettingsPage() {
                       "text-xs font-medium px-2 py-0.5 rounded-full",
                       geofenceEnabled
                         ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400"
-                        : "bg-muted text-muted-foreground"
+                        : "bg-muted text-on-surface-variant"
                     )}
                   >
                     {geofenceRadius}m
@@ -1095,7 +1101,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Save Button */}
-          <div className="flex justify-end mt-6 pt-4 border-t border-border">
+          <div className="flex justify-end mt-6 pt-4 border-t border-outline-variant/20">
             <Button
               className="gap-2"
               onClick={() => {
@@ -1131,16 +1137,16 @@ export default function SettingsPage() {
 
       {/* ─── Penalties Tab ────────────────────────────────────────────── */}
       {activeTab === "penalties" && (
-        <div className="glass-card rounded-xl p-5 lg:p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center">
               <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold text-on-surface">
                 {t.penalty.rules}
               </h2>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-on-surface-variant">
                 {t.set.saudiLaborLaw}
               </p>
             </div>
@@ -1149,7 +1155,7 @@ export default function SettingsPage() {
           <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
             <table className="w-full min-w-[500px]">
               <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border">
+                <tr className="text-xs text-on-surface-variant border-b border-outline-variant/20">
                   <th className="text-start pb-3 font-medium">
                     {t.penalty.condition}
                   </th>
@@ -1163,14 +1169,14 @@ export default function SettingsPage() {
                 {penaltyRules.map((rule) => (
                   <tr
                     key={rule.id}
-                    className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
+                    className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors"
                   >
                     <td className="py-3">
-                      <span className="text-sm font-medium text-foreground">
+                      <span className="text-sm font-medium text-on-surface">
                         {isAr ? rule.conditionAr : rule.conditionEn}
                       </span>
                     </td>
-                    <td className="py-3 text-sm text-muted-foreground">
+                    <td className="py-3 text-sm text-on-surface-variant">
                       {isAr ? rule.deductionAr : rule.deductionEn}
                     </td>
                     <td className="py-3">
@@ -1197,7 +1203,7 @@ export default function SettingsPage() {
               <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-foreground">
+              <h2 className="text-lg font-semibold text-on-surface">
                 {isAr ? "جزاءات الانصراف المبكر" : "Early Departure Penalties"}
               </h2>
             </div>
@@ -1206,7 +1212,7 @@ export default function SettingsPage() {
           <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
             <table className="w-full min-w-[500px]">
               <thead>
-                <tr className="text-xs text-muted-foreground border-b border-border">
+                <tr className="text-xs text-on-surface-variant border-b border-outline-variant/20">
                   <th className="text-start pb-3 font-medium">
                     {t.penalty.condition}
                   </th>
@@ -1220,14 +1226,14 @@ export default function SettingsPage() {
                 {earlyDepartureRules.map((rule) => (
                   <tr
                     key={rule.id}
-                    className="border-b border-border/50 last:border-0 hover:bg-accent/30 transition-colors"
+                    className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors"
                   >
                     <td className="py-3">
-                      <span className="text-sm font-medium text-foreground">
+                      <span className="text-sm font-medium text-on-surface">
                         {isAr ? rule.conditionAr : rule.conditionEn}
                       </span>
                     </td>
-                    <td className="py-3 text-sm text-muted-foreground">
+                    <td className="py-3 text-sm text-on-surface-variant">
                       {isAr ? rule.deductionAr : rule.deductionEn}
                     </td>
                     <td className="py-3">
@@ -1258,8 +1264,8 @@ export default function SettingsPage() {
 
           {/* Auto-calculated info box */}
           <div className="mt-4 p-4 rounded-xl bg-muted/50 flex items-start gap-3">
-            <AlertTriangle className="w-4 h-4 text-muted-foreground mt-0.5 shrink-0" />
-            <p className="text-sm text-muted-foreground">
+            <AlertTriangle className="w-4 h-4 text-on-surface-variant mt-0.5 shrink-0" />
+            <p className="text-sm text-on-surface-variant">
               {t.penalty.autoCalculated}
             </p>
           </div>
@@ -1268,7 +1274,7 @@ export default function SettingsPage() {
 
       {/* ─── Notifications Settings ──────────────────────────────────── */}
       {activeTab === "notifications" && (
-        <div className="glass-card rounded-xl p-6">
+        <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-6">
           <h3 className="font-bold text-lg mb-6">{t.set.notifications}</h3>
           <div className="space-y-4">
             {([
@@ -1280,22 +1286,22 @@ export default function SettingsPage() {
             ]).map((item) => (
               <div
                 key={item.key}
-                className="flex items-center justify-between p-4 rounded-xl border border-border hover:bg-accent/30 transition-colors"
+                className="flex items-center justify-between p-4 rounded-xl border border-outline-variant/20 hover:bg-surface-container-low/30 transition-colors"
               >
                 <span className="text-sm font-medium">{item.label}</span>
                 <button
                   onClick={() => handleNotifToggle(item.key)}
                   className={cn(
                     "relative w-11 h-6 rounded-full transition-colors",
-                    notifPrefs[item.key] ? "bg-primary" : "bg-muted-foreground/30"
+                    notifPrefs[item.key] ? "gradient-btn shadow-primary-glow" : "bg-surface-container-highest"
                   )}
+                  aria-pressed={notifPrefs[item.key]}
+                  aria-label={item.label}
                 >
                   <span
                     className={cn(
-                      "absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform",
-                      notifPrefs[item.key]
-                        ? (isAr ? "start-0.5" : "start-[22px]")
-                        : (isAr ? "start-[22px]" : "start-0.5")
+                      "absolute top-0.5 w-5 h-5 rounded-full bg-surface-container-lowest shadow transition-all",
+                      notifPrefs[item.key] ? "start-[22px]" : "start-0.5"
                     )}
                   />
                 </button>
@@ -1303,9 +1309,9 @@ export default function SettingsPage() {
             ))}
           </div>
           <div className="mt-6 flex items-center gap-3">
-            <Button onClick={handleSaveNotifPrefs}>
-              <Save className="w-4 h-4" />
-              {t.set.saveChanges}
+            <Button onClick={handleSaveNotifPrefs} disabled={notifSaving}>
+              {notifSaving ? <Icon name="progress_activity" size={16} className="animate-spin" /> : <Save className="w-4 h-4" />}
+              {notifSaving ? (isAr ? "جاري الحفظ..." : "Saving...") : t.set.saveChanges}
             </Button>
             {notifSaved && (
               <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">
@@ -1352,6 +1358,30 @@ export default function SettingsPage() {
               if (deptEditKey) {
                 store.updateDepartment(deptEditKey, deptNameAr, deptNameEn);
               } else {
+                if (!/^[a-z0-9-]+$/.test(deptKey)) {
+                  addNotification({
+                    type: "system",
+                    titleAr: "معرّف غير صالح",
+                    titleEn: "Invalid Key",
+                    descAr: "يجب أن يحتوي معرّف القسم على أحرف إنجليزية صغيرة، أرقام، وشرطات فقط",
+                    descEn: "Department key must contain only lowercase letters, digits, and hyphens",
+                    time: 0,
+                    read: false,
+                  });
+                  return;
+                }
+                if (store.departments[deptKey]) {
+                  addNotification({
+                    type: "system",
+                    titleAr: "معرّف موجود",
+                    titleEn: "Key Exists",
+                    descAr: "هذا المعرّف مستخدم بالفعل",
+                    descEn: "This key is already in use",
+                    time: 0,
+                    read: false,
+                  });
+                  return;
+                }
                 store.addDepartment(deptKey, deptNameAr, deptNameEn);
               }
               setDeptDialogOpen(false);

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Tajawal } from "next/font/google";
+import { Tajawal, Plus_Jakarta_Sans, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
 import "./globals.css";
@@ -9,6 +9,18 @@ const tajawal = Tajawal({
   subsets: ["arabic", "latin"],
   weight: ["200", "300", "400", "500", "700", "800", "900"],
   variable: "--font-tajawal",
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-plus-jakarta",
+});
+
+const inter = Inter({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-inter",
 });
 
 export const metadata: Metadata = {
@@ -38,8 +50,8 @@ export default function RootLayout({
             __html: `
 :root{--njd-loader-bg:#ffffff;--njd-loader-icon:#111111;--njd-loader-shadow:rgba(0,0,0,0.12)}
 .dark{--njd-loader-bg:#0a0a1a;--njd-loader-icon:#ffffff;--njd-loader-shadow:rgba(255,255,255,0.1)}
-.njd-loader{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--njd-loader-bg)}
-.njd-loader.fade-out{opacity:0;transition:opacity 0.3s ease-out}
+.njd-loader{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--njd-loader-bg);transition:opacity 0.3s ease-out, visibility 0s linear 0.3s}
+html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
 .njd-loader .loader-content{display:flex;flex-direction:column;align-items:center;gap:24px}
 .njd-loader .morph-container{width:120px;height:120px;position:relative;animation:njd-bounce-cycle 4s ease-in-out infinite}
 .njd-loader .morph-container .logo-img,.njd-loader .morph-container .car-svg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;transition:opacity 0.25s ease}
@@ -62,10 +74,28 @@ export default function RootLayout({
             __html: `(function(){var m=document.cookie.match(/njd-theme=(\\w+)/);var t=m?m[1]:null;if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}})()`,
           }}
         />
+        {/* Material Symbols Outlined — preload + block render until font loads (avoids flash of raw icon names) */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          rel="preconnect"
+          href="https://fonts.gstatic.com"
+          crossOrigin="anonymous"
+        />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block"
+        />
+        {/* Mark <html> when Material Symbols font is ready (hides FOUT of raw icon names) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){if(document.fonts&&document.fonts.load){document.fonts.load('24px "Material Symbols Outlined"').then(function(){document.documentElement.classList.add('fonts-loaded')}).catch(function(){document.documentElement.classList.add('fonts-loaded')});setTimeout(function(){document.documentElement.classList.add('fonts-loaded')},3000)}else{document.documentElement.classList.add('fonts-loaded')}})()`,
+          }}
+        />
       </head>
-      <body className={`${tajawal.variable} font-sans antialiased`}>
-        {/* NJD Loading Screen — first thing in body */}
-        <div className="njd-loader">
+      <body className={`${tajawal.variable} ${plusJakartaSans.variable} ${inter.variable} font-sans antialiased`}>
+        {/* NJD Loading Screen — rendered by React, hidden via `.app-ready` class on <html> */}
+        <div className="njd-loader" aria-hidden="true">
           <div className="loader-content">
             <div className="morph-container">
               <div className="logo-img">

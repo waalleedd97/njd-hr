@@ -66,6 +66,14 @@ interface AppSettings {
   companyNameAr: string;
   companyNameEn: string;
   crNumber: string;
+  addressAr: string;
+  addressEn: string;
+  cityAr: string;
+  cityEn: string;
+  countryAr: string;
+  countryEn: string;
+  industryAr: string;
+  industryEn: string;
 }
 
 interface DataState {
@@ -102,6 +110,14 @@ function getDefaultState(): DataState {
       companyNameAr: "نجد قيمز",
       companyNameEn: "NJD Games",
       crNumber: "1010XXXXXX",
+      addressAr: "طريق الملك فهد",
+      addressEn: "King Fahd Road",
+      cityAr: "الرياض",
+      cityEn: "Riyadh",
+      countryAr: "المملكة العربية السعودية",
+      countryEn: "Saudi Arabia",
+      industryAr: "تطوير الألعاب",
+      industryEn: "Game Development",
     },
     payrollProcessed: false,
     departments: { ...defaultDepartments },
@@ -448,7 +464,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!hydrated) return;
     async function syncEmployees() {
       try {
-        // eslint-disable-next-line prefer-const
         let users: Array<{
           user_id: string; email: string; created_at: string;
           role_name: string; name_ar: string; name_en: string;

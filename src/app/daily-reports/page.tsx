@@ -7,16 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { cn, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  CheckCircle,
-  XCircle,
-  ChevronDown,
-  ChevronUp,
-  FileText,
-  Image as ImageIcon,
-  Film,
-  Calendar,
-} from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 
 interface DailyReport {
   id: string;
@@ -29,45 +20,45 @@ interface DailyReport {
 
 export default function DailyReportsPage() {
   const { lang } = useLanguage();
-  useAuth(); // ensure authenticated
+  useAuth();
   const store = useData();
   const isAr = lang === "ar";
 
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
-  );
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "submitted" | "missing">("all");
+  const [loading, setLoading] = useState(false);
 
   const fetchReports = useCallback(async () => {
-    const { data } = await supabase
-      .from("daily_reports")
-      .select("*")
-      .eq("report_date", selectedDate)
-      .order("submitted_at", { ascending: false });
+    setLoading(true);
+    try {
+      const { data } = await supabase
+        .from("daily_reports")
+        .select("*")
+        .eq("report_date", selectedDate)
+        .order("submitted_at", { ascending: false });
 
-    // Generate signed URLs for private bucket attachments
-    const reports = (data || []) as DailyReport[];
-    for (const report of reports) {
-      if (!report.attachments?.length) continue;
-      for (const att of report.attachments) {
-        if (att.url && !att.url.startsWith("http")) {
-          const { data: signedData } = await supabase.storage
-            .from("daily-reports")
-            .createSignedUrl(att.url, 3600); // 1 hour expiry
-          if (signedData?.signedUrl) att.url = signedData.signedUrl;
+      const reports = (data || []) as DailyReport[];
+      for (const report of reports) {
+        if (!report.attachments?.length) continue;
+        for (const att of report.attachments) {
+          if (att.url && !att.url.startsWith("http")) {
+            const { data: signedData } = await supabase.storage
+              .from("daily-reports")
+              .createSignedUrl(att.url, 3600);
+            if (signedData?.signedUrl) att.url = signedData.signedUrl;
+          }
         }
       }
+      setReports(reports);
+    } finally {
+      setLoading(false);
     }
-    setReports(reports);
   }, [selectedDate]);
 
-  useEffect(() => {
-    fetchReports();
-  }, [fetchReports]);
+  useEffect(() => { fetchReports(); }, [fetchReports]);
 
-  // Build employee list with report status
   const employeeReports = store.employees.map((emp) => {
     const report = reports.find((r) => r.user_id === emp.id);
     const attendance = store.todayAttendance.find((a) => a.employeeId === emp.id);
@@ -90,32 +81,30 @@ export default function DailyReportsPage() {
   const missingCount = employeeReports.filter((er) => !er.hasReport).length;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto space-y-8 pb-8">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold">
+        <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
           {isAr ? "التقارير اليومية" : "Daily Reports"}
         </h1>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-muted-foreground" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="h-9 rounded-lg border border-border bg-card px-3 text-sm outline-none"
-            />
-          </div>
+        <div className="flex items-center gap-3 bg-surface-container-high rounded-xl px-4 py-2.5">
+          <Icon name="calendar_month" size={20} className="text-primary" />
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="bg-transparent text-sm font-medium outline-none"
+          />
         </div>
       </div>
 
-      {/* Summary + Filter */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Filter Buttons */}
+      <div className="inline-flex items-center bg-surface-container rounded-full p-1 gap-1">
         <button
           onClick={() => setFilter("all")}
           className={cn(
-            "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-            filter === "all" ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:text-foreground"
+            "px-5 py-2 rounded-full text-sm font-bold transition-all",
+            filter === "all" ? "gradient-btn shadow-primary-glow" : "text-on-surface-variant hover:text-on-surface"
           )}
         >
           {isAr ? "الكل" : "All"} ({employeeReports.length})
@@ -123,41 +112,46 @@ export default function DailyReportsPage() {
         <button
           onClick={() => setFilter("submitted")}
           className={cn(
-            "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-            filter === "submitted" ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground hover:text-foreground"
+            "px-5 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-1.5",
+            filter === "submitted" ? "bg-emerald-500 text-white shadow-[0_0_16px_rgba(16,185,129,0.4)]" : "text-on-surface-variant hover:text-on-surface"
           )}
         >
-          <span className="flex items-center gap-1">
-            <CheckCircle className="w-3.5 h-3.5" />
-            {isAr ? "مرسل" : "Submitted"} ({submittedCount})
-          </span>
+          <Icon name="check_circle" size={16} fill />
+          {isAr ? "مرسل" : "Submitted"} ({submittedCount})
         </button>
         <button
           onClick={() => setFilter("missing")}
           className={cn(
-            "px-3 py-1.5 rounded-lg text-sm font-medium transition-colors",
-            filter === "missing" ? "bg-red-600 text-white" : "bg-muted text-muted-foreground hover:text-foreground"
+            "px-5 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-1.5",
+            filter === "missing" ? "bg-md-error text-on-error shadow-[0_0_16px_rgba(180,19,64,0.4)]" : "text-on-surface-variant hover:text-on-surface"
           )}
         >
-          <span className="flex items-center gap-1">
-            <XCircle className="w-3.5 h-3.5" />
-            {isAr ? "لم يُرسل" : "Missing"} ({missingCount})
-          </span>
+          <Icon name="cancel" size={16} fill />
+          {isAr ? "لم يُرسل" : "Missing"} ({missingCount})
         </button>
       </div>
 
       {/* Reports List */}
       <div className="space-y-3">
-        {filtered.length === 0 && (
-          <div className="glass-card rounded-xl p-8 text-center">
-            <FileText className="w-10 h-10 mx-auto mb-3 text-muted-foreground opacity-40" />
-            <p className="text-sm text-muted-foreground">
+        {loading && (
+          <div className="bg-surface-container-lowest rounded-2xl p-12 text-center" role="status" aria-live="polite">
+            <Icon name="progress_activity" size={48} className="text-primary animate-spin mb-3" />
+            <p className="text-sm text-on-surface-variant font-medium">
+              {isAr ? "جاري تحميل التقارير..." : "Loading reports..."}
+            </p>
+          </div>
+        )}
+
+        {!loading && filtered.length === 0 && (
+          <div className="bg-surface-container-lowest rounded-2xl p-12 text-center">
+            <Icon name="description" size={48} className="text-on-surface-variant opacity-40 mb-3" />
+            <p className="text-sm text-on-surface-variant font-medium">
               {isAr ? "لا توجد تقارير لهذا التاريخ" : "No reports for this date"}
             </p>
           </div>
         )}
 
-        {filtered.map((er) => {
+        {!loading && filtered.map((er) => {
           const emp = er.employee;
           const name = isAr ? emp.nameAr : emp.nameEn;
           const isExpanded = expandedId === emp.id;
@@ -166,75 +160,74 @@ export default function DailyReportsPage() {
             <div
               key={emp.id}
               className={cn(
-                "glass-card rounded-xl overflow-hidden transition-all",
-                !er.hasReport && er.checkOut && "ring-1 ring-red-300 dark:ring-red-500/30"
+                "bg-surface-container-lowest rounded-2xl overflow-hidden transition-all shadow-sm",
+                !er.hasReport && er.checkOut && "ring-2 ring-md-error/30"
               )}
             >
-              {/* Row */}
               <button
                 onClick={() => setExpandedId(isExpanded ? null : emp.id)}
-                className="w-full flex items-center gap-4 p-4 text-start hover:bg-accent/30 transition-colors"
+                className="w-full flex items-center gap-4 p-5 text-start hover:bg-surface-container-low transition-colors"
               >
-                <Avatar className="w-9 h-9 shrink-0">
-                  <AvatarFallback className={cn("text-white text-xs font-bold", emp.color)}>
+                <Avatar className="w-11 h-11 shrink-0">
+                  <AvatarFallback className={cn("text-white text-sm font-bold", emp.color)}>
                     {emp.initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold truncate">{name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="font-headline font-bold truncate">{name}</p>
+                  <p className="text-xs text-on-surface-variant mt-0.5 font-medium">
                     {er.checkIn ? `${isAr ? "حضور" : "In"}: ${er.checkIn}` : (isAr ? "لم يحضر" : "No check-in")}
                     {er.checkOut ? ` · ${isAr ? "انصراف" : "Out"}: ${er.checkOut}` : ""}
                   </p>
                 </div>
-                <Badge
-                  className={cn(
-                    "text-[11px] font-medium border-0 shrink-0",
-                    er.hasReport
-                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400"
-                      : "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400"
-                  )}
-                >
+                <Badge variant={er.hasReport ? "success" : "destructive"}>
                   {er.hasReport ? (
-                    <><CheckCircle className="w-3 h-3 me-1" />{isAr ? "مرسل" : "Submitted"}</>
+                    <>
+                      <Icon name="check_circle" size={12} fill className="me-1" />
+                      {isAr ? "مرسل" : "Submitted"}
+                    </>
                   ) : (
-                    <><XCircle className="w-3 h-3 me-1" />{isAr ? "لم يُرسل" : "Missing"}</>
+                    <>
+                      <Icon name="cancel" size={12} fill className="me-1" />
+                      {isAr ? "لم يُرسل" : "Missing"}
+                    </>
                   )}
                 </Badge>
                 {er.hasReport && (
-                  isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground shrink-0" /> : <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <Icon
+                    name={isExpanded ? "expand_less" : "expand_more"}
+                    size={22}
+                    className="text-on-surface-variant shrink-0"
+                  />
                 )}
               </button>
 
-              {/* Expanded report content */}
               {isExpanded && er.report && (
-                <div className="px-4 pb-4 border-t border-border pt-3">
-                  <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed text-foreground">
+                <div className="px-5 pb-5 pt-4 border-t border-outline-variant/20 bg-surface-container-low/50">
+                  <pre className="text-sm whitespace-pre-wrap font-sans leading-relaxed text-on-surface">
                     {er.report.content}
                   </pre>
                   {er.report.attachments.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-4 flex flex-wrap gap-2">
                       {er.report.attachments.map((att, i) => (
                         <a
                           key={i}
                           href={att.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted text-xs font-medium hover:bg-accent transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface-container-lowest text-xs font-bold hover:bg-primary-container/20 transition-colors"
                         >
-                          {att.type?.startsWith("image/") ? (
-                            <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-                          ) : att.type?.startsWith("video/") ? (
-                            <Film className="w-3.5 h-3.5 text-purple-500" />
-                          ) : (
-                            <FileText className="w-3.5 h-3.5 text-amber-500" />
-                          )}
+                          <Icon
+                            name={att.type?.startsWith("image/") ? "image" : att.type?.startsWith("video/") ? "movie" : "description"}
+                            size={16}
+                            className={att.type?.startsWith("image/") ? "text-blue-500" : att.type?.startsWith("video/") ? "text-tertiary" : "text-amber-500"}
+                          />
                           {att.name}
                         </a>
                       ))}
                     </div>
                   )}
-                  <p className="text-[11px] text-muted-foreground mt-2">
+                  <p className="text-[11px] text-on-surface-variant mt-3 font-medium">
                     {isAr ? "تم الإرسال:" : "Submitted:"}{" "}
                     {formatDate(new Date(er.report.submitted_at), lang, {
                       hour: "numeric",

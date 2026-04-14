@@ -222,7 +222,6 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
     if (hydrated && onReady) onReady();
   }, [hydrated, onReady]);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const login = useCallback(
     (email: string, password: string): boolean => {
       // Login is handled by Supabase — kept for interface compatibility
@@ -270,12 +269,17 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
 
 export function Providers({ children }: { children: ReactNode }) {
   const handleAppReady = useCallback(() => {
-    // Dismiss the HTML loading screen
-    const loader = document.querySelector(".njd-loader");
-    if (loader) {
-      loader.classList.add("fade-out");
-      loader.addEventListener("transitionend", () => loader.remove());
-    }
+    // Hide the loading screen via CSS class on <html> — DOM stays intact
+    // (React-safe: we don't remove or mutate any React-managed nodes)
+    document.documentElement.classList.add("app-ready");
+  }, []);
+
+  // Safety net: force-dismiss after 8 seconds in case auth guard hangs
+  useEffect(() => {
+    const safetyTimeout = setTimeout(() => {
+      document.documentElement.classList.add("app-ready");
+    }, 8000);
+    return () => clearTimeout(safetyTimeout);
   }, []);
 
   return (
