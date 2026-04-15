@@ -28,6 +28,7 @@ const leaveColorMap: Record<string, string> = {
 export default function ReportsPage() {
   const { t, lang } = useLanguage();
   const store = useData();
+  const { initialLoaded } = store;
   const departments = store.departments;
   const employees = store.employees;
   const todayAttendance = store.todayAttendance;
@@ -142,8 +143,12 @@ export default function ReportsPage() {
                 <Icon name={card.iconName} size={26} fill />
               </div>
               <div className="min-w-0">
-                <p className="font-headline text-3xl font-black text-on-surface tabular-nums">
-                  {card.value}
+                <p className="font-headline text-3xl font-black text-on-surface tabular-nums min-h-[36px]">
+                  {initialLoaded ? (
+                    card.value
+                  ) : (
+                    <span className="inline-block w-16 h-7 rounded-lg bg-surface-container-highest animate-pulse align-middle" />
+                  )}
                 </p>
                 <p className="text-sm text-on-surface-variant truncate font-medium">{card.label}</p>
               </div>

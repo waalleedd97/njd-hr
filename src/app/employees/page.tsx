@@ -30,6 +30,7 @@ export default function EmployeesPage() {
   const { t, lang } = useLanguage();
   const { isAdmin } = useAuth();
   const store = useData();
+  const { initialLoaded } = store;
   const departments = store.departments;
   const isAr = lang === "ar";
 
@@ -245,7 +246,9 @@ export default function EmployeesPage() {
               <Icon name="how_to_reg" size={26} fill className="text-emerald-600 dark:text-emerald-400" />
             </div>
             <div>
-              <p className="font-headline text-3xl font-black text-on-surface tabular-nums">{activeCount}</p>
+              <p className="font-headline text-3xl font-black text-on-surface tabular-nums min-h-[36px]">
+                {initialLoaded ? activeCount : <span className="inline-block w-16 h-7 rounded-lg bg-surface-container-highest animate-pulse align-middle" />}
+              </p>
               <p className="text-sm text-on-surface-variant font-medium">{t.emp.totalActive}</p>
             </div>
           </div>
@@ -257,7 +260,9 @@ export default function EmployeesPage() {
               <Icon name="group" size={26} fill className="text-amber-600 dark:text-amber-400" />
             </div>
             <div>
-              <p className="font-headline text-3xl font-black text-on-surface tabular-nums">{onLeaveCount}</p>
+              <p className="font-headline text-3xl font-black text-on-surface tabular-nums min-h-[36px]">
+                {initialLoaded ? onLeaveCount : <span className="inline-block w-16 h-7 rounded-lg bg-surface-container-highest animate-pulse align-middle" />}
+              </p>
               <p className="text-sm text-on-surface-variant font-medium">{t.emp.onLeaveCount}</p>
             </div>
           </div>
@@ -269,7 +274,9 @@ export default function EmployeesPage() {
               <Icon name="trending_up" size={26} fill className="text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <p className="font-headline text-3xl font-black text-on-surface tabular-nums">{newThisMonth}</p>
+              <p className="font-headline text-3xl font-black text-on-surface tabular-nums min-h-[36px]">
+                {initialLoaded ? newThisMonth : <span className="inline-block w-16 h-7 rounded-lg bg-surface-container-highest animate-pulse align-middle" />}
+              </p>
               <p className="text-sm text-on-surface-variant font-medium">{t.emp.newThisMonth}</p>
             </div>
           </div>

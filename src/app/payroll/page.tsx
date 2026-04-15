@@ -28,6 +28,7 @@ export default function PayrollPage() {
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
   const store = useData();
+  const { initialLoaded } = store;
   const { processPayroll, payrollProcessed } = store;
   const employees = store.employees;
   const todayAttendance = store.todayAttendance;
@@ -152,8 +153,12 @@ export default function PayrollPage() {
                   <Icon name={stat.iconName} size={24} fill />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-headline text-base font-black text-on-surface truncate tabular-nums">
-                    {stat.value}
+                  <p className="font-headline text-base font-black text-on-surface truncate tabular-nums min-h-[24px]">
+                    {initialLoaded ? (
+                      stat.value
+                    ) : (
+                      <span className="inline-block w-24 h-5 rounded-lg bg-surface-container-highest animate-pulse align-middle" />
+                    )}
                   </p>
                   <p className="text-xs text-on-surface-variant mt-0.5 truncate font-medium">
                     {stat.label}

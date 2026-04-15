@@ -54,6 +54,7 @@ export default function RequestsPage() {
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
   const store = useData();
+  const { initialLoaded } = store;
   const isAr = lang === "ar";
   const searchParams = useSearchParams();
 
@@ -265,7 +266,9 @@ export default function RequestsPage() {
                   <Icon name={config.iconName} size={26} fill />
                 </div>
                 <div className="min-w-0">
-                  <p className="font-headline text-3xl font-black text-on-surface tabular-nums">{typeCounts[key]}</p>
+                  <p className="font-headline text-3xl font-black text-on-surface tabular-nums min-h-[36px]">
+                    {initialLoaded ? typeCounts[key] : <span className="inline-block w-12 h-7 rounded-lg bg-surface-container-highest animate-pulse align-middle" />}
+                  </p>
                   <p className="text-sm text-on-surface-variant truncate font-medium">
                     {t.requestTypes[key as keyof typeof t.requestTypes]}
                   </p>
