@@ -654,11 +654,87 @@ export function DataProvider({
 
   // ── Leave Requests (Supabase) ──
 
+  // ── Row mappers (snake_case Supabase row → camelCase app shape) ──
+  // Shared between refresh* (bulk) and submit* (single inserted row).
+
+  const mapLeaveRow = (row: Record<string, unknown>): LeaveReq => ({
+    id: row.id as string,
+    employeeId: row.employee_id as string,
+    typeKey: (row.type as string) || (row.type_key as string) || "annual",
+    startDate: row.start_date as string,
+    endDate: row.end_date as string,
+    days: row.days as number,
+    status: row.status as "pending" | "approved" | "rejected",
+    reasonAr: (row.reason_ar as string) || (row.reason as string) || "",
+    reasonEn: (row.reason_en as string) || (row.reason as string) || "",
+  });
+
+  const mapEmpReqRow = (row: Record<string, unknown>): EmpReq => ({
+    id: row.id as string,
+    employeeId: row.employee_id as string,
+    typeKey: row.type_key as string,
+    date: row.date as string,
+    status: row.status as "pending" | "in-review" | "approved" | "rejected",
+    detailsAr: (row.details_ar as string) || "",
+    detailsEn: (row.details_en as string) || "",
+  });
+
+  const mapAdvanceRow = (row: Record<string, unknown>): SalaryAdvance => ({
+    id: row.id as string,
+    employeeId: row.employee_id as string,
+    amount: row.amount as number,
+    reasonAr: (row.reason_ar as string) || "",
+    reasonEn: (row.reason_en as string) || "",
+    requestDate: row.request_date as string,
+    status: row.status as "pending" | "approved" | "rejected",
+    repaymentMonths: row.repayment_months as number,
+    monthlyDeduction: row.monthly_deduction as number,
+    remainingBalance: row.remaining_balance as number,
+    paidMonths: row.paid_months as number,
+  });
+
+  const mapAdjustmentRow = (row: Record<string, unknown>): AttendanceAdjustment => ({
+    id: row.id as string,
+    employeeId: row.employee_id as string,
+    date: row.date as string,
+    originalIn: (row.original_in as string) || "",
+    requestedIn: (row.requested_in as string) || "",
+    originalOut: (row.original_out as string) || "",
+    requestedOut: (row.requested_out as string) || "",
+    reasonAr: (row.reason_ar as string) || "",
+    reasonEn: (row.reason_en as string) || "",
+    status: row.status as "pending" | "approved" | "rejected",
+  });
+
+  const mapInvitationRow = (row: Record<string, unknown>): PendingInvitation => ({
+    id: row.id as string,
+    email: row.email as string,
+    nameAr: (row.name_ar as string) || "",
+    nameEn: (row.name_en as string) || "",
+    department: (row.department as string) || "",
+    positionAr: (row.position_ar as string) || "",
+    positionEn: (row.position_en as string) || "",
+    sentDate: row.sent_date as string,
+    status: row.status as "pending" | "expired",
+  });
+
+  // Fire-and-forget notification — logs failures but never rejects the caller.
+  const notifyAdminsBG = (params: Parameters<typeof notifyAdmins>[0]) => {
+    notifyAdmins(params).catch((e) =>
+      console.error("[HR] notifyAdmins (non-blocking) failed:", e)
+    );
+  };
+  const notifyUserBG = (params: Parameters<typeof createNotification>[0]) => {
+    createNotification(params).catch((e) =>
+      console.error("[HR] createNotification (non-blocking) failed:", e)
+    );
+  };
+
   const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
     const userId = await getSessionUserId();
 
-    // Try with 'type' column first (migration 004 schema), fall back to 'type_key' (old schema)
-    let { error } = await supabase.from("leave_requests").insert({
+    // Try the new schema (migration 004: `type` + `reason`); fall back to `type_key` + `reason_ar/en`.
+    let { data, error } = await supabase.from("leave_requests").insert({
       employee_id: userId,
       type: req.typeKey,
       start_date: req.startDate,
@@ -666,9 +742,8 @@ export function DataProvider({
       days: req.days,
       reason: req.reasonAr || req.reasonEn,
       status: "pending",
-    });
+    }).select("*").single();
     if (error && (error.message.includes("type") || error.message.includes("column"))) {
-      // Fallback: old schema uses type_key + reason_ar/reason_en
       const retry = await supabase.from("leave_requests").insert({
         employee_id: userId,
         type_key: req.typeKey,
@@ -678,17 +753,19 @@ export function DataProvider({
         reason_ar: req.reasonAr,
         reason_en: req.reasonEn,
         status: "pending",
-      });
+      }).select("*").single();
+      data = retry.data;
       error = retry.error;
     }
-    if (error) {
-      console.error("[HR] leave_requests insert error:", error.message, error.details, error.hint);
-      throw error;
+    if (error || !data) {
+      console.error("[HR] leave_requests insert error:", error?.message);
+      throw error ?? new Error("Insert returned no row");
     }
 
-    await refreshLeaveRequests();
+    const newRow = mapLeaveRow(data);
+    setState((p) => ({ ...p, leaveRequests: [newRow, ...p.leaveRequests] }));
 
-    await notifyAdmins({
+    notifyAdminsBG({
       type: "leave",
       titleAr: "طلب إجازة جديد",
       titleEn: "New Leave Request",
@@ -696,23 +773,33 @@ export function DataProvider({
       descEn: "New leave request pending approval",
       href: "/leaves",
     });
-  }, [refreshLeaveRequests]);
+  }, []);
 
   const approveLeaveRequest = useCallback(async (id: string) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("leave_requests").update({
+    const { error } = await supabase.from("leave_requests").update({
       status: "approved",
       reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
     }).eq("id", id);
+    if (error) throw error;
 
-    await refreshLeaveRequests();
+    let notifyTargetId: string | undefined;
+    setState((p) => {
+      const next = p.leaveRequests.map((r) => {
+        if (r.id === id) {
+          notifyTargetId = r.employeeId;
+          return { ...r, status: "approved" as const };
+        }
+        return r;
+      });
+      return { ...p, leaveRequests: next };
+    });
 
-    const req = state.leaveRequests.find((r) => r.id === id);
-    if (req?.employeeId) {
-      createNotification({
-        userId: req.employeeId,
+    if (notifyTargetId) {
+      notifyUserBG({
+        userId: notifyTargetId,
         type: "leave",
         titleAr: "تمت الموافقة على طلب الإجازة",
         titleEn: "Leave Request Approved",
@@ -721,45 +808,61 @@ export function DataProvider({
         href: "/leaves",
       });
     }
-  }, [refreshLeaveRequests, state.leaveRequests]);
+  }, []);
 
   const rejectLeaveRequest = useCallback(async (id: string, reason?: string) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("leave_requests").update({
+    const { error } = await supabase.from("leave_requests").update({
       status: "rejected",
       reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
       rejection_reason: reason || null,
     }).eq("id", id);
+    if (error) throw error;
 
-    await refreshLeaveRequests();
-  }, [refreshLeaveRequests]);
+    setState((p) => ({
+      ...p,
+      leaveRequests: p.leaveRequests.map((r) =>
+        r.id === id ? { ...r, status: "rejected" as const } : r
+      ),
+    }));
+  }, []);
 
   // ── Employee Requests (Supabase) ──
 
   const submitEmployeeRequest = useCallback(async (req: Omit<EmpReq, "id">) => {
     const userId = await getSessionUserId();
 
-    const { error } = await supabase.from("employee_requests").insert({
+    const { data, error } = await supabase.from("employee_requests").insert({
       employee_id: userId,
       type_key: req.typeKey,
       date: req.date || new Date().toISOString().split("T")[0],
       status: "pending",
       details_ar: req.detailsAr,
       details_en: req.detailsEn,
-    });
-    if (error) throw error;
+    }).select("*").single();
+    if (error || !data) throw error ?? new Error("Insert returned no row");
 
-    await refreshEmployeeRequests();
-  }, [refreshEmployeeRequests]);
+    const newRow = mapEmpReqRow(data);
+    setState((p) => ({ ...p, employeeRequests: [newRow, ...p.employeeRequests] }));
+
+    notifyAdminsBG({
+      type: "request",
+      titleAr: "طلب موظف جديد",
+      titleEn: "New Employee Request",
+      descAr: "طلب جديد بانتظار الموافقة",
+      descEn: "New request pending approval",
+      href: "/requests",
+    });
+  }, []);
 
   // ── Salary Advance (Supabase) ──
 
   const submitAdvance = useCallback(async (adv: Omit<SalaryAdvance, "id">) => {
     const userId = await getSessionUserId();
 
-    const { error } = await supabase.from("salary_advances").insert({
+    const { data, error } = await supabase.from("salary_advances").insert({
       employee_id: userId,
       amount: adv.amount,
       reason_ar: adv.reasonAr,
@@ -770,18 +873,28 @@ export function DataProvider({
       monthly_deduction: adv.monthlyDeduction,
       remaining_balance: adv.amount,
       paid_months: 0,
-    });
-    if (error) throw error;
+    }).select("*").single();
+    if (error || !data) throw error ?? new Error("Insert returned no row");
 
-    await refreshSalaryAdvances();
-  }, [refreshSalaryAdvances]);
+    const newRow = mapAdvanceRow(data);
+    setState((p) => ({ ...p, salaryAdvances: [newRow, ...p.salaryAdvances] }));
+
+    notifyAdminsBG({
+      type: "payroll",
+      titleAr: "طلب سلفة جديد",
+      titleEn: "New Salary Advance Request",
+      descAr: "طلب سلفة بانتظار الموافقة",
+      descEn: "Advance request pending approval",
+      href: "/requests",
+    });
+  }, []);
 
   // ── Attendance Adjustment (Supabase) ──
 
   const submitAdjustment = useCallback(async (adj: Omit<AttendanceAdjustment, "id">) => {
     const userId = await getSessionUserId();
 
-    const { error } = await supabase.from("attendance_adjustments").insert({
+    const { data, error } = await supabase.from("attendance_adjustments").insert({
       employee_id: userId,
       date: adj.date,
       original_in: adj.originalIn || null,
@@ -791,11 +904,21 @@ export function DataProvider({
       reason_ar: adj.reasonAr,
       reason_en: adj.reasonEn,
       status: "pending",
-    });
-    if (error) throw error;
+    }).select("*").single();
+    if (error || !data) throw error ?? new Error("Insert returned no row");
 
-    await refreshAttendanceAdjustments();
-  }, [refreshAttendanceAdjustments]);
+    const newRow = mapAdjustmentRow(data);
+    setState((p) => ({ ...p, attendanceAdjustments: [newRow, ...p.attendanceAdjustments] }));
+
+    notifyAdminsBG({
+      type: "attendance",
+      titleAr: "طلب تعديل حضور جديد",
+      titleEn: "New Attendance Adjustment Request",
+      descAr: "طلب تعديل حضور بانتظار الموافقة",
+      descEn: "Attendance adjustment pending approval",
+      href: "/requests",
+    });
+  }, []);
 
   // ── Generic Approve/Reject (Supabase) ──
 
@@ -806,17 +929,20 @@ export function DataProvider({
     const userId = await getSessionUserId();
     const table = SUPA_TABLE[collection];
 
-    await supabase.from(table).update({
+    const { error } = await supabase.from(table).update({
       status: "approved",
       reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
     }).eq("id", id);
+    if (error) throw error;
 
-    // Refresh the relevant collection
-    if (collection === "employeeRequests") await refreshEmployeeRequests();
-    else if (collection === "salaryAdvances") await refreshSalaryAdvances();
-    else if (collection === "attendanceAdjustments") await refreshAttendanceAdjustments();
-  }, [refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments]);
+    setState((p) => ({
+      ...p,
+      [collection]: (p[collection] as Array<{ id: string; status: string }>).map((r) =>
+        r.id === id ? { ...r, status: "approved" } : r
+      ),
+    }));
+  }, []);
 
   const rejectItem = useCallback(async (
     collection: "employeeRequests" | "salaryAdvances" | "attendanceAdjustments",
@@ -825,23 +951,27 @@ export function DataProvider({
     const userId = await getSessionUserId();
     const table = SUPA_TABLE[collection];
 
-    await supabase.from(table).update({
+    const { error } = await supabase.from(table).update({
       status: "rejected",
       reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
     }).eq("id", id);
+    if (error) throw error;
 
-    if (collection === "employeeRequests") await refreshEmployeeRequests();
-    else if (collection === "salaryAdvances") await refreshSalaryAdvances();
-    else if (collection === "attendanceAdjustments") await refreshAttendanceAdjustments();
-  }, [refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments]);
+    setState((p) => ({
+      ...p,
+      [collection]: (p[collection] as Array<{ id: string; status: string }>).map((r) =>
+        r.id === id ? { ...r, status: "rejected" } : r
+      ),
+    }));
+  }, []);
 
   // ── Invitations (Supabase) ──
 
   const sendInvitation = useCallback(async (inv: Omit<PendingInvitation, "id">) => {
     const userId = await getSessionUserId();
 
-    await supabase.from("pending_invitations").insert({
+    const { data, error } = await supabase.from("pending_invitations").insert({
       email: inv.email,
       name_ar: inv.nameAr,
       name_en: inv.nameEn,
@@ -851,19 +981,28 @@ export function DataProvider({
       sent_date: inv.sentDate || new Date().toISOString().split("T")[0],
       status: "pending",
       invited_by: userId,
-    });
+    }).select("*").single();
+    if (error || !data) throw error ?? new Error("Insert returned no row");
 
-    await refreshInvitations();
-  }, [refreshInvitations]);
+    const newRow = mapInvitationRow(data);
+    setState((p) => ({ ...p, pendingInvitations: [newRow, ...p.pendingInvitations] }));
+  }, []);
 
   const resendInvitation = useCallback(async (id: string) => {
-    await supabase.from("pending_invitations").update({
+    const newSentDate = new Date().toISOString().split("T")[0];
+    const { error } = await supabase.from("pending_invitations").update({
       status: "pending",
-      sent_date: new Date().toISOString().split("T")[0],
+      sent_date: newSentDate,
     }).eq("id", id);
+    if (error) throw error;
 
-    await refreshInvitations();
-  }, [refreshInvitations]);
+    setState((p) => ({
+      ...p,
+      pendingInvitations: p.pendingInvitations.map((i) =>
+        i.id === id ? { ...i, status: "pending" as const, sentDate: newSentDate } : i
+      ),
+    }));
+  }, []);
 
   // ── Notifications (local cache) ──
 
