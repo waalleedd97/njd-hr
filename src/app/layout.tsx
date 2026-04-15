@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { Tajawal, Plus_Jakarta_Sans, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
+import { getServerUser } from "@/lib/auth/server";
 import "./globals.css";
 
 const tajawal = Tajawal({
@@ -36,11 +39,24 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getServerUser();
+  if (!session) redirect("https://njd-services.net");
+
+  // Profile-completion gate — force incomplete profiles onto /profile/complete.
+  const hdrs = await headers();
+  const pathname = hdrs.get("x-pathname") || "/";
+  if (
+    session.user.profileCompleted === false &&
+    !pathname.startsWith("/profile/complete")
+  ) {
+    redirect("/profile/complete");
+  }
+
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
@@ -130,7 +146,7 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
           }}
         />
         <Script src="https://njd-services.net/njd-navbar.js" strategy="beforeInteractive" />
-        <Providers>
+        <Providers initialUser={session.user} initialRole={session.role}>
           <AppShell>{children}</AppShell>
         </Providers>
       </body>

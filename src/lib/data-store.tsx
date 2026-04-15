@@ -162,6 +162,9 @@ interface DataContextType extends DataState {
   // Guard UI counts/totals against this to avoid rendering transient zeros.
   initialLoaded: boolean;
 
+  /** Merge server-fetched data into the store. Called once per page from views. */
+  hydrate: (slice: Partial<DataState>) => void;
+
   // Attendance (Supabase)
   clockIn: (time: string) => Promise<void>;
   clockOut: (time: string) => Promise<void>;
@@ -250,10 +253,31 @@ const SUPA_TABLE: Record<string, string> = {
 
 const SETTINGS_KEY = "njd-hr-settings"; // Only settings cached locally
 
-export function DataProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<DataState>(getDefaultState);
+export function DataProvider({
+  children,
+  initialData,
+  seedFromServer = false,
+}: {
+  children: ReactNode;
+  /** Optional server-provided initial data to seed the store with. */
+  initialData?: Partial<DataState>;
+  /**
+   * When true, treat the store as already loaded on first render and skip the
+   * 7-way Supabase batch fetch. Pages then hydrate their own slices via
+   * `useDataHydration`. Enabled by the server-rendered root layout.
+   */
+  seedFromServer?: boolean;
+}) {
+  const [state, setState] = useState<DataState>(() => ({
+    ...getDefaultState(),
+    ...(initialData ?? {}),
+  }));
   const [hydrated, setHydrated] = useState(false);
-  const [initialLoaded, setInitialLoaded] = useState(false);
+  const [initialLoaded, setInitialLoaded] = useState(seedFromServer);
+
+  const hydrate = useCallback((slice: Partial<DataState>) => {
+    setState((prev) => ({ ...prev, ...slice }));
+  }, []);
 
   // Hydrate settings from localStorage (only settings — everything else from Supabase)
   useEffect(() => {
@@ -452,9 +476,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // ── Fetch ALL data from Supabase on hydration ──
+  // Skipped when server-rendered layout provides seedFromServer — pages hydrate
+  // their own slices via useDataHydration instead.
 
   useEffect(() => {
     if (!hydrated) return;
+    if (seedFromServer) return;
     let cancelled = false;
     (async () => {
       await Promise.allSettled([
@@ -469,7 +496,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       if (!cancelled) setInitialLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [hydrated, refreshAttendance, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments, refreshInvitations, refreshLeaveBalances]);
+  }, [hydrated, seedFromServer, refreshAttendance, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments, refreshInvitations, refreshLeaveBalances]);
 
   // Sync employees from Supabase
   useEffect(() => {
@@ -1014,6 +1041,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const value: DataContextType = {
     ...state,
     initialLoaded,
+    hydrate,
     clockIn,
     clockOut,
     refreshAttendance,

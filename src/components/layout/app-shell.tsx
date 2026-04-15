@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
 import { adminOnlyPaths } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
@@ -133,9 +133,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     catch { /* quota */ }
   }, [collapsed]);
   const { dir, lang, t } = useLanguage();
-  const { role, user, isAuthenticated } = useAuth();
+  const { role, isAuthenticated } = useAuth();
   const pathname = usePathname();
-  const router = useRouter();
 
   // Update html dir and lang attributes when language changes
   useEffect(() => {
@@ -148,26 +147,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     window.scrollTo(0, 0);
   }, [pathname, isAuthenticated]);
 
-  // Redirect invited employees to profile completion
-  const needsProfileCompletion =
-    isAuthenticated && user.profileCompleted === false && pathname !== "/profile/complete";
-
-  useEffect(() => {
-    if (needsProfileCompletion) {
-      router.replace("/profile/complete");
-    }
-  }, [needsProfileCompletion, router]);
-
-  // Route protection: redirect employees away from admin-only pages
+  // Server-side route gating handles profile-completion + admin-only redirects
+  // (see src/app/layout.tsx and per-page `requireUser({ admin: true })`).
+  // This client-side check exists only as a visual fallback for the brief moment
+  // between client-nav request and server redirect response.
   const isBlocked =
     role === "employee" && adminOnlyPaths.includes(pathname);
-
-  useEffect(() => {
-    if (isAuthenticated && isBlocked) {
-      const timer = setTimeout(() => router.replace("/"), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [isBlocked, router, isAuthenticated]);
 
   return (
     <>
