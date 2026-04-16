@@ -15,9 +15,16 @@ All three apps share authentication, theming, language, and the njd-navbar web c
 ## Commands
 
 - `npm run dev` — Start dev server (localhost:3000)
-- `npm run build` — Production build (also serves as type/lint check; no test suite exists)
+- `npm run build` — Production build
+- `npm run check` — typecheck + lint in one shot
 - `npm run lint` — ESLint
+- `npm run typecheck` — `tsc --noEmit`
+- `npm run audit:prod` — check prod dependencies for CVEs
+- `npm run vapid:gen` — generate VAPID keys for push notifications
 - Path alias: `@/*` maps to `./src/*`
+
+See `DEPLOYMENT.md` for the end-to-end deploy runbook (env vars, Supabase
+migrations, pg_cron schedules, PDPL, Sentry).
 
 ## Tech Stack
 
