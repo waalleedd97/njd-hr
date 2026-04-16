@@ -117,7 +117,7 @@ export default function SettingsPage() {
     }
   }, [user.id, notifPrefs, notifSaving]);
 
-  const [activeTab, setActiveTab] = useState<Tab>("companyInfo");
+  const [activeTab, setActiveTab] = useState<Tab>("departments");
   const [geofenceEnabled, setGeofenceEnabled] = useState(settings.geofenceEnabled);
   const [geofenceRadius, setGeofenceRadius] = useState(settings.geofenceRadius);
   const [companySaved, setCompanySaved] = useState(false);
@@ -133,10 +133,41 @@ export default function SettingsPage() {
       return raw ? (JSON.parse(raw) as CustomHoliday[]) : [];
     } catch { return []; }
   });
+
+  // Load custom holidays from Supabase on mount (organization-wide source of truth)
+  useEffect(() => {
+    (async () => {
+      const { supabase: sb } = await import("@/lib/supabase");
+      const { data, error } = await sb
+        .from("app_settings")
+        .select("value")
+        .eq("key", "custom_holidays")
+        .maybeSingle();
+      if (error) {
+        console.error("[settings] load custom_holidays failed:", error.message);
+        return;
+      }
+      if (data?.value && Array.isArray(data.value)) {
+        setCustomHolidays(data.value as CustomHoliday[]);
+      }
+    })();
+  }, []);
+
+  // Persist custom holidays — localStorage for offline fallback, Supabase for org-wide sync
   useEffect(() => {
     try { localStorage.setItem("njd-hr-custom-holidays", JSON.stringify(customHolidays)); }
     catch { /* quota exceeded or disabled */ }
   }, [customHolidays]);
+
+  const persistHolidays = useCallback(async (next: CustomHoliday[]) => {
+    const { supabase: sb } = await import("@/lib/supabase");
+    const { error } = await sb
+      .from("app_settings")
+      .upsert({ key: "custom_holidays", value: next }, { onConflict: "key" });
+    if (error) {
+      console.error("[settings] save custom_holidays failed:", error.message);
+    }
+  }, []);
   const [newHolidayName, setNewHolidayName] = useState("");
   const [newHolidayStart, setNewHolidayStart] = useState("");
   const [newHolidayEnd, setNewHolidayEnd] = useState("");
@@ -749,17 +780,19 @@ export default function SettingsPage() {
                     const start = new Date(newHolidayStart);
                     const end = new Date(newHolidayEnd);
                     const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1);
-                    setCustomHolidays((prev) => [
-                      ...prev,
-                      {
-                        id: `custom-${Date.now()}`,
-                        nameAr: newHolidayName,
-                        nameEn: newHolidayName,
-                        startDate: newHolidayStart,
-                        endDate: newHolidayEnd,
-                        days,
-                      },
-                    ]);
+                    const newHoliday: CustomHoliday = {
+                      id: `custom-${Date.now()}`,
+                      nameAr: newHolidayName,
+                      nameEn: newHolidayName,
+                      startDate: newHolidayStart,
+                      endDate: newHolidayEnd,
+                      days,
+                    };
+                    setCustomHolidays((prev) => {
+                      const next = [...prev, newHoliday];
+                      persistHolidays(next);
+                      return next;
+                    });
                     addNotification({
                       type: "system",
                       titleAr: "تمت إضافة عطلة",
@@ -899,6 +932,19 @@ export default function SettingsPage() {
                               ? `1 ${t.holiday.day}`
                               : `${h.days} ${t.holiday.daysCount}`}
                           </Badge>
+                          <button
+                            onClick={() => {
+                              setCustomHolidays((prev) => {
+                                const next = prev.filter((x) => x.id !== h.id);
+                                persistHolidays(next);
+                                return next;
+                              });
+                            }}
+                            className="text-on-surface-variant hover:text-md-error transition-colors"
+                            aria-label={isAr ? "حذف" : "Delete"}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       </div>
                       {h.startDate && (

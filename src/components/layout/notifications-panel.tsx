@@ -45,15 +45,15 @@ const typeConfig: Record<
   },
 };
 
-function formatTime(createdAt: string, isAr: boolean) {
+function formatTime(createdAt: string, time: { now: string; min: string; hour: string; day: string }) {
   const diff = Date.now() - new Date(createdAt).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return isAr ? "الآن" : "now";
-  if (mins < 60) return isAr ? `${mins}د` : `${mins}m`;
+  if (mins < 1) return time.now;
+  if (mins < 60) return `${mins}${time.min}`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return isAr ? `${hrs}س` : `${hrs}h`;
+  if (hrs < 24) return `${hrs}${time.hour}`;
   const days = Math.floor(hrs / 24);
-  return isAr ? `${days}ي` : `${days}d`;
+  return `${days}${time.day}`;
 }
 
 interface NotificationsPanelProps {
@@ -151,7 +151,14 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
         setItems((prev) =>
           prev.map((n) => (n.id === notification.id ? { ...n, read: true } : n))
         );
-        markNotificationReadInDB(notification.id);
+        try {
+          await markNotificationReadInDB(notification.id);
+        } catch (err) {
+          console.error("[notifications] markNotificationReadInDB failed:", err);
+          setItems((prev) =>
+            prev.map((n) => (n.id === notification.id ? { ...n, read: false } : n))
+          );
+        }
       }
       onClose();
       if (notification.href) {
@@ -162,9 +169,15 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
   );
 
   const handleMarkAllRead = useCallback(async () => {
+    const previous = items;
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
-    markAllReadInDB(user.id);
-  }, [user.id]);
+    try {
+      await markAllReadInDB(user.id);
+    } catch (err) {
+      console.error("[notifications] markAllReadInDB failed:", err);
+      setItems(previous);
+    }
+  }, [user.id, items]);
 
   if (!open) return null;
 
@@ -254,7 +267,7 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
                       {isAr ? notification.desc_ar : notification.desc_en}
                     </p>
                     <p className="text-[11px] text-on-surface-variant/70 mt-1.5 font-medium">
-                      {formatTime(notification.created_at, isAr)}
+                      {formatTime(notification.created_at, t.time)}
                     </p>
                   </div>
                 </button>

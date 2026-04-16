@@ -138,7 +138,7 @@ export default function PayrollPage() {
             className={payrollProcessed ? "!bg-emerald-600 !bg-none" : ""}
           >
             {payrollProcessed ? <Icon name="check_circle" size={20} fill /> : <Icon name="payments" size={20} />}
-            {payrollProcessed ? (isAr ? "✓ تمت المعالجة" : "✓ Processed") : t.pay.runPayroll}
+            {payrollProcessed ? t.pay2.processed : t.pay.runPayroll}
           </Button>
         )}
       </div>

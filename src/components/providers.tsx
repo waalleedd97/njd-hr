@@ -116,12 +116,10 @@ interface AuthContextType {
   user: UserProfile;
   isAdmin: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => boolean;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
-const AUTH_KEY = "njd-hr-auth";
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
@@ -222,19 +220,9 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
     if (hydrated && onReady) onReady();
   }, [hydrated, onReady]);
 
-  const login = useCallback(
-    (email: string, password: string): boolean => {
-      // Login is handled by Supabase — kept for interface compatibility
-      void email; void password;
-      return false;
-    },
-    []
-  );
-
   const logout = useCallback(() => {
     setIsAuthenticated(false);
     setUser(fallbackUser);
-    localStorage.removeItem(AUTH_KEY);
     supabase.auth.signOut();
   }, []);
 
@@ -256,7 +244,6 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
         user,
         isAdmin,
         isAuthenticated,
-        login,
         logout,
       }}
     >

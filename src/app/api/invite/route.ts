@@ -19,8 +19,28 @@ export async function POST(req: NextRequest) {
     }
     const { email, nameAr, nameEn, positionAr, positionEn, department } = body;
 
-    if (!email || !nameAr) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    const isNonEmptyString = (v: unknown): v is string =>
+      typeof v === "string" && v.trim().length > 0;
+
+    if (!isNonEmptyString(email) || !isNonEmptyString(nameAr)) {
+      return NextResponse.json({ error: "Missing required fields: email, nameAr" }, { status: 400 });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
+    }
+
+    const missing: string[] = [];
+    if (!isNonEmptyString(nameEn)) missing.push("nameEn");
+    if (!isNonEmptyString(positionAr)) missing.push("positionAr");
+    if (!isNonEmptyString(positionEn)) missing.push("positionEn");
+    if (!isNonEmptyString(department)) missing.push("department");
+    if (missing.length > 0) {
+      return NextResponse.json(
+        { error: `Missing required fields: ${missing.join(", ")}` },
+        { status: 400 }
+      );
     }
 
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || "https://njd-hr.vercel.app";

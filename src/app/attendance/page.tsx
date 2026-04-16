@@ -322,6 +322,7 @@ export default function AttendancePage() {
   const [reportText, setReportText] = useState("");
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [reportUploading, setReportUploading] = useState(false);
+  const [fileWarning, setFileWarning] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleClockIn = async () => {
@@ -402,9 +403,40 @@ export default function AttendancePage() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    const tooBig = files.filter((f) => f.size > 10 * 1024 * 1024);
     const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
-    setReportFiles((prev) => [...prev, ...valid].slice(0, 5));
+
+    setReportFiles((prev) => {
+      const combined = [...prev, ...valid];
+      const overLimit = combined.length - 5;
+      const final = combined.slice(0, 5);
+
+      if (tooBig.length > 0) {
+        setFileWarning(
+          isAr
+            ? `${tooBig.length} ملف تجاوز 10 ميجابايت وتم تجاهله`
+            : `${tooBig.length} file(s) exceeded 10MB and were skipped`
+        );
+      } else if (overLimit > 0) {
+        setFileWarning(
+          isAr
+            ? `الحد الأقصى 5 ملفات، تم تجاهل ${overLimit}`
+            : `Maximum 5 files, ignored ${overLimit}`
+        );
+      } else {
+        setFileWarning("");
+      }
+      return final;
+    });
+
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleReportDialogOpenChange = (open: boolean) => {
+    if (open) return;
+    if (reportUploading) return;
+    setReportOpen(false);
+    setFileWarning("");
   };
 
   const removeFile = (index: number) => {
@@ -873,7 +905,7 @@ export default function AttendancePage() {
       </Dialog>
 
       {/* ── Daily Report Modal ────────────────────────── */}
-      <Dialog open={reportOpen} onOpenChange={(v) => { if (!v) return; }}>
+      <Dialog open={reportOpen} onOpenChange={handleReportDialogOpenChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{isAr ? "تقرير نهاية اليوم" : "End of Day Report"}</DialogTitle>
@@ -941,18 +973,25 @@ export default function AttendancePage() {
                 </div>
               )}
               <p className="text-xs text-on-surface-variant mt-2">
-                {isAr ? "الحد الأقصى: 10MB لكل ملف" : "Max: 10MB per file"}
+                {isAr ? "الحد الأقصى: 5 ملفات، 10MB لكل ملف" : "Max: 5 files, 10MB each"}
               </p>
+              {fileWarning && (
+                <p className="text-xs text-md-error mt-1.5 font-medium" role="alert">
+                  {fileWarning}
+                </p>
+              )}
             </div>
           </div>
 
           <DialogFooter>
             <Button
               variant="outline"
+              disabled={reportUploading}
               onClick={() => {
                 setReportOpen(false);
                 setReportText("");
                 setReportFiles([]);
+                setFileWarning("");
                 setCheckoutOutside(false);
               }}
             >

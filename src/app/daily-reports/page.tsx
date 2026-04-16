@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { supabase } from "@/lib/supabase";
@@ -18,8 +18,11 @@ interface DailyReport {
   submitted_at: string;
 }
 
+const SIGNED_URL_TTL_SEC = 3600;
+const SIGNED_URL_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+
 export default function DailyReportsPage() {
-  const { lang } = useLanguage();
+  const { t, lang } = useLanguage();
   useAuth();
   const store = useData();
   const isAr = lang === "ar";
@@ -29,6 +32,8 @@ export default function DailyReportsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "submitted" | "missing">("all");
   const [loading, setLoading] = useState(false);
+
+  const signedUrlCache = useRef<Map<string, { url: string; expiresAt: number }>>(new Map());
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -40,14 +45,29 @@ export default function DailyReportsPage() {
         .order("submitted_at", { ascending: false });
 
       const reports = (data || []) as DailyReport[];
+      const now = Date.now();
+
       for (const report of reports) {
         if (!report.attachments?.length) continue;
         for (const att of report.attachments) {
-          if (att.url && !att.url.startsWith("http")) {
-            const { data: signedData } = await supabase.storage
-              .from("daily-reports")
-              .createSignedUrl(att.url, 3600);
-            if (signedData?.signedUrl) att.url = signedData.signedUrl;
+          if (!att.url || att.url.startsWith("http")) continue;
+
+          const cached = signedUrlCache.current.get(att.url);
+          if (cached && cached.expiresAt - now > SIGNED_URL_REFRESH_MARGIN_MS) {
+            att.url = cached.url;
+            continue;
+          }
+
+          const { data: signedData } = await supabase.storage
+            .from("daily-reports")
+            .createSignedUrl(att.url, SIGNED_URL_TTL_SEC);
+
+          if (signedData?.signedUrl) {
+            signedUrlCache.current.set(att.url, {
+              url: signedData.signedUrl,
+              expiresAt: now + SIGNED_URL_TTL_SEC * 1000,
+            });
+            att.url = signedData.signedUrl;
           }
         }
       }
@@ -85,7 +105,7 @@ export default function DailyReportsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
-          {isAr ? "التقارير اليومية" : "Daily Reports"}
+          {t.dr.title}
         </h1>
         <div className="flex items-center gap-3 bg-surface-container-high rounded-xl px-4 py-2.5">
           <Icon name="calendar_month" size={20} className="text-primary" />
@@ -107,7 +127,7 @@ export default function DailyReportsPage() {
             filter === "all" ? "gradient-btn shadow-primary-glow" : "text-on-surface-variant hover:text-on-surface"
           )}
         >
-          {isAr ? "الكل" : "All"} ({employeeReports.length})
+          {t.dr.filterAll} ({employeeReports.length})
         </button>
         <button
           onClick={() => setFilter("submitted")}
@@ -117,7 +137,7 @@ export default function DailyReportsPage() {
           )}
         >
           <Icon name="check_circle" size={16} fill />
-          {isAr ? "مرسل" : "Submitted"} ({submittedCount})
+          {t.dr.filterSubmitted} ({submittedCount})
         </button>
         <button
           onClick={() => setFilter("missing")}
@@ -127,7 +147,7 @@ export default function DailyReportsPage() {
           )}
         >
           <Icon name="cancel" size={16} fill />
-          {isAr ? "لم يُرسل" : "Missing"} ({missingCount})
+          {t.dr.filterMissing} ({missingCount})
         </button>
       </div>
 
@@ -137,7 +157,7 @@ export default function DailyReportsPage() {
           <div className="bg-surface-container-lowest rounded-2xl p-12 text-center" role="status" aria-live="polite">
             <Icon name="progress_activity" size={48} className="text-primary animate-spin mb-3" />
             <p className="text-sm text-on-surface-variant font-medium">
-              {isAr ? "جاري تحميل التقارير..." : "Loading reports..."}
+              {t.dr.loading}
             </p>
           </div>
         )}
@@ -146,7 +166,7 @@ export default function DailyReportsPage() {
           <div className="bg-surface-container-lowest rounded-2xl p-12 text-center">
             <Icon name="description" size={48} className="text-on-surface-variant opacity-40 mb-3" />
             <p className="text-sm text-on-surface-variant font-medium">
-              {isAr ? "لا توجد تقارير لهذا التاريخ" : "No reports for this date"}
+              {t.dr.noReportsDate}
             </p>
           </div>
         )}

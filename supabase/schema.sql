@@ -186,13 +186,22 @@ create table if not exists penalty_rules (
   percentage numeric not null default 0
 );
 
+-- Penalty rules must match src/lib/mock-data.ts penaltyRules.
+-- Source of truth: CLAUDE.md § Penalty Rules (Late Arrival).
 insert into penalty_rules (id, condition_ar, condition_en, deduction_ar, deduction_en, min_late, max_late, percentage) values
-  ('P001', 'تأخر 1-15 دقيقة', 'Late 1-15 min', 'إنذار', 'Warning', 1, 15, 0),
-  ('P002', 'تأخر 16-30 دقيقة', 'Late 16-30 min', '5% من الراتب اليومي', '5% of daily salary', 16, 30, 5),
-  ('P003', 'تأخر 31-60 دقيقة', 'Late 31-60 min', '10% من الراتب اليومي', '10% of daily salary', 31, 60, 10),
-  ('P004', 'تأخر أكثر من 60 دقيقة', 'Late > 60 min', '25% من الراتب اليومي', '25% of daily salary', 61, 9999, 25),
+  ('P001', 'تأخر 1-15 دقيقة', 'Late 1-15 min', 'لا خصم (سماح)', 'No penalty (grace)', 1, 15, 0),
+  ('P002', 'تأخر 16-30 دقيقة', 'Late 16-30 min', 'تحذير فقط', 'Warning only', 16, 30, 0),
+  ('P003', 'تأخر 31-60 دقيقة', 'Late 31-60 min', '5% من الراتب اليومي', '5% of daily salary', 31, 60, 5),
+  ('P004', 'تأخر أكثر من 60 دقيقة', 'Late > 60 min', '10% من الراتب اليومي', '10% of daily salary', 61, 9999, 10),
   ('P005', 'غياب بدون عذر', 'Absent without excuse', 'خصم يوم كامل', 'Full day deduction', -1, -1, 100)
-on conflict (id) do nothing;
+on conflict (id) do update set
+  condition_ar = excluded.condition_ar,
+  condition_en = excluded.condition_en,
+  deduction_ar = excluded.deduction_ar,
+  deduction_en = excluded.deduction_en,
+  min_late = excluded.min_late,
+  max_late = excluded.max_late,
+  percentage = excluded.percentage;
 
 -- App Settings
 create table if not exists app_settings (
@@ -207,6 +216,8 @@ on conflict (key) do nothing;
 
 -- ============================================================
 -- Row Level Security (RLS)
+-- Admin check uses is_super_admin(auth.uid()) RPC from Landing project.
+-- Employee identity: employees.id (TEXT) stores auth.uid() as text.
 -- ============================================================
 
 alter table employees enable row level security;
@@ -214,19 +225,155 @@ alter table attendance enable row level security;
 alter table leave_balances enable row level security;
 alter table leave_requests enable row level security;
 alter table employee_requests enable row level security;
+alter table attendance_adjustments enable row level security;
+alter table salary_advances enable row level security;
+alter table pending_invitations enable row level security;
 alter table notifications enable row level security;
+alter table departments enable row level security;
+alter table holidays enable row level security;
+alter table penalty_rules enable row level security;
+alter table app_settings enable row level security;
 
--- Employees: admins see all, employees see self
-create policy "Admins see all employees" on employees
-  for select using (true);
+-- ── Employees ──
+create policy "admins_all_employees" on employees
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
 
--- Attendance: admins see all, employees see own
-create policy "Employees see own attendance" on attendance
-  for select using (
-    employee_id = auth.jwt()->>'email'
-    or exists (select 1 from employees where id = auth.jwt()->>'sub' and department = 'hr')
-  );
+create policy "employees_see_self" on employees
+  for select using (id = auth.uid()::text);
 
--- Notifications: users see own
-create policy "Users see own notifications" on notifications
-  for select using (user_id = auth.jwt()->>'sub');
+-- ── Attendance ──
+create policy "admins_all_attendance" on attendance
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "employees_own_attendance_select" on attendance
+  for select using (employee_id = auth.uid()::text);
+
+create policy "employees_own_attendance_insert" on attendance
+  for insert with check (employee_id = auth.uid()::text);
+
+create policy "employees_own_attendance_update" on attendance
+  for update using (employee_id = auth.uid()::text)
+  with check (employee_id = auth.uid()::text);
+
+-- ── Leave Balances ──
+create policy "admins_all_leave_balances" on leave_balances
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "employees_see_own_leave_balances" on leave_balances
+  for select using (employee_id = auth.uid()::text);
+
+-- ── Leave Requests ──
+create policy "admins_all_leave_requests" on leave_requests
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "employees_own_leave_requests_select" on leave_requests
+  for select using (employee_id = auth.uid()::text);
+
+create policy "employees_own_leave_requests_insert" on leave_requests
+  for insert with check (employee_id = auth.uid()::text and status = 'pending');
+
+-- ── Employee Requests ──
+create policy "admins_all_employee_requests" on employee_requests
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "employees_own_employee_requests_select" on employee_requests
+  for select using (employee_id = auth.uid()::text);
+
+create policy "employees_own_employee_requests_insert" on employee_requests
+  for insert with check (employee_id = auth.uid()::text and status = 'pending');
+
+-- ── Attendance Adjustments ──
+create policy "admins_all_attendance_adjustments" on attendance_adjustments
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "employees_own_adjustments_select" on attendance_adjustments
+  for select using (employee_id = auth.uid()::text);
+
+create policy "employees_own_adjustments_insert" on attendance_adjustments
+  for insert with check (employee_id = auth.uid()::text and status = 'pending');
+
+-- ── Salary Advances ──
+create policy "admins_all_salary_advances" on salary_advances
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "employees_own_advances_select" on salary_advances
+  for select using (employee_id = auth.uid()::text);
+
+create policy "employees_own_advances_insert" on salary_advances
+  for insert with check (employee_id = auth.uid()::text and status = 'pending');
+
+-- ── Pending Invitations (admin-only) ──
+create policy "admins_manage_invitations" on pending_invitations
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+-- ── Notifications ──
+create policy "users_see_own_notifications" on notifications
+  for select using (user_id = auth.uid()::text);
+
+create policy "users_update_own_notifications" on notifications
+  for update using (user_id = auth.uid()::text)
+  with check (user_id = auth.uid()::text);
+
+create policy "admins_all_notifications" on notifications
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+-- ── Departments, Holidays, Penalty Rules (public read, admin write) ──
+create policy "public_read_departments" on departments
+  for select using (auth.role() = 'authenticated');
+
+create policy "admins_write_departments" on departments
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "public_read_holidays" on holidays
+  for select using (auth.role() = 'authenticated');
+
+create policy "admins_write_holidays" on holidays
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+create policy "public_read_penalty_rules" on penalty_rules
+  for select using (auth.role() = 'authenticated');
+
+create policy "admins_write_penalty_rules" on penalty_rules
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+-- ── App Settings (admin-only write, everyone reads) ──
+create policy "public_read_app_settings" on app_settings
+  for select using (auth.role() = 'authenticated');
+
+create policy "admins_write_app_settings" on app_settings
+  for all using (is_super_admin(auth.uid()))
+  with check (is_super_admin(auth.uid()));
+
+-- ============================================================
+-- Indexes on Foreign Keys + hot-path columns
+-- ============================================================
+
+create index if not exists idx_attendance_employee_date on attendance(employee_id, date desc);
+create index if not exists idx_attendance_date on attendance(date desc);
+create index if not exists idx_leave_balances_employee on leave_balances(employee_id);
+create index if not exists idx_leave_requests_employee on leave_requests(employee_id);
+create index if not exists idx_leave_requests_status on leave_requests(status);
+create index if not exists idx_employee_requests_employee on employee_requests(employee_id);
+create index if not exists idx_employee_requests_status on employee_requests(status);
+create index if not exists idx_attendance_adjustments_employee on attendance_adjustments(employee_id);
+create index if not exists idx_attendance_adjustments_status on attendance_adjustments(status);
+create index if not exists idx_salary_advances_employee on salary_advances(employee_id);
+create index if not exists idx_salary_advances_status on salary_advances(status);
+create index if not exists idx_pending_invitations_email on pending_invitations(lower(email));
+create index if not exists idx_pending_invitations_status on pending_invitations(status);
+create index if not exists idx_notifications_user_created on notifications(user_id, created_at desc);
+create index if not exists idx_notifications_unread on notifications(user_id) where read = false;
+create index if not exists idx_employees_department on employees(department);
+create index if not exists idx_employees_email on employees(lower(email));

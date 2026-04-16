@@ -38,6 +38,16 @@ interface LeaveBalance {
   remaining: number;
 }
 
+// Default leave balances — used when Supabase has no records for this employee/year.
+// Matches the 5 leave types referenced across the app (annual/sick/unpaid/marriage/paternity).
+const DEFAULT_BALANCES: LeaveBalance[] = [
+  { typeKey: "annual", total: 21, used: 0, remaining: 21 },
+  { typeKey: "sick", total: 10, used: 0, remaining: 10 },
+  { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
+  { typeKey: "marriage", total: 5, used: 0, remaining: 5 },
+  { typeKey: "paternity", total: 3, used: 0, remaining: 3 },
+];
+
 interface LeaveReq {
   id: string;
   employeeId: string;
@@ -209,22 +219,22 @@ interface DataContextType extends DataState {
   addNotification: (n: Omit<Notification, "id">) => void;
 
   // Employees
-  updateEmployee: (id: string, updates: Partial<Employee>) => void;
+  updateEmployee: (id: string, updates: Partial<Employee>) => Promise<void>;
 
   // Settings (local)
   updateSettings: (updates: Partial<AppSettings>) => void;
 
   // Departments
-  addDepartment: (key: string, ar: string, en: string) => void;
-  updateDepartment: (key: string, ar: string, en: string) => void;
-  removeDepartment: (key: string) => void;
+  addDepartment: (key: string, ar: string, en: string) => Promise<void>;
+  updateDepartment: (key: string, ar: string, en: string) => Promise<void>;
+  removeDepartment: (key: string) => Promise<void>;
 
   // Profile completion
-  acceptInvitation: (email: string) => void;
+  acceptInvitation: (email: string) => Promise<void>;
   completeProfile: (id: string, data: Partial<Employee>) => Promise<void>;
 
   // Payroll
-  processPayroll: () => void;
+  processPayroll: () => Promise<void>;
 
   // Reset
   resetStore: () => void;
@@ -303,7 +313,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         status: ((r.status as string) || "present") as AttRecord["status"],
       }));
       setState((prev) => ({ ...prev, todayAttendance: mapped }));
-    } catch { /* table may not exist */ }
+    } catch (err) {
+      console.error("[data-store] refreshAttendance failed:", err);
+    }
   }, []);
 
   const refreshLeaveRequests = useCallback(async () => {
@@ -326,7 +338,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         reasonEn: (row.reason_en as string) || (row.reason as string) || "",
       }));
       setState((prev) => ({ ...prev, leaveRequests: mapped }));
-    } catch { /* */ }
+    } catch (err) {
+      console.error("[data-store] refreshLeaveRequests failed:", err);
+    }
   }, []);
 
   const refreshEmployeeRequests = useCallback(async () => {
@@ -346,7 +360,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         detailsEn: (r.details_en as string) || "",
       }));
       setState((prev) => ({ ...prev, employeeRequests: mapped }));
-    } catch { /* */ }
+    } catch (err) {
+      console.error("[data-store] refreshEmployeeRequests failed:", err);
+    }
   }, []);
 
   const refreshSalaryAdvances = useCallback(async () => {
@@ -370,7 +386,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         paidMonths: r.paid_months as number,
       }));
       setState((prev) => ({ ...prev, salaryAdvances: mapped }));
-    } catch { /* */ }
+    } catch (err) {
+      console.error("[data-store] refreshSalaryAdvances failed:", err);
+    }
   }, []);
 
   const refreshAttendanceAdjustments = useCallback(async () => {
@@ -393,7 +411,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         status: r.status as "pending" | "approved" | "rejected",
       }));
       setState((prev) => ({ ...prev, attendanceAdjustments: mapped }));
-    } catch { /* */ }
+    } catch (err) {
+      console.error("[data-store] refreshAttendanceAdjustments failed:", err);
+    }
   }, []);
 
   const refreshInvitations = useCallback(async () => {
@@ -415,15 +435,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         status: r.status as "pending" | "expired",
       }));
       setState((prev) => ({ ...prev, pendingInvitations: mapped }));
-    } catch { /* */ }
+    } catch (err) {
+      console.error("[data-store] refreshInvitations failed:", err);
+    }
   }, []);
-
-  // Default leave balances — used when Supabase has no records for this employee/year
-  const DEFAULT_BALANCES: LeaveBalance[] = [
-    { typeKey: "annual", total: 21, used: 0, remaining: 21 },
-    { typeKey: "sick", total: 10, used: 0, remaining: 10 },
-    { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
-  ];
 
   const refreshLeaveBalances = useCallback(async () => {
     try {
@@ -433,22 +448,38 @@ export function DataProvider({ children }: { children: ReactNode }) {
         .select("*")
         .eq("year", currentYear);
       if (!data || data.length === 0) {
-        // No records in Supabase — use defaults
         setState((prev) => ({ ...prev, leaveBalances: DEFAULT_BALANCES }));
         return;
       }
-      const mapped: LeaveBalance[] = data.map((r: Record<string, unknown>) => ({
-        typeKey: r.type_key as string,
-        total: r.total as number,
-        used: r.used as number,
-        remaining: (r.total as number) - (r.used as number),
-      }));
-      setState((prev) => ({ ...prev, leaveBalances: mapped }));
-    } catch {
-      // Supabase unavailable — use defaults
+      const byType = new Map<string, LeaveBalance>();
+      for (const r of data as Array<Record<string, unknown>>) {
+        const typeKey = r.type_key as string;
+        const total = r.total as number;
+        const used = r.used as number;
+        byType.set(typeKey, { typeKey, total, used, remaining: total - used });
+      }
+      const merged: LeaveBalance[] = DEFAULT_BALANCES.map(
+        (def) => byType.get(def.typeKey) ?? def
+      );
+      setState((prev) => ({ ...prev, leaveBalances: merged }));
+    } catch (err) {
+      console.error("[data-store] refreshLeaveBalances failed:", err);
       setState((prev) => prev.leaveBalances.length === 0 ? { ...prev, leaveBalances: DEFAULT_BALANCES } : prev);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const refreshDepartments = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from("departments").select("*");
+      if (error || !data || data.length === 0) return;
+      const mapped: Record<string, { ar: string; en: string }> = {};
+      for (const row of data as Array<{ id: string; name_ar: string; name_en: string }>) {
+        mapped[row.id] = { ar: row.name_ar, en: row.name_en };
+      }
+      setState((prev) => ({ ...prev, departments: mapped }));
+    } catch (err) {
+      console.error("[data-store] refreshDepartments failed:", err);
+    }
   }, []);
 
   // ── Fetch ALL data from Supabase on hydration ──
@@ -465,11 +496,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
         refreshAttendanceAdjustments(),
         refreshInvitations(),
         refreshLeaveBalances(),
+        refreshDepartments(),
       ]);
       if (!cancelled) setInitialLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, [hydrated, refreshAttendance, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments, refreshInvitations, refreshLeaveBalances]);
+  }, [hydrated, refreshAttendance, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances, refreshAttendanceAdjustments, refreshInvitations, refreshLeaveBalances, refreshDepartments]);
 
   // Sync employees from Supabase
   useEffect(() => {
@@ -580,7 +612,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
             employees: [...retainedEmployees, ...syncedEmployees],
           };
         });
-      } catch { /* */ }
+      } catch (err) {
+        console.error("[data-store] syncEmployees failed:", err);
+      }
     }
     syncEmployees();
   }, [hydrated]);
@@ -589,7 +623,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function handleAccept(e: Event) {
       const email = (e as CustomEvent).detail;
-      if (email) acceptInvitation(email);
+      if (email) {
+        acceptInvitation(email).catch((err) => {
+          console.error("[data-store] acceptInvitation failed:", err);
+        });
+      }
     }
     window.addEventListener("njd-accept-invitation", handleAccept);
     return () => window.removeEventListener("njd-accept-invitation", handleAccept);
@@ -866,13 +904,30 @@ export function DataProvider({ children }: { children: ReactNode }) {
   // ── Employees (local + Supabase sync) ──
 
   const updateEmployee = useCallback(
-    (id: string, updates: Partial<Employee>) => {
+    async (id: string, updates: Partial<Employee>) => {
       setState((p) => ({
         ...p,
         employees: p.employees.map((e) =>
           e.id === id ? { ...e, ...updates } : e
         ),
       }));
+
+      const profilePatch: Record<string, unknown> = {};
+      if (updates.nameAr !== undefined) profilePatch.name_ar = updates.nameAr;
+      if (updates.nameEn !== undefined) profilePatch.name_en = updates.nameEn;
+      if (updates.fullNameAr !== undefined) profilePatch.full_name_ar = updates.fullNameAr;
+      if (updates.fullNameEn !== undefined) profilePatch.full_name_en = updates.fullNameEn;
+      if (updates.phone !== undefined) profilePatch.phone = updates.phone;
+      if (updates.department !== undefined) profilePatch.department = updates.department;
+      if (updates.positionAr !== undefined) profilePatch.job_title_ar = updates.positionAr;
+      if (updates.profileCompleted !== undefined) profilePatch.profile_completed = updates.profileCompleted;
+
+      if (Object.keys(profilePatch).length === 0) return;
+
+      const { error } = await supabase.from("profiles").update(profilePatch).eq("id", id);
+      if (error) {
+        console.error("[data-store] updateEmployee Supabase error:", error.message);
+      }
     },
     []
   );
@@ -886,9 +941,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }));
   }, []);
 
-  const processPayroll = useCallback(() => {
-    setState((p) => {
-      p.employees.forEach((emp) => {
+  const processPayroll = useCallback(async () => {
+    setState((p) => ({ ...p, payrollProcessed: true }));
+
+    const currentEmployees = await new Promise<Employee[]>((resolve) => {
+      setState((p) => {
+        resolve(p.employees);
+        return p;
+      });
+    });
+
+    const results = await Promise.allSettled(
+      currentEmployees.map((emp) =>
         createNotification({
           userId: emp.id,
           type: "payroll",
@@ -897,50 +961,72 @@ export function DataProvider({ children }: { children: ReactNode }) {
           descAr: "تم معالجة رواتب الشهر الحالي بنجاح",
           descEn: "Current month payroll has been processed successfully",
           href: "/payroll",
-        });
-      });
-      return { ...p, payrollProcessed: true };
-    });
+        })
+      )
+    );
+
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed > 0) {
+      console.error(`[data-store] processPayroll: ${failed}/${currentEmployees.length} notifications failed to send`);
+    }
   }, []);
 
   // ── Departments ──
 
-  const addDepartment = useCallback((key: string, ar: string, en: string) => {
+  const addDepartment = useCallback(async (key: string, ar: string, en: string) => {
     setState((p) => ({
       ...p,
       departments: { ...p.departments, [key]: { ar, en } },
     }));
+    const { error } = await supabase
+      .from("departments")
+      .upsert({ id: key, name_ar: ar, name_en: en }, { onConflict: "id" });
+    if (error) {
+      console.error("[data-store] addDepartment Supabase error:", error.message);
+    }
   }, []);
 
-  const updateDepartment = useCallback((key: string, ar: string, en: string) => {
+  const updateDepartment = useCallback(async (key: string, ar: string, en: string) => {
     setState((p) => ({
       ...p,
       departments: { ...p.departments, [key]: { ar, en } },
     }));
+    const { error } = await supabase
+      .from("departments")
+      .update({ name_ar: ar, name_en: en })
+      .eq("id", key);
+    if (error) {
+      console.error("[data-store] updateDepartment Supabase error:", error.message);
+    }
   }, []);
 
-  const removeDepartment = useCallback((key: string) => {
+  const removeDepartment = useCallback(async (key: string) => {
     setState((p) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { [key]: _removed, ...rest } = p.departments;
       return { ...p, departments: rest };
     });
+    const { error } = await supabase.from("departments").delete().eq("id", key);
+    if (error) {
+      console.error("[data-store] removeDepartment Supabase error:", error.message);
+    }
   }, []);
 
   // ── Profile / Invitation Acceptance ──
 
-  const acceptInvitation = useCallback((email: string) => {
+  const acceptInvitation = useCallback(async (email: string) => {
+    const normalizedEmail = email.toLowerCase();
+    let invId: string | null = null;
+
     setState((p) => {
       const inv = p.pendingInvitations.find(
-        (i) => i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
+        (i) => i.email.toLowerCase() === normalizedEmail && i.status === "pending"
       );
       if (!inv) return p;
-
-      // Update invitation status in Supabase even if the employee already exists.
-      supabase.from("pending_invitations").update({ status: "expired" }).eq("id", inv.id);
+      invId = inv.id;
 
       const alreadyExists = p.employees.some(
-        (e) => e.email.toLowerCase() === email.toLowerCase()
+        (e) => e.email.toLowerCase() === normalizedEmail
       );
       if (alreadyExists) {
         return {
@@ -976,6 +1062,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
         ),
       };
     });
+
+    if (!invId) return;
+
+    const { error } = await supabase
+      .from("pending_invitations")
+      .update({ status: "expired" })
+      .eq("id", invId);
+
+    if (error) {
+      console.error("[data-store] acceptInvitation Supabase error:", error.message);
+      setState((p) => ({
+        ...p,
+        pendingInvitations: p.pendingInvitations.map((i) =>
+          i.id === invId ? { ...i, status: "pending" as const } : i
+        ),
+      }));
+      throw new Error(error.message);
+    }
   }, []);
 
   const completeProfile = useCallback(

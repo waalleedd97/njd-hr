@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/components/providers";
 import { GOSI_RATE } from "@/lib/mock-data";
 import { useData } from "@/lib/data-store";
+import { supabase } from "@/lib/supabase";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 
@@ -88,13 +90,50 @@ export default function ReportsPage() {
     },
   ];
 
-  const todayDayIndex = new Date().getDay();
-  const todayRate = employees.length > 0
-    ? Math.round((todayAttendance.filter(r => r.status === "present" || r.status === "late" || r.status === "half-day").length / employees.length) * 100)
-    : 0;
-  const weeklyData = [0, 0, 0, 0, 0].map((_, i) => i === Math.min(todayDayIndex, 4) ? todayRate : 0);
+  const [weeklyData, setWeeklyData] = useState<number[]>([0, 0, 0, 0, 0]);
   const dayKeys: Array<keyof typeof t.days> = ["sun", "mon", "tue", "wed", "thu"];
   const maxBarHeight = 140;
+
+  useEffect(() => {
+    if (employees.length === 0) return;
+    const workforce = employees.length;
+
+    const today = new Date();
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - today.getDay());
+    const toDateStr = (d: Date) => d.toISOString().split("T")[0];
+    const startDate = toDateStr(sunday);
+    const endDateObj = new Date(sunday);
+    endDateObj.setDate(sunday.getDate() + 4);
+    const endDate = toDateStr(endDateObj);
+
+    (async () => {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("date, status")
+        .gte("date", startDate)
+        .lte("date", endDate);
+
+      if (error) {
+        console.error("[reports] weekly attendance fetch failed:", error.message);
+        return;
+      }
+      const countsByDay: Record<string, number> = {};
+      for (const row of (data || []) as Array<{ date: string; status: string }>) {
+        if (row.status === "present" || row.status === "late" || row.status === "half-day") {
+          countsByDay[row.date] = (countsByDay[row.date] || 0) + 1;
+        }
+      }
+      const rates = Array.from({ length: 5 }, (_, i) => {
+        const d = new Date(sunday);
+        d.setDate(sunday.getDate() + i);
+        const key = toDateStr(d);
+        const count = countsByDay[key] || 0;
+        return Math.round((count / workforce) * 100);
+      });
+      setWeeklyData(rates);
+    })();
+  }, [employees.length]);
 
   const deptCounts: { key: string; name: string; count: number }[] = [];
   const deptMap: Record<string, number> = {};
@@ -253,13 +292,20 @@ export default function ReportsPage() {
           <div className="flex items-end justify-around gap-3" style={{ height: maxBarHeight + 40 }}>
             {payrollData.map((value, i) => {
               const barHeight = Math.max(4, (value / maxPayroll) * maxBarHeight);
+              const isCurrent = i === payrollData.length - 1;
+              const hasData = value > 0;
               return (
                 <div key={i} className="flex flex-col items-center gap-2 flex-1">
                   <span className="text-[10px] font-bold text-on-surface tabular-nums whitespace-nowrap">
-                    {value > 0 ? value.toLocaleString("en-US") : "-"}
+                    {hasData ? value.toLocaleString("en-US") : "—"}
                   </span>
                   <div
-                    className="w-full max-w-[48px] bg-gradient-to-t from-primary to-primary-container rounded-t-xl shadow-primary-glow transition-all duration-500"
+                    className={cn(
+                      "w-full max-w-[48px] rounded-t-xl transition-all duration-500",
+                      hasData && isCurrent
+                        ? "bg-gradient-to-t from-primary to-primary-container shadow-primary-glow"
+                        : "bg-surface-container-high opacity-60"
+                    )}
                     style={{ height: barHeight }}
                   />
                   <span className="text-xs text-on-surface-variant font-bold">{monthLabels[i]}</span>
@@ -267,6 +313,11 @@ export default function ReportsPage() {
               );
             })}
           </div>
+          <p className="text-xs text-on-surface-variant/70 mt-3 text-center font-medium">
+            {isAr
+              ? "بيانات الأشهر السابقة غير محفوظة — سيتم بناؤها تلقائياً مع الوقت"
+              : "Prior months' data is not archived — history will build up over time"}
+          </p>
         </div>
       </div>
     </div>
