@@ -233,7 +233,7 @@ export default function AttendancePage() {
     if (!currentUserId) return;
     const record = store.todayAttendance.find((a) => a.employeeId === currentUserId);
     if (record) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setClockedIn(!!record.checkIn && !record.checkOut);
       setClockInTime(record.checkIn ?? null);
       setClockOutTime(record.checkOut ?? null);
@@ -246,29 +246,68 @@ export default function AttendancePage() {
   const [geolocationDenied, setGeolocationDenied] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    let userId: string | null = null;
+
     async function fetchLocationSetting() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.id) {
+        userId = session?.user?.id ?? null;
+        if (userId) {
           const { data } = await supabase
             .from("profiles")
             .select("location_required")
-            .eq("id", session.user.id)
+            .eq("id", userId)
             .single();
-          if (data) {
+          if (!cancelled && data) {
             setLocationRequired(data.location_required ?? true);
           }
         }
-      } catch { /* profiles table may not exist */ }
-      setLocationLoaded(true);
+      } catch (err) {
+        console.error("[attendance] fetchLocationSetting failed:", err);
+      }
+      if (!cancelled) setLocationLoaded(true);
     }
     fetchLocationSetting();
+
+    // Subscribe to profile changes so admin-side toggles propagate live.
+    // CLAUDE.md §7: "location_required must always be fetched fresh".
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id || cancelled) return;
+      channel = supabase
+        .channel(`profile-location-${session.user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "profiles",
+            filter: `id=eq.${session.user.id}`,
+          },
+          (payload) => {
+            const next = (payload.new as Record<string, unknown>)?.location_required;
+            if (typeof next === "boolean" && !cancelled) {
+              setLocationRequired(next);
+            }
+          }
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) {
+        channel.unsubscribe().finally(() => supabase.removeChannel(channel!));
+      }
+    };
   }, []);
 
   useEffect(() => {
     if (!locationLoaded || !locationRequired) return;
     if (!navigator.geolocation) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setGeolocationDenied(true);
       setIsInsideGeofence(false);
       return;
@@ -317,17 +356,36 @@ export default function AttendancePage() {
   const [fileWarning, setFileWarning] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [clockActionPending, setClockActionPending] = useState(false);
+
   const handleClockIn = async () => {
+    if (clockActionPending || clockedIn) return; // guard against double-click + duplicate check-in
     if (tooEarly) return;
     if (locationRequired && !isInsideGeofence) return;
+    setClockActionPending(true);
     const time = getCurrentTime();
-    setClockedIn(true);
-    setClockInTime(time);
-    setClockOutTime(null);
-    await store.clockIn(time);
+    const previousState = { clockedIn, clockInTime, clockOutTime };
+    try {
+      setClockedIn(true);
+      setClockInTime(time);
+      setClockOutTime(null);
+      await store.clockIn(time);
+    } catch (err) {
+      console.error("[attendance] clockIn failed:", err);
+      // Rollback optimistic UI on failure
+      setClockedIn(previousState.clockedIn);
+      setClockInTime(previousState.clockInTime);
+      setClockOutTime(previousState.clockOutTime);
+    } finally {
+      setClockActionPending(false);
+    }
   };
 
   const handleClockOut = () => {
+    // Block check-out if the employee hasn't checked in today.
+    // Prevents phantom "absent + checkout" records and lingering orphan records.
+    if (!clockedIn || !clockInTime) return;
+    if (clockActionPending) return;
     if (locationRequired && navigator.geolocation) {
       setCheckoutLocationLoading(true);
       setCheckoutOutside(false);
@@ -345,7 +403,8 @@ export default function AttendancePage() {
         () => {
           setCheckoutOutside(true);
           setCheckoutLocationLoading(false);
-        }
+        },
+        { timeout: 10000, maximumAge: 0 }
       );
     } else {
       setCheckoutOutside(false);

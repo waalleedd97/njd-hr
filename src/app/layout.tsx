@@ -26,6 +26,8 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "NJD HR",
   description: "NJD Games HR Management System",
+  manifest: "/manifest.json",
+  robots: { index: false, follow: false },
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -134,7 +136,16 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
             __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('[HR] SW registration failed:',e)})})}`,
           }}
         />
-        <Script src="https://njd-services.net/njd-navbar.js" strategy="beforeInteractive" />
+        {/*
+          NJD shared navbar — loaded afterInteractive so it cannot intercept
+          auth tokens or Supabase init. crossOrigin enables CORS integrity
+          checks; add an `integrity` hash here once the navbar is versioned.
+        */}
+        <Script
+          src="https://njd-services.net/njd-navbar.js"
+          strategy="afterInteractive"
+          crossOrigin="anonymous"
+        />
         <Providers>
           <AppShell>{children}</AppShell>
         </Providers>

@@ -85,8 +85,9 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
     }
     load();
 
+    // Scope channel name per-user so re-mounts on user change don't collide.
     const channel = supabase
-      .channel("hr-notifications")
+      .channel(`hr-notifications-${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -121,7 +122,11 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
       });
 
     return () => {
-      supabase.removeChannel(channel);
+      // Explicitly unsubscribe first so Supabase closes the underlying
+      // websocket subscription, then remove the channel reference.
+      channel.unsubscribe().finally(() => {
+        supabase.removeChannel(channel);
+      });
     };
   }, [user.id, isAr]);
 

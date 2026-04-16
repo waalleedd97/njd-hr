@@ -58,6 +58,24 @@ const typeConfig: Record<string, { iconName: string; bg: string; bar: string; ic
     bar: "from-cyan-400 to-cyan-600",
     icon: "text-cyan-600 dark:text-cyan-400",
   },
+  maternity: {
+    iconName: "pregnant_woman",
+    bg: "bg-fuchsia-500/15",
+    bar: "from-fuchsia-400 to-fuchsia-600",
+    icon: "text-fuchsia-600 dark:text-fuchsia-400",
+  },
+  bereavement: {
+    iconName: "sentiment_very_dissatisfied",
+    bg: "bg-slate-500/15",
+    bar: "from-slate-400 to-slate-600",
+    icon: "text-slate-600 dark:text-slate-400",
+  },
+  hajj: {
+    iconName: "mosque",
+    bg: "bg-emerald-500/15",
+    bar: "from-emerald-400 to-emerald-600",
+    icon: "text-emerald-600 dark:text-emerald-400",
+  },
 };
 
 const statusBadgeVariant: Record<string, "warning" | "success" | "destructive" | "info"> = {

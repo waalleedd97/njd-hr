@@ -68,7 +68,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (!dialogOpen || !selectedEmployee) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setEmpLocationRequired(true);
     const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
     if (!supabaseId) return;
@@ -82,13 +82,28 @@ export default function EmployeesPage() {
       });
   }, [dialogOpen, selectedEmployee, userIdMap]);
 
+  const [locationToggleSaving, setLocationToggleSaving] = useState(false);
+
   const handleLocationToggle = async () => {
-    if (!selectedEmployee) return;
+    if (!selectedEmployee || locationToggleSaving) return;
     const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
     if (!supabaseId) return;
-    const newValue = !empLocationRequired;
-    setEmpLocationRequired(newValue);
-    await supabase.from("profiles").update({ location_required: newValue }).eq("id", supabaseId);
+    const prevValue = empLocationRequired;
+    const newValue = !prevValue;
+    setLocationToggleSaving(true);
+    setEmpLocationRequired(newValue); // optimistic
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ location_required: newValue })
+        .eq("id", supabaseId);
+      if (error) throw error;
+    } catch (err) {
+      console.error("[employees] location_required toggle failed:", err);
+      setEmpLocationRequired(prevValue); // rollback
+    } finally {
+      setLocationToggleSaving(false);
+    }
   };
 
   const employees = store.employees;

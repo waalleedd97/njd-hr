@@ -3,9 +3,9 @@
 import { useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { type Session } from "@supabase/supabase-js";
+import { AUTH_TIMEOUT_MS } from "@/lib/constants";
 
 const REDIRECT_URL = "https://njd-services.net";
-const AUTH_TIMEOUT_MS = 3000;
 
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));

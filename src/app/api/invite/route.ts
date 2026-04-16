@@ -3,8 +3,46 @@ import { Resend } from "resend";
 
 export const dynamic = "force-dynamic";
 
+/** Escape user-supplied text before interpolating into HTML email template. */
+function escapeHtml(input: unknown): string {
+  const s = String(input ?? "");
+  return s.replace(/[&<>"'`/]/g, (c) => {
+    switch (c) {
+      case "&": return "&amp;";
+      case "<": return "&lt;";
+      case ">": return "&gt;";
+      case "\"": return "&quot;";
+      case "'": return "&#x27;";
+      case "`": return "&#x60;";
+      case "/": return "&#x2F;";
+      default: return c;
+    }
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
+    // CSRF guard: only accept POSTs whose Origin/Referer match the host we serve.
+    // This blocks browser-originated cross-site requests that ride along session cookies.
+    const origin = req.headers.get("origin");
+    const referer = req.headers.get("referer");
+    const host = req.headers.get("host");
+    if (origin || referer) {
+      const expectedHost = host ? host.toLowerCase() : "";
+      const isSameOrigin = (url: string | null) => {
+        if (!url) return false;
+        try {
+          const u = new URL(url);
+          return u.host.toLowerCase() === expectedHost;
+        } catch {
+          return false;
+        }
+      };
+      if (!isSameOrigin(origin) && !isSameOrigin(referer)) {
+        return NextResponse.json({ error: "Forbidden: cross-origin request" }, { status: 403 });
+      }
+    }
+
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "RESEND_API_KEY not configured" }, { status: 503 });
@@ -45,6 +83,14 @@ export async function POST(req: NextRequest) {
 
     const loginUrl = process.env.NEXT_PUBLIC_APP_URL || "https://njd-hr.vercel.app";
 
+    // Sanitize every user-supplied field before embedding in HTML.
+    const safeNameAr = escapeHtml(nameAr);
+    const safeNameEn = escapeHtml(nameEn);
+    const safePositionAr = escapeHtml(positionAr);
+    const safePositionEn = escapeHtml(positionEn);
+    const safeDepartment = escapeHtml(department);
+    const safeEmail = escapeHtml(email);
+
     const html = `
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -60,7 +106,7 @@ export async function POST(req: NextRequest) {
 
     <!-- Body -->
     <div style="padding:32px 24px;">
-      <h2 style="color:#1a1a2e;font-size:20px;margin:0 0 8px;">مرحباً ${nameAr} 👋</h2>
+      <h2 style="color:#1a1a2e;font-size:20px;margin:0 0 8px;">مرحباً ${safeNameAr} 👋</h2>
       <p style="color:#64748b;font-size:15px;line-height:1.7;margin:0 0 24px;">
         يسعدنا دعوتك للانضمام إلى فريق <strong style="color:#7C3AED;">نجد قيمز</strong>!
         تم تسجيلك في نظام الموارد البشرية بالمعلومات التالية:
@@ -71,23 +117,23 @@ export async function POST(req: NextRequest) {
         <table style="width:100%;border-collapse:collapse;">
           <tr>
             <td style="padding:6px 0;color:#64748b;font-size:13px;">الاسم</td>
-            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${nameAr}</td>
+            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${safeNameAr}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;color:#64748b;font-size:13px;">Name</td>
-            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${nameEn}</td>
+            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${safeNameEn}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;color:#64748b;font-size:13px;">المسمى الوظيفي</td>
-            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${positionAr || positionEn}</td>
+            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${safePositionAr || safePositionEn}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;color:#64748b;font-size:13px;">القسم</td>
-            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${department}</td>
+            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;">${safeDepartment}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;color:#64748b;font-size:13px;">البريد الإلكتروني</td>
-            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;" dir="ltr">${email}</td>
+            <td style="padding:6px 0;color:#1a1a2e;font-size:14px;font-weight:600;text-align:left;" dir="ltr">${safeEmail}</td>
           </tr>
         </table>
       </div>
@@ -106,7 +152,7 @@ export async function POST(req: NextRequest) {
       </div>
 
       <p style="color:#94a3b8;font-size:13px;line-height:1.7;margin:24px 0 0;padding-top:16px;border-top:1px solid #e9e2f5;">
-        استخدم بريدك الإلكتروني (<strong dir="ltr">${email}</strong>) لتسجيل الدخول عبر الرابط أعلاه.
+        استخدم بريدك الإلكتروني (<strong dir="ltr">${safeEmail}</strong>) لتسجيل الدخول عبر الرابط أعلاه.
         بعد الدخول، سيتم توجيهك لإكمال بياناتك الشخصية.
       </p>
     </div>
@@ -125,7 +171,9 @@ export async function POST(req: NextRequest) {
     const { data, error } = await resend.emails.send({
       from: process.env.RESEND_FROM_EMAIL || "NJD Games HR <onboarding@resend.dev>",
       to: [email],
-      subject: `دعوة للانضمام إلى نجد قيمز — ${nameAr}`,
+      // Subject is a text header (not HTML) but strip control characters to
+      // prevent header injection via malicious nameAr (CRLF injection).
+      subject: `دعوة للانضمام إلى نجد قيمز — ${String(nameAr).replace(/[\r\n]/g, " ")}`,
       html,
     });
 
