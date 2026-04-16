@@ -686,6 +686,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const submitLeaveRequest = useCallback(async (req: Omit<LeaveReq, "id">) => {
     const userId = await getSessionUserId();
 
+    // Overlap guard: block submission if another pending/approved leave already
+    // covers any day in the requested range. Prevents double-dipping balances.
+    const existing = stateRef.current.leaveRequests.filter(
+      (r) =>
+        r.employeeId === userId &&
+        r.status !== "rejected" &&
+        !(req.endDate < r.startDate || req.startDate > r.endDate)
+    );
+    if (existing.length > 0) {
+      const err = new Error(
+        "OVERLAP:" + existing.map((r) => `${r.startDate}→${r.endDate}`).join(", ")
+      );
+      throw err;
+    }
+
     // Try with 'type' column first (migration 004 schema), fall back to 'type_key' (old schema)
     let { error } = await supabase.from("leave_requests").insert({
       employee_id: userId,

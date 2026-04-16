@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { reportError } from "@/lib/observability";
 
 export default function Error({
   error,
@@ -11,6 +12,7 @@ export default function Error({
 }) {
   useEffect(() => {
     console.error("[HR] Route error:", error);
+    reportError(error, { scope: "route", digest: error.digest });
   }, [error]);
 
   return (

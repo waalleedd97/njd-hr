@@ -12,7 +12,8 @@ import {
   earlyDepartureRules,
   saudiHolidays,
 } from "@/lib/mock-data";
-import { getKSADateString, getKSADayOfWeek } from "@/lib/utils";
+import { getKSADateString, getKSADayOfWeek, getKSANow } from "@/lib/utils";
+import { lateReferenceMinutes } from "@/lib/saudi-labor-law";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -74,7 +75,8 @@ export default function PayrollPage() {
         if (attendance.status === "late" && attendance.checkIn) {
           const [h, m] = attendance.checkIn.split(":").map(Number);
           const checkInMinutes = h * 60 + m;
-          const minutesLate = checkInMinutes - 600;
+          // In Ramadan the workday starts later (8 AM), rest of the year 10 AM
+          const minutesLate = checkInMinutes - lateReferenceMinutes(getKSANow());
           if (minutesLate > 0) {
             const percentage = calcPenalty(minutesLate);
             penalty = Math.round(calcDailySalary(emp) * percentage / 100);

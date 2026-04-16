@@ -220,7 +220,17 @@ export default function LeavesPage() {
       });
     } catch (error) {
       console.error("[HR] leave request submission failed:", error);
-      setSubmitError(isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again.");
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.startsWith("OVERLAP:")) {
+        const ranges = msg.replace("OVERLAP:", "");
+        setSubmitError(
+          isAr
+            ? `يوجد طلب إجازة قائم يتداخل مع هذه الفترة: ${ranges}`
+            : `You already have a leave request covering part of this range: ${ranges}`
+        );
+      } else {
+        setSubmitError(isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again.");
+      }
       return;
     }
 

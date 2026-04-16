@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { reportError } from "@/lib/observability";
 
 export default function GlobalError({
   error,
@@ -11,6 +12,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("[HR] Global error (root layout crashed):", error);
+    reportError(error, { scope: "global", digest: error.digest });
   }, [error]);
 
   return (
