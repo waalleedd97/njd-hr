@@ -109,7 +109,7 @@ function getHolidayForDate(date: Date) {
 
 type TabKey = "balance" | "requests" | "calendar";
 
-export function LeavesView({ initialSlice }: { initialSlice: LeavesSlice }) {
+export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesSlice; initialTab?: string }) {
   useDataHydration(initialSlice);
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
@@ -140,7 +140,9 @@ export function LeavesView({ initialSlice }: { initialSlice: LeavesSlice }) {
     ? allLeaveRequests
     : allLeaveRequests.filter((lr) => lr.employeeId === user.id || lr.employeeId === user.email);
 
-  const [activeTab, setActiveTab] = useState<TabKey>("balance");
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    initialTab === "requests" || initialTab === "calendar" ? initialTab : "balance"
+  );
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const [submitError, setSubmitError] = useState("");

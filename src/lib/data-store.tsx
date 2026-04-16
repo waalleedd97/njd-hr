@@ -771,7 +771,7 @@ export function DataProvider({
       titleEn: "New Leave Request",
       descAr: "طلب إجازة جديد بانتظار الموافقة",
       descEn: "New leave request pending approval",
-      href: "/leaves",
+      href: "/leaves?tab=requests",
     });
   }, []);
 
