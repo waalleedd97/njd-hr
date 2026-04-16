@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { supabase } from "@/lib/supabase";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, getKSADateString } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Icon } from "@/components/ui/icon";
@@ -27,7 +27,7 @@ export default function DailyReportsPage() {
   const store = useData();
   const isAr = lang === "ar";
 
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(getKSADateString());
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "submitted" | "missing">("all");

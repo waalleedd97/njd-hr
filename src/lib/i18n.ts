@@ -124,6 +124,7 @@ export const translations = {
     att: {
       title: "الحضور والانصراف",
       today: "حضور اليوم",
+      ksaTimeLabel: "بتوقيت الرياض",
       checkIn: "وقت الحضور",
       checkOut: "وقت الانصراف",
       duration: "المدة",
@@ -541,6 +542,7 @@ export const translations = {
     att: {
       title: "Attendance & Check-in",
       today: "Today's Attendance",
+      ksaTimeLabel: "Riyadh time",
       checkIn: "Check In",
       checkOut: "Check Out",
       duration: "Duration",

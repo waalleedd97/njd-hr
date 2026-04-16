@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSANow, getKSADateString } from "@/lib/utils";
 
 const statusBadgeVariant: Record<string, "success" | "warning" | "destructive"> = {
   active: "success",
@@ -107,7 +107,7 @@ export default function EmployeesPage() {
   const activeCount = employees.filter((e) => e.status === "active").length;
   const onLeaveCount = employees.filter((e) => e.status === "on-leave").length;
   const newThisMonth = (() => {
-    const now = new Date();
+    const now = getKSANow();
     const year = now.getFullYear();
     const month = now.getMonth();
     return employees.filter((e) => {
@@ -156,7 +156,7 @@ export default function EmployeesPage() {
       department: inviteDept || "hr",
       positionAr: invitePosition || "",
       positionEn: invitePosition || "",
-      sentDate: new Date().toISOString().split("T")[0],
+      sentDate: getKSADateString(),
       status: "pending" as const,
     };
 

@@ -19,6 +19,7 @@ import {
 } from "./mock-data";
 import { createNotification, notifyAdmins } from "./notifications";
 import { supabase } from "./supabase";
+import { getKSADateString, getKSAYear } from "./utils";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -295,7 +296,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshAttendance = useCallback(async () => {
     try {
-      const today = new Date().toISOString().split("T")[0];
+      const today = getKSADateString();
       const { data } = await supabase
         .from("attendance")
         .select("*")
@@ -442,7 +443,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const refreshLeaveBalances = useCallback(async () => {
     try {
-      const currentYear = new Date().getFullYear();
+      const currentYear = getKSAYear();
       const { data } = await supabase
         .from("leave_balances")
         .select("*")
@@ -533,7 +534,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         if (!users) return;
 
         setState((prev) => {
-          const today = new Date().toISOString().split("T")[0];
+          const today = getKSADateString();
           const incomingEmails = new Set(
             users
               .map((u) => (u.email || "").toLowerCase())
@@ -638,7 +639,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const clockIn = useCallback(async (time: string) => {
     const userId = await getSessionUserId();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
 
     await supabase.from("attendance").upsert({
       employee_id: userId,
@@ -653,7 +654,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   const clockOut = useCallback(async (time: string) => {
     const userId = await getSessionUserId();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
 
     await supabase.from("attendance")
       .update({ check_out: time })
@@ -755,7 +756,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     const { error } = await supabase.from("employee_requests").insert({
       employee_id: userId,
       type_key: req.typeKey,
-      date: req.date || new Date().toISOString().split("T")[0],
+      date: req.date || getKSADateString(),
       status: "pending",
       details_ar: req.detailsAr,
       details_en: req.detailsEn,
@@ -775,7 +776,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       amount: adv.amount,
       reason_ar: adv.reasonAr,
       reason_en: adv.reasonEn,
-      request_date: adv.requestDate || new Date().toISOString().split("T")[0],
+      request_date: adv.requestDate || getKSADateString(),
       status: "pending",
       repayment_months: adv.repaymentMonths,
       monthly_deduction: adv.monthlyDeduction,
@@ -859,7 +860,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       department: inv.department,
       position_ar: inv.positionAr,
       position_en: inv.positionEn,
-      sent_date: inv.sentDate || new Date().toISOString().split("T")[0],
+      sent_date: inv.sentDate || getKSADateString(),
       status: "pending",
       invited_by: userId,
     });
@@ -870,7 +871,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const resendInvitation = useCallback(async (id: string) => {
     await supabase.from("pending_invitations").update({
       status: "pending",
-      sent_date: new Date().toISOString().split("T")[0],
+      sent_date: getKSADateString(),
     }).eq("id", id);
 
     await refreshInvitations();
@@ -1047,7 +1048,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         email: inv.email,
         phone: "",
         status: "active",
-        joinDate: new Date().toISOString().split("T")[0],
+        joinDate: getKSADateString(),
         salary: { basic: 0, housing: 0, transport: 0, other: 0 },
         initials: inv.nameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
         color: colors[Math.floor(Math.random() * colors.length)],

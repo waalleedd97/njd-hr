@@ -6,7 +6,7 @@ import { GOSI_RATE } from "@/lib/mock-data";
 import { useData } from "@/lib/data-store";
 import { supabase } from "@/lib/supabase";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSANow } from "@/lib/utils";
 
 const deptBarColors = [
   "from-blue-400 to-blue-600",
@@ -40,7 +40,7 @@ export default function ReportsPage() {
   const headcount = employees.length;
 
   const avgTenure = (() => {
-    const now = new Date();
+    const now = getKSANow();
     const totalYears = employees.reduce((sum, emp) => {
       const joined = new Date(emp.joinDate);
       const diff = (now.getTime() - joined.getTime()) / (1000 * 60 * 60 * 24 * 365.25);
@@ -98,10 +98,15 @@ export default function ReportsPage() {
     if (employees.length === 0) return;
     const workforce = employees.length;
 
-    const today = new Date();
+    const today = getKSANow();
     const sunday = new Date(today);
     sunday.setDate(today.getDate() - today.getDay());
-    const toDateStr = (d: Date) => d.toISOString().split("T")[0];
+    const toDateStr = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
     const startDate = toDateStr(sunday);
     const endDateObj = new Date(sunday);
     endDateObj.setDate(sunday.getDate() + 4);
@@ -156,7 +161,7 @@ export default function ReportsPage() {
     return sum + gross - gosi;
   }, 0);
   const payrollData = [0, 0, 0, 0, 0, currentMonthlyPayroll];
-  const now = new Date();
+  const now = getKSANow();
   const monthLabels = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - 5 + i, 1);
     return d.toLocaleDateString(isAr ? "ar-SA-u-nu-latn" : "en-US", { month: "short" });

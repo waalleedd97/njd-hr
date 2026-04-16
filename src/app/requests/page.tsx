@@ -17,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSADateString } from "@/lib/utils";
 
 const typeConfig: Record<string, { iconName: string; bg: string; icon: string }> = {
   leaveRequest: { iconName: "event_busy", bg: "bg-blue-500/15", icon: "text-blue-600 dark:text-blue-400" },
@@ -178,7 +178,7 @@ export default function RequestsPage() {
     if (submitting) return;
     setSubmitError("");
     setSubmitting(true);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     try {
       if (newReqType === "attendanceAdjust") {
         await store.submitAdjustment({

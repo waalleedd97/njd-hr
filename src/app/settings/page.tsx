@@ -20,7 +20,7 @@ import {
 } from "@/lib/mock-data";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, getKSANow } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -238,7 +238,7 @@ export default function SettingsPage() {
         : "text-red-600 dark:text-red-400";
 
   // Holiday calculations
-  const now = new Date();
+  const now = getKSANow();
   const totalHolidayDays = saudiHolidays.reduce((sum, h) => sum + h.days, 0);
 
   const holidayColors = [

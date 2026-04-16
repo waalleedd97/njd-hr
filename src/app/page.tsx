@@ -7,12 +7,12 @@ import { useData } from "@/lib/data-store";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Icon } from "@/components/ui/icon";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, getKSANow } from "@/lib/utils";
 import { useAuth } from "@/components/providers";
 
 /** Next payroll: 27th of each month, adjusted for Saudi weekend (Fri/Sat). */
 function getNextPayrollDate(): Date {
-  const now = new Date();
+  const now = getKSANow();
   let year = now.getFullYear();
   let month = now.getMonth();
   if (now.getDate() > 27) {
@@ -58,13 +58,13 @@ export default function DashboardPage() {
   const router = useRouter();
   const isAr = lang === "ar";
 
-  const hour = new Date().getHours();
+  const hour = getKSANow().getHours();
   const greeting =
     hour < 12 ? t.greeting.morning
       : hour < 18 ? t.greeting.afternoon
         : t.greeting.evening;
 
-  const today = formatDate(new Date(), lang, {
+  const today = formatDate(getKSANow(), lang, {
     weekday: "long",
     year: "numeric",
     month: "long",
@@ -93,7 +93,7 @@ export default function DashboardPage() {
       if (myAttendance.checkOut) {
         [endH, endM] = myAttendance.checkOut.split(":").map(Number);
       } else {
-        const now = new Date();
+        const now = getKSANow();
         endH = now.getHours();
         endM = now.getMinutes();
       }

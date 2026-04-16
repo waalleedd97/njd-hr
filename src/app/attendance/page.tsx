@@ -21,18 +21,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSAHour, getKSATimeString, getKSADateString } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function getKSATime(): Date {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-}
-
 function isBeforeCheckinTime(): boolean {
-  const ksa = getKSATime();
-  return ksa.getHours() < 6;
+  return getKSAHour() < 6;
 }
 
 // ─── 12-hour Time Picker ──────────────────────────────────────────────
@@ -304,10 +299,7 @@ export default function AttendancePage() {
   const [adjRequestedOut, setAdjRequestedOut] = useState("");
   const [adjReason, setAdjReason] = useState("");
 
-  const getCurrentTime = () => {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  };
+  const getCurrentTime = () => getKSATimeString();
 
   const [tooEarly, setTooEarly] = useState(isBeforeCheckinTime());
   useEffect(() => {
@@ -366,7 +358,7 @@ export default function AttendancePage() {
     setReportUploading(true);
 
     const time = getCurrentTime();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     const attachments: { name: string; url: string; type: string }[] = [];
 
     if (currentUserId && reportFiles.length > 0) {
@@ -492,7 +484,13 @@ export default function AttendancePage() {
         <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
           {t.att.title}
         </h1>
-        <p className="text-sm text-on-surface-variant mt-2">{t.att.today}</p>
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <p className="text-sm text-on-surface-variant">{t.att.today}</p>
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary-container/40 px-2 py-0.5 rounded-full">
+            <Icon name="public" size={12} />
+            {t.att.ksaTimeLabel}
+          </span>
+        </div>
       </div>
 
       {/* ── Clock In/Out Panel ─────────────────────────── */}

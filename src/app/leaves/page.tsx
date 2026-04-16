@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { saudiHolidays, type Employee } from "@/lib/mock-data";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getKSANow } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -147,7 +147,7 @@ export default function LeavesPage() {
   const [formReason, setFormReason] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  const weekDays = useMemo(() => getWeekDays(new Date()), []);
+  const weekDays = useMemo(() => getWeekDays(getKSANow()), []);
   const totalHolidayDays = useMemo(() => saudiHolidays.reduce((sum, h) => sum + h.days, 0), []);
 
   const tabs: { key: TabKey; label: string }[] = isAdmin
@@ -452,7 +452,7 @@ export default function LeavesPage() {
 
           <div className="grid grid-cols-7 gap-2">
             {weekDays.map((wd, i) => {
-              const isToday = isSameDay(wd, new Date());
+              const isToday = isSameDay(wd, getKSANow());
               return (
                 <div key={i} className="text-center">
                   <p className="text-xs font-bold uppercase text-on-surface-variant mb-1.5">{t.days[dayKeys[i]]}</p>
@@ -477,7 +477,7 @@ export default function LeavesPage() {
                   key={`ppl-${i}`}
                   className={cn(
                     "min-h-[90px] rounded-2xl p-2 space-y-1",
-                    isSameDay(wd, new Date()) ? "bg-primary-container/20" :
+                    isSameDay(wd, getKSANow()) ? "bg-primary-container/20" :
                     holiday ? "bg-amber-500/10" : "bg-surface-container-low"
                   )}
                 >
