@@ -10,7 +10,10 @@ import {
   calcDailySalary,
   penaltyRules,
   earlyDepartureRules,
+  saudiHolidays,
 } from "@/lib/mock-data";
+import { getKSADateString, getKSADayOfWeek, getKSANow } from "@/lib/utils";
+import { lateReferenceMinutes } from "@/lib/saudi-labor-law";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,12 +57,26 @@ export default function PayrollPage() {
       const gosi = Math.round(basic * GOSI_RATE * 100) / 100;
 
       let penalty = 0;
+
+      // Remote employees (locationRequired = false) are exempt from all penalties.
+      // CLAUDE.md § "Penalty Rules — Remote employees... are exempt from all penalties"
+      const isRemote = emp.locationRequired === false;
+
+      // Skip penalties on weekends (Fri/Sat in KSA) and on public holidays.
+      const todayStr = getKSADateString();
+      const ksaDayOfWeek = getKSADayOfWeek(); // 0=Sun, 5=Fri, 6=Sat
+      const isWeekend = ksaDayOfWeek === 5 || ksaDayOfWeek === 6;
+      const isHoliday = saudiHolidays.some(
+        (h) => todayStr >= h.startDate && todayStr <= h.endDate
+      );
+
       const attendance = todayAttendance.find((a) => a.employeeId === emp.id);
-      if (attendance) {
+      if (attendance && !isRemote && !isWeekend && !isHoliday) {
         if (attendance.status === "late" && attendance.checkIn) {
           const [h, m] = attendance.checkIn.split(":").map(Number);
           const checkInMinutes = h * 60 + m;
-          const minutesLate = checkInMinutes - 600;
+          // In Ramadan the workday starts later (8 AM), rest of the year 10 AM
+          const minutesLate = checkInMinutes - lateReferenceMinutes(getKSANow());
           if (minutesLate > 0) {
             const percentage = calcPenalty(minutesLate);
             penalty = Math.round(calcDailySalary(emp) * percentage / 100);
@@ -69,11 +86,10 @@ export default function PayrollPage() {
         }
       }
 
-      let advanceDeduction = 0;
-      const advance = salaryAdvances.find((a) => a.employeeId === emp.id && a.status === "approved");
-      if (advance && advance.remainingBalance > 0) {
-        advanceDeduction = advance.monthlyDeduction;
-      }
+      // Sum ALL active approved advances (employee may have multiple overlapping)
+      const advanceDeduction = salaryAdvances
+        .filter((a) => a.employeeId === emp.id && a.status === "approved" && a.remainingBalance > 0)
+        .reduce((sum, a) => sum + a.monthlyDeduction, 0);
 
       const net = gross - gosi - penalty - advanceDeduction;
       return { employee: emp, basic, housing, transport, other, gross, gosi, penalty, advanceDeduction, net };
@@ -138,7 +154,7 @@ export default function PayrollPage() {
             className={payrollProcessed ? "!bg-emerald-600 !bg-none" : ""}
           >
             {payrollProcessed ? <Icon name="check_circle" size={20} fill /> : <Icon name="payments" size={20} />}
-            {payrollProcessed ? (isAr ? "✓ تمت المعالجة" : "✓ Processed") : t.pay.runPayroll}
+            {payrollProcessed ? t.pay2.processed : t.pay.runPayroll}
           </Button>
         )}
       </div>

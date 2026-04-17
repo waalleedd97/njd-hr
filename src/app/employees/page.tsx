@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSANow, getKSADateString } from "@/lib/utils";
 
 const statusBadgeVariant: Record<string, "success" | "warning" | "destructive"> = {
   active: "success",
@@ -68,7 +68,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     if (!dialogOpen || !selectedEmployee) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+     
     setEmpLocationRequired(true);
     const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
     if (!supabaseId) return;
@@ -82,13 +82,28 @@ export default function EmployeesPage() {
       });
   }, [dialogOpen, selectedEmployee, userIdMap]);
 
+  const [locationToggleSaving, setLocationToggleSaving] = useState(false);
+
   const handleLocationToggle = async () => {
-    if (!selectedEmployee) return;
+    if (!selectedEmployee || locationToggleSaving) return;
     const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
     if (!supabaseId) return;
-    const newValue = !empLocationRequired;
-    setEmpLocationRequired(newValue);
-    await supabase.from("profiles").update({ location_required: newValue }).eq("id", supabaseId);
+    const prevValue = empLocationRequired;
+    const newValue = !prevValue;
+    setLocationToggleSaving(true);
+    setEmpLocationRequired(newValue); // optimistic
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ location_required: newValue })
+        .eq("id", supabaseId);
+      if (error) throw error;
+    } catch (err) {
+      console.error("[employees] location_required toggle failed:", err);
+      setEmpLocationRequired(prevValue); // rollback
+    } finally {
+      setLocationToggleSaving(false);
+    }
   };
 
   const employees = store.employees;
@@ -107,7 +122,7 @@ export default function EmployeesPage() {
   const activeCount = employees.filter((e) => e.status === "active").length;
   const onLeaveCount = employees.filter((e) => e.status === "on-leave").length;
   const newThisMonth = (() => {
-    const now = new Date();
+    const now = getKSANow();
     const year = now.getFullYear();
     const month = now.getMonth();
     return employees.filter((e) => {
@@ -156,7 +171,7 @@ export default function EmployeesPage() {
       department: inviteDept || "hr",
       positionAr: invitePosition || "",
       positionEn: invitePosition || "",
-      sentDate: new Date().toISOString().split("T")[0],
+      sentDate: getKSADateString(),
       status: "pending" as const,
     };
 

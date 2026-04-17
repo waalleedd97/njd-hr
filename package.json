@@ -6,7 +6,12 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run lint",
+    "audit:prod": "npm audit --omit=dev --audit-level=moderate",
+    "vapid:gen": "npx -y web-push generate-vapid-keys",
+    "db:migrations": "ls -1 supabase/migrations"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",

@@ -10,6 +10,33 @@ import { Button } from "@/components/ui/button";
 
 type DocKey = "nationalIdDoc" | "cv" | "qualification" | "passport";
 
+const NATIONALITIES = [
+  { code: "SA", ar: "سعودي", en: "Saudi" },
+  { code: "AE", ar: "إماراتي", en: "Emirati" },
+  { code: "KW", ar: "كويتي", en: "Kuwaiti" },
+  { code: "BH", ar: "بحريني", en: "Bahraini" },
+  { code: "QA", ar: "قطري", en: "Qatari" },
+  { code: "OM", ar: "عماني", en: "Omani" },
+  { code: "IQ", ar: "عراقي", en: "Iraqi" },
+  { code: "JO", ar: "أردني", en: "Jordanian" },
+  { code: "LB", ar: "لبناني", en: "Lebanese" },
+  { code: "SY", ar: "سوري", en: "Syrian" },
+  { code: "PS", ar: "فلسطيني", en: "Palestinian" },
+  { code: "EG", ar: "مصري", en: "Egyptian" },
+  { code: "SD", ar: "سوداني", en: "Sudanese" },
+  { code: "LY", ar: "ليبي", en: "Libyan" },
+  { code: "TN", ar: "تونسي", en: "Tunisian" },
+  { code: "DZ", ar: "جزائري", en: "Algerian" },
+  { code: "MA", ar: "مغربي", en: "Moroccan" },
+  { code: "MR", ar: "موريتاني", en: "Mauritanian" },
+  { code: "YE", ar: "يمني", en: "Yemeni" },
+  { code: "SO", ar: "صومالي", en: "Somali" },
+  { code: "DJ", ar: "جيبوتي", en: "Djiboutian" },
+  { code: "KM", ar: "قمري", en: "Comorian" },
+] as const;
+
+const DEFAULT_NATIONALITY = "SA";
+
 export default function CompleteProfilePage() {
   const { t, lang } = useLanguage();
   const { user } = useAuth();
@@ -28,7 +55,7 @@ export default function CompleteProfilePage() {
   const [bankName, setBankName] = useState("");
   const [iban, setIban] = useState("");
   const [salary, setSalary] = useState("");
-  const [nationality, setNationality] = useState("سعودي");
+  const [nationality, setNationality] = useState(DEFAULT_NATIONALITY);
   const [documents, setDocuments] = useState<Record<string, UploadedDocument | undefined>>({});
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,7 +91,7 @@ export default function CompleteProfilePage() {
     { key: "nationalIdDoc", label: t.profile.nationalIdDoc, required: true },
     { key: "cv", label: t.profile.cv, required: true },
     { key: "qualification", label: t.profile.qualification, required: true },
-    { key: "passport", label: t.profile.passport, required: nationality !== "سعودي" },
+    { key: "passport", label: t.profile.passport, required: nationality !== DEFAULT_NATIONALITY },
   ];
 
   const requiredFilled =
@@ -165,30 +192,9 @@ export default function CompleteProfilePage() {
             <label className="text-sm font-bold block mb-1.5">{t.profile.nationality}</label>
             <select value={nationality} onChange={(e) => setNationality(e.target.value)} className={inputClass}>
               <option value="">--</option>
-              {[
-                { v: "سعودي", ar: "سعودي", en: "Saudi" },
-                { v: "إماراتي", ar: "إماراتي", en: "Emirati" },
-                { v: "كويتي", ar: "كويتي", en: "Kuwaiti" },
-                { v: "بحريني", ar: "بحريني", en: "Bahraini" },
-                { v: "قطري", ar: "قطري", en: "Qatari" },
-                { v: "عماني", ar: "عماني", en: "Omani" },
-                { v: "عراقي", ar: "عراقي", en: "Iraqi" },
-                { v: "أردني", ar: "أردني", en: "Jordanian" },
-                { v: "لبناني", ar: "لبناني", en: "Lebanese" },
-                { v: "سوري", ar: "سوري", en: "Syrian" },
-                { v: "فلسطيني", ar: "فلسطيني", en: "Palestinian" },
-                { v: "مصري", ar: "مصري", en: "Egyptian" },
-                { v: "سوداني", ar: "سوداني", en: "Sudanese" },
-                { v: "ليبي", ar: "ليبي", en: "Libyan" },
-                { v: "تونسي", ar: "تونسي", en: "Tunisian" },
-                { v: "جزائري", ar: "جزائري", en: "Algerian" },
-                { v: "مغربي", ar: "مغربي", en: "Moroccan" },
-                { v: "موريتاني", ar: "موريتاني", en: "Mauritanian" },
-                { v: "يمني", ar: "يمني", en: "Yemeni" },
-                { v: "صومالي", ar: "صومالي", en: "Somali" },
-                { v: "جيبوتي", ar: "جيبوتي", en: "Djiboutian" },
-                { v: "قمري", ar: "قمري", en: "Comorian" },
-              ].map((n) => <option key={n.v} value={n.v}>{isAr ? n.ar : n.en}</option>)}
+              {NATIONALITIES.map((n) => (
+                <option key={n.code} value={n.code}>{isAr ? n.ar : n.en}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -223,7 +229,7 @@ export default function CompleteProfilePage() {
           <h2 className="font-headline font-bold text-lg">{t.profile.documents}</h2>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
-          {docFields.filter((d) => d.required || nationality !== "سعودي").map((doc) => {
+          {docFields.filter((d) => d.required || nationality !== DEFAULT_NATIONALITY).map((doc) => {
             const uploaded = documents[doc.key];
             return (
               <button

@@ -3,9 +3,9 @@
 import { useEffect, useState, ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
 import { type Session } from "@supabase/supabase-js";
+import { AUTH_TIMEOUT_MS } from "@/lib/constants";
 
 const REDIRECT_URL = "https://njd-services.net";
-const AUTH_TIMEOUT_MS = 3000;
 
 function getCookie(name: string): string | null {
   const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
@@ -75,24 +75,31 @@ export function SupabaseAuthGuard({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Step 6: Check app access — only redirect on explicit false, not on error
+      // Step 6: Check app access — fail-closed: only allow on explicit true
+      let hasAccessGranted = false;
       try {
         const { data: hasAccess, error } = await supabase.rpc("has_app_access", {
           uid: session.user.id,
           app: "hr",
         });
 
-        if (!error && hasAccess === false) {
-          if (!cancelled) {
-            window.location.href =
-              REDIRECT_URL +
-              "?error=" +
-              encodeURIComponent("ليس لديك صلاحية للوصول إلى HR");
-          }
-          return;
+        if (error) {
+          console.error("[auth-guard] has_app_access RPC error:", error.message);
+        } else if (hasAccess === true) {
+          hasAccessGranted = true;
         }
-      } catch {
-        // RPC not available — allow access
+      } catch (err) {
+        console.error("[auth-guard] has_app_access RPC threw:", err);
+      }
+
+      if (!hasAccessGranted) {
+        if (!cancelled) {
+          window.location.href =
+            REDIRECT_URL +
+            "?error=" +
+            encodeURIComponent("ليس لديك صلاحية للوصول إلى HR");
+        }
+        return;
       }
 
       if (!cancelled) setReady(true);

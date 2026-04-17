@@ -187,7 +187,8 @@ export async function markNotificationReadInDB(id: string) {
   // Landing schema uses `is_read`; fall back to `read` for alternate deployments
   const { error } = await supabase.from("notifications").update({ is_read: true }).eq("id", id);
   if (error) {
-    await supabase.from("notifications").update({ read: true }).eq("id", id);
+    const { error: fallbackError } = await supabase.from("notifications").update({ read: true }).eq("id", id);
+    if (fallbackError) throw new Error(fallbackError.message);
   }
 }
 
@@ -200,11 +201,12 @@ export async function markAllReadInDB(userId: string) {
     .eq("is_read", false);
 
   if (error) {
-    await supabase
+    const { error: fallbackError } = await supabase
       .from("notifications")
       .update({ read: true })
       .eq("user_id", userId)
       .eq("read", false);
+    if (fallbackError) throw new Error(fallbackError.message);
   }
 }
 
@@ -254,8 +256,35 @@ export async function savePushSubscription(userId: string, subscription: PushSub
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export async function requestPushPermission(_userId: string): Promise<boolean> {
-  console.warn("[HR] Push notifications not configured — VAPID key missing");
-  return false;
+export async function requestPushPermission(userId: string): Promise<boolean> {
+  if (typeof window === "undefined" || !("Notification" in window) || !("serviceWorker" in navigator)) {
+    console.warn("[HR] Notifications API not available in this environment");
+    return false;
+  }
+
+  let permission = Notification.permission;
+  if (permission === "default") {
+    permission = await Notification.requestPermission();
+  }
+  if (permission !== "granted") return false;
+
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+    if (!vapidKey) {
+      console.warn("[HR] NEXT_PUBLIC_VAPID_PUBLIC_KEY not set — push endpoint not saved. Permission granted for local notifications only.");
+      return true;
+    }
+
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: vapidKey,
+    });
+    await savePushSubscription(userId, subscription);
+    return true;
+  } catch (err) {
+    console.error("[HR] requestPushPermission failed:", err);
+    return false;
+  }
 }

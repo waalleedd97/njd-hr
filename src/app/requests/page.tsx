@@ -17,14 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
-
-const statusBadgeVariant: Record<string, "warning" | "info" | "success" | "destructive"> = {
-  pending: "warning",
-  "in-review": "info",
-  approved: "success",
-  rejected: "destructive",
-};
+import { cn, getKSADateString } from "@/lib/utils";
 
 const typeConfig: Record<string, { iconName: string; bg: string; icon: string }> = {
   leaveRequest: { iconName: "event_busy", bg: "bg-blue-500/15", icon: "text-blue-600 dark:text-blue-400" },
@@ -70,6 +63,10 @@ export default function RequestsPage() {
   const [newReqDesc, setNewReqDesc] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  // Bulk approve/reject (admin only, pending section only)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkPending, setBulkPending] = useState(false);
 
   const [adjDate, setAdjDate] = useState("");
   const [adjOriginalIn, setAdjOriginalIn] = useState("");
@@ -160,6 +157,53 @@ export default function RequestsPage() {
     () => filteredByTypeAndRole.filter((r) => r.status === "pending" || r.status === "in-review"),
     [filteredByTypeAndRole]
   );
+
+  // Dispatch one request through the right approve/reject action.
+  const runAction = async (req: UnifiedRequest, action: "approve" | "reject") => {
+    const isLeave = req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id);
+    if (isLeave) {
+      if (action === "approve") await store.approveLeaveRequest(req.id);
+      else await store.rejectLeaveRequest(req.id);
+      return;
+    }
+    const collection =
+      req.typeKey === "attendanceAdjust" ? "attendanceAdjustments" as const
+      : req.typeKey === "salaryAdvance" ? "salaryAdvances" as const
+      : "employeeRequests" as const;
+    if (action === "approve") await store.approveItem(collection, req.id);
+    else await store.rejectItem(collection, req.id);
+  };
+
+  const toggleSelection = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+  const selectAllPending = () => {
+    setSelectedIds(new Set(pendingRequests.map((r) => r.id)));
+  };
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const runBulk = async (action: "approve" | "reject") => {
+    if (bulkPending || selectedIds.size === 0) return;
+    const label = action === "approve"
+      ? (isAr ? `موافقة على ${selectedIds.size} طلب؟` : `Approve ${selectedIds.size} request(s)?`)
+      : (isAr ? `رفض ${selectedIds.size} طلب؟` : `Reject ${selectedIds.size} request(s)?`);
+    if (!confirm(label)) return;
+
+    setBulkPending(true);
+    const toProcess = pendingRequests.filter((r) => selectedIds.has(r.id));
+    const results = await Promise.allSettled(toProcess.map((r) => runAction(r, action)));
+    const failed = results.filter((r) => r.status === "rejected").length;
+    setBulkPending(false);
+    clearSelection();
+    if (failed > 0) {
+      alert(isAr ? `فشل ${failed} من ${toProcess.length}` : `${failed} of ${toProcess.length} failed`);
+    }
+  };
   const approvedRequests = useMemo(
     () => filteredByTypeAndRole.filter((r) => r.status === "approved"),
     [filteredByTypeAndRole]
@@ -185,7 +229,7 @@ export default function RequestsPage() {
     if (submitting) return;
     setSubmitError("");
     setSubmitting(true);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     try {
       if (newReqType === "attendanceAdjust") {
         await store.submitAdjustment({
@@ -320,7 +364,7 @@ export default function RequestsPage() {
         ) => (
           <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
             {/* Section header */}
-            <div className="flex items-center justify-between px-6 py-4">
+            <div className="flex items-center justify-between px-6 py-4 flex-wrap gap-3">
               <div className="flex items-center gap-3">
                 <span className={cn("w-1.5 h-7 rounded-full", accentClass)} />
                 <Icon name={iconName} size={22} className="text-on-surface-variant" />
@@ -329,6 +373,33 @@ export default function RequestsPage() {
                   {requests.length}
                 </Badge>
               </div>
+              {showActions && isAdmin && selectedIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-on-surface-variant font-medium">
+                    {isAr ? `محدد: ${selectedIds.size}` : `Selected: ${selectedIds.size}`}
+                  </span>
+                  <button
+                    disabled={bulkPending}
+                    onClick={() => runBulk("approve")}
+                    className="px-3 py-1.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 text-xs font-bold disabled:opacity-50 hover:bg-emerald-500/25"
+                  >
+                    {isAr ? "موافقة المحدد" : "Approve selected"}
+                  </button>
+                  <button
+                    disabled={bulkPending}
+                    onClick={() => runBulk("reject")}
+                    className="px-3 py-1.5 rounded-full bg-error-container/20 text-md-error text-xs font-bold disabled:opacity-50 hover:bg-error-container/30"
+                  >
+                    {isAr ? "رفض المحدد" : "Reject selected"}
+                  </button>
+                  <button
+                    onClick={clearSelection}
+                    className="px-3 py-1.5 rounded-full text-on-surface-variant text-xs font-bold hover:bg-surface-container"
+                  >
+                    {isAr ? "إلغاء التحديد" : "Clear"}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Table */}
@@ -336,6 +407,17 @@ export default function RequestsPage() {
               <table className="w-full min-w-[700px]">
                 <thead>
                   <tr className="bg-surface-container/30">
+                    {showActions && isAdmin && (
+                      <th className="px-4 py-3 w-10">
+                        <input
+                          type="checkbox"
+                          aria-label={isAr ? "تحديد الكل" : "Select all"}
+                          checked={requests.length > 0 && requests.every((r) => selectedIds.has(r.id))}
+                          onChange={(e) => e.target.checked ? selectAllPending() : clearSelection()}
+                          className="w-4 h-4 rounded accent-primary cursor-pointer"
+                        />
+                      </th>
+                    )}
                     <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.req.requestNo}</th>
                     <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
                     <th className="text-start px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.type}</th>
@@ -347,7 +429,7 @@ export default function RequestsPage() {
                 <tbody>
                   {requests.length === 0 ? (
                     <tr>
-                      <td colSpan={showActions && isAdmin ? 6 : 5} className="py-10 text-center text-on-surface-variant">
+                      <td colSpan={showActions && isAdmin ? 7 : 5} className="py-10 text-center text-on-surface-variant">
                         <Icon name="inbox" size={36} className="mb-2 opacity-40" />
                         <p className="text-sm font-medium">{t.common.noData}</p>
                       </td>
@@ -364,6 +446,17 @@ export default function RequestsPage() {
                         : t.requestTypes[req.typeKey as keyof typeof t.requestTypes];
                       return (
                         <tr key={req.id} className="hover:bg-surface-container-low transition-colors">
+                          {showActions && isAdmin && (
+                            <td className="px-4 py-4">
+                              <input
+                                type="checkbox"
+                                aria-label={isAr ? "تحديد الطلب" : "Select request"}
+                                checked={selectedIds.has(req.id)}
+                                onChange={() => toggleSelection(req.id)}
+                                className="w-4 h-4 rounded accent-primary cursor-pointer"
+                              />
+                            </td>
+                          )}
                           <td className="px-6 py-4 text-xs font-mono text-on-surface-variant font-bold" title={req.id}>
                             {shortId}
                           </td>

@@ -15,23 +15,31 @@ All three apps share authentication, theming, language, and the njd-navbar web c
 ## Commands
 
 - `npm run dev` — Start dev server (localhost:3000)
-- `npm run build` — Production build (also serves as type/lint check; no test suite exists)
+- `npm run build` — Production build
+- `npm run check` — typecheck + lint in one shot
 - `npm run lint` — ESLint
+- `npm run typecheck` — `tsc --noEmit`
+- `npm run audit:prod` — check prod dependencies for CVEs
+- `npm run vapid:gen` — generate VAPID keys for push notifications
 - Path alias: `@/*` maps to `./src/*`
+
+See `DEPLOYMENT.md` for the end-to-end deploy runbook (env vars, Supabase
+migrations, pg_cron schedules, PDPL, Sentry).
 
 ## Tech Stack
 
 | Layer | Detail |
 |-------|--------|
-| Framework | Next.js 14.2.35, App Router, all Client Components |
+| Framework | Next.js 16.2.3 (Turbopack), App Router, mostly Client Components |
 | Language | TypeScript 5 |
-| CSS | Tailwind CSS 3.4.1, dark mode via `class` strategy |
-| UI | @base-ui/react 1.3.0 + class-variance-authority 0.7.1 (shadcn pattern) |
-| Theme | next-themes 0.4.6 |
-| Icons | lucide-react 0.577.0 + custom 3D SVG module icons |
-| Backend | Supabase 2.99.1 (auth, DB, storage, realtime) |
-| Email | Resend 6.9.3 |
-| PDF | jspdf 4.2.0 |
+| CSS | Tailwind CSS 3.4, dark mode via `class` strategy |
+| UI | @base-ui/react 1.4 + class-variance-authority 0.7 (shadcn pattern) |
+| React | 19.1 |
+| Theme | next-themes 0.4 |
+| Icons | lucide-react + custom 3D SVG module icons |
+| Backend | Supabase JS 2.99 (auth, DB, storage, realtime) |
+| Email | Resend 6.9 |
+| PDF | jspdf 4.2.1 (patched CVEs 2026-04) |
 | Package manager | npm |
 | Deployment | Vercel |
 

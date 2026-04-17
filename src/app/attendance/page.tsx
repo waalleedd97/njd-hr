@@ -21,18 +21,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSAHour, getKSATimeString, getKSADateString } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function getKSATime(): Date {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-}
-
 function isBeforeCheckinTime(): boolean {
-  const ksa = getKSATime();
-  return ksa.getHours() < 6;
+  return getKSAHour() < 6;
 }
 
 // ─── 12-hour Time Picker ──────────────────────────────────────────────
@@ -238,7 +233,7 @@ export default function AttendancePage() {
     if (!currentUserId) return;
     const record = store.todayAttendance.find((a) => a.employeeId === currentUserId);
     if (record) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setClockedIn(!!record.checkIn && !record.checkOut);
       setClockInTime(record.checkIn ?? null);
       setClockOutTime(record.checkOut ?? null);
@@ -251,29 +246,68 @@ export default function AttendancePage() {
   const [geolocationDenied, setGeolocationDenied] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    let userId: string | null = null;
+
     async function fetchLocationSetting() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.id) {
+        userId = session?.user?.id ?? null;
+        if (userId) {
           const { data } = await supabase
             .from("profiles")
             .select("location_required")
-            .eq("id", session.user.id)
+            .eq("id", userId)
             .single();
-          if (data) {
+          if (!cancelled && data) {
             setLocationRequired(data.location_required ?? true);
           }
         }
-      } catch { /* profiles table may not exist */ }
-      setLocationLoaded(true);
+      } catch (err) {
+        console.error("[attendance] fetchLocationSetting failed:", err);
+      }
+      if (!cancelled) setLocationLoaded(true);
     }
     fetchLocationSetting();
+
+    // Subscribe to profile changes so admin-side toggles propagate live.
+    // CLAUDE.md §7: "location_required must always be fetched fresh".
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id || cancelled) return;
+      channel = supabase
+        .channel(`profile-location-${session.user.id}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "profiles",
+            filter: `id=eq.${session.user.id}`,
+          },
+          (payload) => {
+            const next = (payload.new as Record<string, unknown>)?.location_required;
+            if (typeof next === "boolean" && !cancelled) {
+              setLocationRequired(next);
+            }
+          }
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (channel) {
+        channel.unsubscribe().finally(() => supabase.removeChannel(channel!));
+      }
+    };
   }, []);
 
   useEffect(() => {
     if (!locationLoaded || !locationRequired) return;
     if (!navigator.geolocation) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
+       
       setGeolocationDenied(true);
       setIsInsideGeofence(false);
       return;
@@ -304,10 +338,7 @@ export default function AttendancePage() {
   const [adjRequestedOut, setAdjRequestedOut] = useState("");
   const [adjReason, setAdjReason] = useState("");
 
-  const getCurrentTime = () => {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-  };
+  const getCurrentTime = () => getKSATimeString();
 
   const [tooEarly, setTooEarly] = useState(isBeforeCheckinTime());
   useEffect(() => {
@@ -322,19 +353,39 @@ export default function AttendancePage() {
   const [reportText, setReportText] = useState("");
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [reportUploading, setReportUploading] = useState(false);
+  const [fileWarning, setFileWarning] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [clockActionPending, setClockActionPending] = useState(false);
+
   const handleClockIn = async () => {
+    if (clockActionPending || clockedIn) return; // guard against double-click + duplicate check-in
     if (tooEarly) return;
     if (locationRequired && !isInsideGeofence) return;
+    setClockActionPending(true);
     const time = getCurrentTime();
-    setClockedIn(true);
-    setClockInTime(time);
-    setClockOutTime(null);
-    await store.clockIn(time);
+    const previousState = { clockedIn, clockInTime, clockOutTime };
+    try {
+      setClockedIn(true);
+      setClockInTime(time);
+      setClockOutTime(null);
+      await store.clockIn(time);
+    } catch (err) {
+      console.error("[attendance] clockIn failed:", err);
+      // Rollback optimistic UI on failure
+      setClockedIn(previousState.clockedIn);
+      setClockInTime(previousState.clockInTime);
+      setClockOutTime(previousState.clockOutTime);
+    } finally {
+      setClockActionPending(false);
+    }
   };
 
   const handleClockOut = () => {
+    // Block check-out if the employee hasn't checked in today.
+    // Prevents phantom "absent + checkout" records and lingering orphan records.
+    if (!clockedIn || !clockInTime) return;
+    if (clockActionPending) return;
     if (locationRequired && navigator.geolocation) {
       setCheckoutLocationLoading(true);
       setCheckoutOutside(false);
@@ -352,7 +403,8 @@ export default function AttendancePage() {
         () => {
           setCheckoutOutside(true);
           setCheckoutLocationLoading(false);
-        }
+        },
+        { timeout: 10000, maximumAge: 0 }
       );
     } else {
       setCheckoutOutside(false);
@@ -365,7 +417,7 @@ export default function AttendancePage() {
     setReportUploading(true);
 
     const time = getCurrentTime();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     const attachments: { name: string; url: string; type: string }[] = [];
 
     if (currentUserId && reportFiles.length > 0) {
@@ -402,9 +454,40 @@ export default function AttendancePage() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    const tooBig = files.filter((f) => f.size > 10 * 1024 * 1024);
     const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
-    setReportFiles((prev) => [...prev, ...valid].slice(0, 5));
+
+    setReportFiles((prev) => {
+      const combined = [...prev, ...valid];
+      const overLimit = combined.length - 5;
+      const final = combined.slice(0, 5);
+
+      if (tooBig.length > 0) {
+        setFileWarning(
+          isAr
+            ? `${tooBig.length} ملف تجاوز 10 ميجابايت وتم تجاهله`
+            : `${tooBig.length} file(s) exceeded 10MB and were skipped`
+        );
+      } else if (overLimit > 0) {
+        setFileWarning(
+          isAr
+            ? `الحد الأقصى 5 ملفات، تم تجاهل ${overLimit}`
+            : `Maximum 5 files, ignored ${overLimit}`
+        );
+      } else {
+        setFileWarning("");
+      }
+      return final;
+    });
+
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleReportDialogOpenChange = (open: boolean) => {
+    if (open) return;
+    if (reportUploading) return;
+    setReportOpen(false);
+    setFileWarning("");
   };
 
   const removeFile = (index: number) => {
@@ -460,7 +543,13 @@ export default function AttendancePage() {
         <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
           {t.att.title}
         </h1>
-        <p className="text-sm text-on-surface-variant mt-2">{t.att.today}</p>
+        <div className="flex items-center gap-2 mt-2 flex-wrap">
+          <p className="text-sm text-on-surface-variant">{t.att.today}</p>
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-primary bg-primary-container/40 px-2 py-0.5 rounded-full">
+            <Icon name="public" size={12} />
+            {t.att.ksaTimeLabel}
+          </span>
+        </div>
       </div>
 
       {/* ── Clock In/Out Panel ─────────────────────────── */}
@@ -873,7 +962,7 @@ export default function AttendancePage() {
       </Dialog>
 
       {/* ── Daily Report Modal ────────────────────────── */}
-      <Dialog open={reportOpen} onOpenChange={(v) => { if (!v) return; }}>
+      <Dialog open={reportOpen} onOpenChange={handleReportDialogOpenChange}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{isAr ? "تقرير نهاية اليوم" : "End of Day Report"}</DialogTitle>
@@ -941,18 +1030,25 @@ export default function AttendancePage() {
                 </div>
               )}
               <p className="text-xs text-on-surface-variant mt-2">
-                {isAr ? "الحد الأقصى: 10MB لكل ملف" : "Max: 10MB per file"}
+                {isAr ? "الحد الأقصى: 5 ملفات، 10MB لكل ملف" : "Max: 5 files, 10MB each"}
               </p>
+              {fileWarning && (
+                <p className="text-xs text-md-error mt-1.5 font-medium" role="alert">
+                  {fileWarning}
+                </p>
+              )}
             </div>
           </div>
 
           <DialogFooter>
             <Button
               variant="outline"
+              disabled={reportUploading}
               onClick={() => {
                 setReportOpen(false);
                 setReportText("");
                 setReportFiles([]);
+                setFileWarning("");
                 setCheckoutOutside(false);
               }}
             >

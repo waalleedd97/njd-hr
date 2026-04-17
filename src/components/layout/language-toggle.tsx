@@ -45,20 +45,20 @@ function Globe3D({ className }: { className?: string }) {
 }
 
 export function LanguageToggle() {
-  const { lang, toggleLang } = useLanguage();
+  const { t, toggleLang } = useLanguage();
 
   return (
     <button
       onClick={toggleLang}
       className="group relative outline-none"
-      aria-label="Toggle language"
+      aria-label={t.lang.toggle}
     >
       {/* 3D Globe icon */}
       <Globe3D className="w-10 h-10 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-[15deg]" />
 
       {/* Language badge overlaid on globe */}
       <span className="absolute -bottom-0.5 -end-1 bg-gradient-to-br from-[var(--njd-purple-500)] to-[var(--njd-purple-600)] text-white text-[9px] font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-[0_2px_6px_rgba(147,51,234,0.5)] border-2 border-background transition-transform duration-300 group-hover:scale-110">
-        {lang === "ar" ? "عر" : "EN"}
+        {t.lang.short}
       </span>
     </button>
   );

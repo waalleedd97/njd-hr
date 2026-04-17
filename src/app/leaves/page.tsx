@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { saudiHolidays, type Employee } from "@/lib/mock-data";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getKSANow } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,6 +57,24 @@ const typeConfig: Record<string, { iconName: string; bg: string; bar: string; ic
     bg: "bg-cyan-500/15",
     bar: "from-cyan-400 to-cyan-600",
     icon: "text-cyan-600 dark:text-cyan-400",
+  },
+  maternity: {
+    iconName: "pregnant_woman",
+    bg: "bg-fuchsia-500/15",
+    bar: "from-fuchsia-400 to-fuchsia-600",
+    icon: "text-fuchsia-600 dark:text-fuchsia-400",
+  },
+  bereavement: {
+    iconName: "sentiment_very_dissatisfied",
+    bg: "bg-slate-500/15",
+    bar: "from-slate-400 to-slate-600",
+    icon: "text-slate-600 dark:text-slate-400",
+  },
+  hajj: {
+    iconName: "mosque",
+    bg: "bg-emerald-500/15",
+    bar: "from-emerald-400 to-emerald-600",
+    icon: "text-emerald-600 dark:text-emerald-400",
   },
 };
 
@@ -147,7 +165,7 @@ export default function LeavesPage() {
   const [formReason, setFormReason] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  const weekDays = useMemo(() => getWeekDays(new Date()), []);
+  const weekDays = useMemo(() => getWeekDays(getKSANow()), []);
   const totalHolidayDays = useMemo(() => saudiHolidays.reduce((sum, h) => sum + h.days, 0), []);
 
   const tabs: { key: TabKey; label: string }[] = isAdmin
@@ -202,7 +220,17 @@ export default function LeavesPage() {
       });
     } catch (error) {
       console.error("[HR] leave request submission failed:", error);
-      setSubmitError(isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again.");
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.startsWith("OVERLAP:")) {
+        const ranges = msg.replace("OVERLAP:", "");
+        setSubmitError(
+          isAr
+            ? `يوجد طلب إجازة قائم يتداخل مع هذه الفترة: ${ranges}`
+            : `You already have a leave request covering part of this range: ${ranges}`
+        );
+      } else {
+        setSubmitError(isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again.");
+      }
       return;
     }
 
@@ -452,7 +480,7 @@ export default function LeavesPage() {
 
           <div className="grid grid-cols-7 gap-2">
             {weekDays.map((wd, i) => {
-              const isToday = isSameDay(wd, new Date());
+              const isToday = isSameDay(wd, getKSANow());
               return (
                 <div key={i} className="text-center">
                   <p className="text-xs font-bold uppercase text-on-surface-variant mb-1.5">{t.days[dayKeys[i]]}</p>
@@ -477,7 +505,7 @@ export default function LeavesPage() {
                   key={`ppl-${i}`}
                   className={cn(
                     "min-h-[90px] rounded-2xl p-2 space-y-1",
-                    isSameDay(wd, new Date()) ? "bg-primary-container/20" :
+                    isSameDay(wd, getKSANow()) ? "bg-primary-container/20" :
                     holiday ? "bg-amber-500/10" : "bg-surface-container-low"
                   )}
                 >
