@@ -97,7 +97,9 @@ export function calcDuration(checkIn: string | null, checkOut: string | null): s
   if (!checkIn || !checkOut) return "-";
   const [inH, inM] = checkIn.split(":").map(Number);
   const [outH, outM] = checkOut.split(":").map(Number);
-  const mins = (outH * 60 + outM) - (inH * 60 + inM);
+  let mins = (outH * 60 + outM) - (inH * 60 + inM);
+  // Check-out on next day (overnight shift): wrap around +24h.
+  if (mins < 0) mins += 24 * 60;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return `${h}h ${m}m`;

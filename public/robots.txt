@@ -1,0 +1,3 @@
+# NJD HR is an internal HR portal — block all public indexing.
+User-agent: *
+Disallow: /

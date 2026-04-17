@@ -124,6 +124,7 @@ export const translations = {
     att: {
       title: "الحضور والانصراف",
       today: "حضور اليوم",
+      ksaTimeLabel: "بتوقيت الرياض",
       checkIn: "وقت الحضور",
       checkOut: "وقت الانصراف",
       duration: "المدة",
@@ -143,9 +144,12 @@ export const translations = {
       applyLeave: "طلب إجازة",
       annual: "إجازة سنوية",
       sick: "إجازة مرضية",
+      maternity: "إجازة أمومة",
       unpaid: "إجازة بدون راتب",
       marriage: "إجازة زواج",
       paternity: "إجازة أبوة",
+      bereavement: "إجازة وفاة",
+      hajj: "إجازة حج",
       remaining: "متبقي",
       used: "مستخدم",
       total: "الإجمالي",
@@ -357,6 +361,7 @@ export const translations = {
       hasEmployees: "لا يمكن حذف قسم يحتوي على موظفين",
     },
     profile: {
+      defaultNationality: "سعودي",
       completeTitle: "إكمال الملف الشخصي",
       completeDesc: "يرجى إكمال بياناتك الشخصية للمتابعة",
       fullName: "الاسم الرباعي",
@@ -395,6 +400,27 @@ export const translations = {
       passwordTooShort: "كلمة المرور يجب أن تكون 6 أحرف على الأقل",
     },
     days: { sun: "أحد", mon: "إثنين", tue: "ثلاثاء", wed: "أربعاء", thu: "خميس", fri: "جمعة", sat: "سبت" },
+    dr: {
+      title: "التقارير اليومية",
+      loading: "جاري تحميل التقارير...",
+      noReportsDate: "لا توجد تقارير لهذا التاريخ",
+      filterAll: "الكل",
+      filterSubmitted: "مرسل",
+      filterMissing: "لم يُرسل",
+    },
+    pay2: {
+      processed: "✓ تمت المعالجة",
+    },
+    time: {
+      now: "الآن",
+      min: "د",
+      hour: "س",
+      day: "ي",
+    },
+    lang: {
+      short: "عر",
+      toggle: "تبديل اللغة",
+    },
   },
   en: {
     appName: "NJD Games",
@@ -519,6 +545,7 @@ export const translations = {
     att: {
       title: "Attendance & Check-in",
       today: "Today's Attendance",
+      ksaTimeLabel: "Riyadh time",
       checkIn: "Check In",
       checkOut: "Check Out",
       duration: "Duration",
@@ -538,9 +565,12 @@ export const translations = {
       applyLeave: "Apply for Leave",
       annual: "Annual Leave",
       sick: "Sick Leave",
+      maternity: "Maternity Leave",
       unpaid: "Unpaid Leave",
       marriage: "Marriage Leave",
       paternity: "Paternity Leave",
+      bereavement: "Bereavement Leave",
+      hajj: "Hajj Leave",
       remaining: "Remaining",
       used: "Used",
       total: "Total",
@@ -752,6 +782,7 @@ export const translations = {
       hasEmployees: "Cannot delete a department with assigned employees",
     },
     profile: {
+      defaultNationality: "Saudi",
       completeTitle: "Complete Your Profile",
       completeDesc: "Please complete your personal information to continue",
       fullName: "Full Name (Quadruple)",
@@ -790,6 +821,27 @@ export const translations = {
       passwordTooShort: "Password must be at least 6 characters",
     },
     days: { sun: "Sun", mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat" },
+    dr: {
+      title: "Daily Reports",
+      loading: "Loading reports...",
+      noReportsDate: "No reports for this date",
+      filterAll: "All",
+      filterSubmitted: "Submitted",
+      filterMissing: "Missing",
+    },
+    pay2: {
+      processed: "✓ Processed",
+    },
+    time: {
+      now: "now",
+      min: "m",
+      hour: "h",
+      day: "d",
+    },
+    lang: {
+      short: "EN",
+      toggle: "Toggle language",
+    },
   },
 };
 
