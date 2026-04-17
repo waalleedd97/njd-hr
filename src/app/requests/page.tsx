@@ -26,9 +26,10 @@ const typeConfig: Record<string, { iconName: string; bg: string; icon: string }>
   docRequest: { iconName: "article", bg: "bg-tertiary-container/40", icon: "text-tertiary" },
   attendanceAdjust: { iconName: "edit_calendar", bg: "bg-cyan-500/15", icon: "text-cyan-600 dark:text-cyan-400" },
   salaryAdvance: { iconName: "payments", bg: "bg-primary-container/40", icon: "text-primary" },
+  dataErasure: { iconName: "delete_forever", bg: "bg-rose-500/15", icon: "text-rose-600 dark:text-rose-400" },
 };
 
-const typeKeys = ["leaveRequest", "salaryCert", "permission", "docRequest", "attendanceAdjust", "salaryAdvance"] as const;
+const typeKeys = ["leaveRequest", "salaryCert", "permission", "docRequest", "attendanceAdjust", "salaryAdvance", "dataErasure"] as const;
 const statusKeys = ["pending", "in-review", "approved", "rejected"] as const;
 
 interface UnifiedRequest {
@@ -281,6 +282,7 @@ export default function RequestsPage() {
   const typeSelectLabels: Record<string, string> = {
     leaveRequest: t.req.leaveReq, salaryCert: t.req.salaryCert, permission: t.req.permission,
     docRequest: t.req.docRequest, attendanceAdjust: t.requestTypes.attendanceAdjust, salaryAdvance: t.requestTypes.salaryAdvance,
+    dataErasure: t.requestTypes.dataErasure,
   };
 
   return (
