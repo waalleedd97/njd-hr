@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 /**
  * PDPL Right to Erasure (نظام حماية البيانات الشخصية السعودي — المادة 18).
  *
- * Files an erasure request in `employee_requests` with type `data-erasure`.
+ * Files an erasure request in `employee_requests` with type `dataErasure`.
  * It does NOT auto-delete because:
  *   - Payroll / tax records must be retained for regulatory periods
  *   - GOSI requires certain data to be held per law
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await authClient.from("employee_requests").insert({
     employee_id: userData.user.id,
-    type_key: "data-erasure",
+    type_key: "dataErasure",
     date: new Date().toISOString().split("T")[0],
     status: "pending",
     details_ar: reasonAr,

@@ -123,7 +123,9 @@ Before announcing the "Request data erasure" button to staff:
 1. Review with counsel which fields must be retained for how long
    (GOSI, ZATCA tax, labor disputes, HR audits).
 2. Draft the retained-fields schedule into a policy doc.
-3. Configure HR to triage `employee_requests` where `type_key = 'data-erasure'`
+   See [`docs/PDPL_RETENTION_POLICY.md`](./docs/PDPL_RETENTION_POLICY.md) for the
+   NJD-approved schedule (Saudi Labor Law + GOSI + ZATCA + PDPL Art. 18).
+3. Configure HR to triage `employee_requests` where `type_key = 'dataErasure'`
    and apply the lawful erasure + log the retention rationale in
    `reviewed_by` / `reviewed_at`.
 
