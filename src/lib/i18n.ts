@@ -48,6 +48,7 @@ export const translations = {
       attendanceAdjust: "تعديل حضور",
       salaryAdvance: "سلفة راتب",
       profileUpdate: "تعديل بيانات",
+      dataErasure: "طلب حذف بيانات (PDPL)",
     },
     statuses: {
       pending: "معلق",
@@ -469,6 +470,7 @@ export const translations = {
       attendanceAdjust: "Attendance Adjustment",
       salaryAdvance: "Salary Advance",
       profileUpdate: "Profile Update",
+      dataErasure: "Data Erasure (PDPL)",
     },
     statuses: {
       pending: "Pending",
