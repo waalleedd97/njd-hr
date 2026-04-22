@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { Tajawal, Plus_Jakarta_Sans, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { AppShell } from "@/components/layout/app-shell";
+import { getServerUser } from "@/lib/auth/server";
 import "./globals.css";
 
 const tajawal = Tajawal({
@@ -26,8 +29,6 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "NJD HR",
   description: "NJD Games HR Management System",
-  manifest: "/manifest.json",
-  robots: { index: false, follow: false },
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -38,11 +39,24 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const session = await getServerUser();
+  if (!session) redirect("https://njd-services.net");
+
+  // Profile-completion gate — force incomplete profiles onto /profile/complete.
+  const hdrs = await headers();
+  const pathname = hdrs.get("x-pathname") || "/";
+  if (
+    session.user.profileCompleted === false &&
+    !pathname.startsWith("/profile/complete")
+  ) {
+    redirect("/profile/complete");
+  }
+
   return (
     <html lang="ar" dir="rtl" suppressHydrationWarning>
       <head>
@@ -77,12 +91,13 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
           }}
         />
         {/* Material Symbols Outlined — preload + block render until font loads (avoids flash of raw icon names) */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="preconnect"
           href="https://fonts.gstatic.com"
           crossOrigin="anonymous"
         />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font, @next/next/google-font-display */}
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block"
@@ -130,23 +145,9 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
             __html: `(function(){function g(n){var m=document.cookie.match(new RegExp('(^| )'+n+'=([^;]+)'));return m?decodeURIComponent(m[2]):null}var t=g('njd-theme');if(t){localStorage.setItem('njd-theme',t);localStorage.setItem('theme',t);document.documentElement.setAttribute('data-theme',t);document.documentElement.classList.toggle('dark',t==='dark')}var l=g('njd-lang');if(l){localStorage.setItem('njd-lang',l);document.documentElement.lang=l;document.documentElement.dir=l==='ar'?'rtl':'ltr'}})()`,
           }}
         />
-        {/* Register Service Worker for push notifications */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `if('serviceWorker' in navigator){window.addEventListener('load',function(){navigator.serviceWorker.register('/sw.js').catch(function(e){console.warn('[HR] SW registration failed:',e)})})}`,
-          }}
-        />
-        {/*
-          NJD shared navbar — loaded afterInteractive so it cannot intercept
-          auth tokens or Supabase init. crossOrigin enables CORS integrity
-          checks; add an `integrity` hash here once the navbar is versioned.
-        */}
-        <Script
-          src="https://njd-services.net/njd-navbar.js"
-          strategy="afterInteractive"
-          crossOrigin="anonymous"
-        />
-        <Providers>
+        {/* Vendored local copy — see public/njd-navbar.js header for sync notes. */}
+        <Script src="/njd-navbar.js" strategy="beforeInteractive" />
+        <Providers initialUser={session.user} initialRole={session.role}>
           <AppShell>{children}</AppShell>
         </Providers>
       </body>

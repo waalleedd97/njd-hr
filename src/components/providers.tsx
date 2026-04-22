@@ -12,9 +12,11 @@ import { ThemeProvider as NextThemeProvider } from "next-themes";
 import { type Language, translations, type TranslationKey } from "@/lib/i18n";
 import { type UserRole } from "@/lib/navigation";
 import { DataProvider } from "@/lib/data-store";
-import { employees as allEmployees } from "@/lib/mock-data";
-import { SupabaseAuthGuard } from "@/components/supabase-auth-guard";
 import { supabase } from "@/lib/supabase";
+import type { UserProfile } from "@/lib/auth/types";
+
+// Re-export UserProfile so existing imports from "@/components/providers" keep working.
+export type { UserProfile };
 
 // ─── Language Context ────────────────────────────────────────────────
 
@@ -60,55 +62,6 @@ function LanguageProvider({ children }: { children: ReactNode }) {
 
 // ─── Auth / Role Context ─────────────────────────────────────────────
 
-export interface UserProfile {
-  id: string;        // Always Supabase UUID — used for all data lookups
-  localId: string;   // EMP001 format — for display only
-  nameAr: string;
-  nameEn: string;
-  positionAr: string;
-  positionEn: string;
-  initials: string;
-  email: string;
-  profileCompleted?: boolean;
-}
-
-/** Fallback admin emails — used when Supabase RPC is unavailable */
-const ADMIN_EMAILS = new Set(
-  ["waleed@njdstudio.net", "salman@njdstudio.net", ...allEmployees.filter((e) => e.department === "hr").map((e) => e.email)]
-);
-
-function resolveUser(email: string): { profile: UserProfile; role: UserRole } | null {
-  const emp = allEmployees.find(
-    (e) => e.email.toLowerCase() === email.toLowerCase()
-  );
-  if (!emp) return null;
-  const profile: UserProfile = {
-    id: emp.id,
-    localId: emp.id,
-    nameAr: emp.nameAr,
-    nameEn: emp.nameEn,
-    positionAr: emp.positionAr,
-    positionEn: emp.positionEn,
-    initials: emp.initials,
-    email: emp.email,
-    profileCompleted: emp.profileCompleted !== false,
-  };
-  const role: UserRole = ADMIN_EMAILS.has(emp.email) ? "admin" : "employee";
-  return { profile, role };
-}
-
-const fallbackUser: UserProfile = {
-  id: "",
-  localId: "",
-  nameAr: "",
-  nameEn: "",
-  positionAr: "",
-  positionEn: "",
-  initials: "",
-  email: "",
-  profileCompleted: true,
-};
-
 interface AuthContextType {
   role: UserRole;
   setRole: (role: UserRole) => void;
@@ -116,10 +69,13 @@ interface AuthContextType {
   user: UserProfile;
   isAdmin: boolean;
   isAuthenticated: boolean;
+  login: (email: string, password: string) => boolean;
   logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
+const AUTH_KEY = "njd-hr-auth";
+const LANDING_URL = "https://njd-services.net";
 
 export function useAuth() {
   const ctx = useContext(AuthContext);
@@ -127,103 +83,73 @@ export function useAuth() {
   return ctx;
 }
 
-function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: () => void }) {
-  const [role, setRole] = useState<UserRole>("admin");
-  const [user, setUser] = useState<UserProfile>(fallbackUser);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
+function AuthProvider({
+  children,
+  initialUser,
+  initialRole,
+}: {
+  children: ReactNode;
+  initialUser: UserProfile;
+  initialRole: UserRole;
+}) {
+  const [role, setRole] = useState<UserRole>(initialRole);
+  const [user, setUser] = useState<UserProfile>(initialUser);
+  // Layout already gated unauthenticated users to Landing — reaching here means authed.
+  const [isAuthenticated] = useState(true);
 
-  // Sync auth from Supabase session + fetch RBAC role
+  // Accept pending invitations + react to SIGNED_OUT from other tabs / manual logout.
   useEffect(() => {
-    async function syncAuth() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.email) {
-        const email = session.user.email;
-        const userId = session.user.id;
+    let cancelled = false;
 
-        // Accept any pending invitation for this email
-        try {
-          const { data: invitation } = await supabase
-            .from("pending_invitations")
-            .select("id")
-            .eq("email", email)
-            .eq("status", "pending")
-            .maybeSingle();
-          if (invitation) {
-            window.dispatchEvent(new CustomEvent("njd-accept-invitation", { detail: email }));
-          }
-        } catch { /* ignore */ }
-
-        // Fetch role from Supabase RBAC (super_admin → admin, else employee)
-        let supabaseRole: UserRole = "employee";
-        let profileData: {
-          name_ar?: string;
-          name_en?: string;
-          full_name_ar?: string;
-          full_name_en?: string;
-          job_title_ar?: string;
-          profile_completed?: boolean;
-          department?: string;
-        } | null = null;
-        try {
-          const { data: roleData } = await supabase.rpc("get_user_role", { uid: userId });
-          if (roleData === "super_admin") {
-            supabaseRole = "admin";
-          }
-        } catch { /* RPC may be unavailable */ }
-
-        try {
-          const { data: prof } = await supabase
-            .from("profiles")
-            .select("name_ar, name_en, full_name_ar, full_name_en, job_title_ar, profile_completed, department")
-            .eq("id", userId)
-            .single();
-          if (prof) {
-            profileData = prof;
-          }
-        } catch { /* profiles table may not exist yet */ }
-
-        if (supabaseRole !== "admin") {
-          supabaseRole =
-            profileData?.department === "hr" || ADMIN_EMAILS.has(email)
-              ? "admin"
-              : "employee";
+    (async () => {
+      try {
+        const { data: invitation } = await supabase
+          .from("pending_invitations")
+          .select("id")
+          .eq("email", initialUser.email)
+          .eq("status", "pending")
+          .maybeSingle();
+        if (!cancelled && invitation) {
+          window.dispatchEvent(
+            new CustomEvent("njd-accept-invitation", { detail: initialUser.email })
+          );
         }
-
-        // Fall back to local employee data, then to email prefix
-        const resolved = resolveUser(email);
-        const fallbackName = session.user.user_metadata?.full_name || email.split("@")[0];
-        const nameAr = profileData?.full_name_ar || profileData?.name_ar || "";
-        const nameEn = profileData?.full_name_en || profileData?.name_en || "";
-
-        setUser({
-          id: userId,  // Always Supabase UUID — used for all data lookups
-          localId: resolved?.profile.localId || userId.slice(0, 8).toUpperCase(),
-          nameAr: nameAr || resolved?.profile.nameAr || fallbackName,
-          nameEn: nameEn || resolved?.profile.nameEn || fallbackName,
-          positionAr: profileData?.job_title_ar || resolved?.profile.positionAr || (supabaseRole === "admin" ? "مدير النظام" : "موظف"),
-          positionEn: resolved?.profile.positionEn || (supabaseRole === "admin" ? "System Administrator" : "Employee"),
-          initials: (nameAr || resolved?.profile.nameAr || fallbackName).charAt(0).toUpperCase(),
-          email,
-          profileCompleted: profileData?.profile_completed ?? resolved?.profile.profileCompleted ?? true,
-        });
-        setRole(supabaseRole);
-        setIsAuthenticated(true);
+      } catch {
+        /* ignore */
       }
-      setHydrated(true);
-    }
-    syncAuth();
+    })();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string) => {
+      if (event === "SIGNED_OUT") {
+        try {
+          localStorage.removeItem(AUTH_KEY);
+        } catch {
+          /* ignore */
+        }
+        window.location.href = LANDING_URL;
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [initialUser.email]);
+
+  const login = useCallback((email: string, password: string): boolean => {
+    void email;
+    void password;
+    return false;
   }, []);
 
-  // Signal to the loading overlay that the app is fully ready
-  useEffect(() => {
-    if (hydrated && onReady) onReady();
-  }, [hydrated, onReady]);
-
   const logout = useCallback(() => {
-    setIsAuthenticated(false);
-    setUser(fallbackUser);
+    try {
+      localStorage.removeItem(AUTH_KEY);
+    } catch {
+      /* ignore */
+    }
     supabase.auth.signOut();
+    window.location.href = LANDING_URL;
   }, []);
 
   const switchRole = useCallback(() => {
@@ -231,9 +157,6 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
   }, []);
 
   const isAdmin = role === "admin";
-
-  // Don't render until hydrated to avoid flash
-  if (!hydrated) return null;
 
   return (
     <AuthContext.Provider
@@ -244,6 +167,7 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
         user,
         isAdmin,
         isAuthenticated,
+        login,
         logout,
       }}
     >
@@ -254,19 +178,19 @@ function AuthProvider({ children, onReady }: { children: ReactNode; onReady?: ()
 
 // ─── Combined Providers ──────────────────────────────────────────────
 
-export function Providers({ children }: { children: ReactNode }) {
-  const handleAppReady = useCallback(() => {
-    // Hide the loading screen via CSS class on <html> — DOM stays intact
-    // (React-safe: we don't remove or mutate any React-managed nodes)
-    document.documentElement.classList.add("app-ready");
-  }, []);
-
-  // Safety net: force-dismiss after 8 seconds in case auth guard hangs
+export function Providers({
+  children,
+  initialUser,
+  initialRole,
+}: {
+  children: ReactNode;
+  initialUser: UserProfile;
+  initialRole: UserRole;
+}) {
+  // Reveal the loading overlay exit as soon as React mounts — we already have
+  // user + data from the server, so nothing left to wait for.
   useEffect(() => {
-    const safetyTimeout = setTimeout(() => {
-      document.documentElement.classList.add("app-ready");
-    }, 8000);
-    return () => clearTimeout(safetyTimeout);
+    document.documentElement.classList.add("app-ready");
   }, []);
 
   return (
@@ -275,13 +199,11 @@ export function Providers({ children }: { children: ReactNode }) {
       defaultTheme="light"
       enableSystem={false}
     >
-      <SupabaseAuthGuard>
-        <LanguageProvider>
-          <AuthProvider onReady={handleAppReady}>
-            <DataProvider>{children}</DataProvider>
-          </AuthProvider>
-        </LanguageProvider>
-      </SupabaseAuthGuard>
+      <LanguageProvider>
+        <AuthProvider initialUser={initialUser} initialRole={initialRole}>
+          <DataProvider seedFromServer>{children}</DataProvider>
+        </AuthProvider>
+      </LanguageProvider>
     </NextThemeProvider>
   );
 }

@@ -94,13 +94,22 @@ NextThemeProvider
 
 ## Shared Components
 
-### njd-navbar.js
+### njd-navbar.js (Vendored)
 
-- Hosted at `https://njd-services.net/njd-navbar.js`, loaded as a Web Component via `next/script`
-- **Any changes to the navbar go to the Landing Page project, NOT this repo**
+- **Vendored locally** at `public/njd-navbar.js` and served same-origin via `<Script src="/njd-navbar.js" strategy="beforeInteractive" />`
+- Source of truth is still the Landing Page copy (`https://njd-services.net/njd-navbar.js`). The local file is a byte-identical copy plus a vendor header with sync metadata (date, SHA-256, MD5)
+- **Any functional change goes to Landing Page first**, then re-copy the file here (and in the Board repo). Do NOT edit the vendored copy in place — changes will be lost on the next sync
+- Loading it same-origin avoids cross-origin CSP pitfalls (Vercel 307s the apex `njd-services.net` → `www.njd-services.net`, which broke the old cross-origin script tag)
+- Logo: `<njd-navbar logo="/logo.png" ... />` overrides the component's default absolute URL so the logo also loads same-origin (see `src/components/layout/app-shell.tsx`)
 - Custom events: `njd-logout`, `njd-lang-change`, `njd-notification-click`
-- Attributes: `lang`, `app="hr"`, `user-name`, `notification-count`
+- Attributes: `lang`, `app="hr"`, `logo`, `user-name`, `notification-count`
 - `auth="false"` hides user info; `notification-count` sets bell badge number
+
+**To re-vendor** (after Landing updates the navbar):
+1. Copy the new `njd-navbar.js` from Landing's `public/` into this repo's `public/`
+2. Update the vendor header (`Last synced`, `Source mtime`, `SHA-256`, `MD5`)
+3. Verify content integrity: `tail -n +$((HEADER_LINES + 1)) public/njd-navbar.js | shasum -a 256` matches the Landing source hash
+4. Do the same in the Board repo to keep both apps in sync
 
 ### Theme & Language Sync
 
@@ -230,7 +239,7 @@ Dialog/Sheet headers include `pe-8` / `pe-12` padding to prevent overlap with cl
 1. **Western Arabic numerals ONLY** (0-9). NEVER use Eastern Arabic numerals (٠١٢٣٤٥٦٧٨٩) anywhere in the codebase. Use locale `ar-SA-u-nu-latn` for Arabic number formatting.
 2. **All SQL migrations** run in Supabase Landing project (`iauulqfgrbegwcnfatmx`), not locally.
 3. **Edge Functions** deploy via: `cd '/Users/waleed97/Downloads/NJD Services Landing Page' && npx supabase functions deploy [name]`
-4. **njd-navbar.js** is the single source of truth for the navbar. Do NOT create a local navbar component.
+4. **njd-navbar.js** — the Landing Page copy is the single source of truth for navbar behavior. This repo's `public/njd-navbar.js` is a vendored copy served same-origin. Do NOT create a parallel React/native navbar component, and do NOT edit the vendored file directly — fix in Landing, then re-sync both HR and Board (see "### njd-navbar.js (Vendored)" above).
 5. **Profile page** lives in Landing Page (`njd-services.net/#profile`). Do NOT build a local profile page. The `/profile/complete` route in this repo is only for first-time profile completion of invited employees.
 6. **DO NOT modify the loading screen** (CSS variables `--njd-loader-*`, keyframes `njd-*`, the `.njd-loader` HTML block) without explicit instruction.
 7. **Supabase is the single source of truth for ALL business data** — attendance, leave requests, employee requests, salary advances, attendance adjustments, pending invitations, leave balances. localStorage stores ONLY settings and UI preferences (theme, language). All CRUD operations write to Supabase first, then refresh local React state as cache. Never fall back to localStorage for business data.

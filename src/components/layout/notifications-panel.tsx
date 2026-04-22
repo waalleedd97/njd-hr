@@ -96,7 +96,7 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
           table: "notifications",
           filter: `user_id=eq.${user.id}`,
         },
-        (payload) => {
+        (payload: { new: Record<string, unknown> }) => {
           const row = normalizeNotificationRow(payload.new as Record<string, unknown>);
           if (!row.app_name || row.app_name === "hr" || row.app_name === "both") {
             setItems((prev) => [row, ...prev]);
@@ -109,7 +109,7 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
           }
         }
       )
-      .subscribe((status, err) => {
+      .subscribe((status: string, err?: Error) => {
         if (status === "SUBSCRIBED") {
           console.log("[HR] Realtime: notifications channel subscribed ✓");
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
