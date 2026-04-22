@@ -145,7 +145,8 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
             __html: `(function(){function g(n){var m=document.cookie.match(new RegExp('(^| )'+n+'=([^;]+)'));return m?decodeURIComponent(m[2]):null}var t=g('njd-theme');if(t){localStorage.setItem('njd-theme',t);localStorage.setItem('theme',t);document.documentElement.setAttribute('data-theme',t);document.documentElement.classList.toggle('dark',t==='dark')}var l=g('njd-lang');if(l){localStorage.setItem('njd-lang',l);document.documentElement.lang=l;document.documentElement.dir=l==='ar'?'rtl':'ltr'}})()`,
           }}
         />
-        <Script src="https://njd-services.net/njd-navbar.js" strategy="beforeInteractive" />
+        {/* Vendored local copy — see public/njd-navbar.js header for sync notes. */}
+        <Script src="/njd-navbar.js" strategy="beforeInteractive" />
         <Providers initialUser={session.user} initialRole={session.role}>
           <AppShell>{children}</AppShell>
         </Providers>

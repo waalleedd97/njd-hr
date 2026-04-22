@@ -5,9 +5,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Supabase project host for CSP (must match NEXT_PUBLIC_SUPABASE_URL host)
 const SUPABASE_HOSTS = "https://*.supabase.co wss://*.supabase.co";
-// Vercel redirects the apex (njd-services.net) to www — CSP must allow both
-// so the 307 redirect for shared assets (navbar script, logo, etc.) resolves.
-const LANDING_ORIGINS = "https://njd-services.net https://www.njd-services.net";
+// Landing-Page origins are intentionally NOT in the CSP allow-list: the navbar
+// web component is vendored locally at public/njd-navbar.js and the logo is
+// served from public/logo.png. Keeping the allow-list empty removes a whole
+// class of cross-origin failures (CSP vs Vercel apex-to-www 307 redirect).
 const FONTS_ORIGINS = "https://fonts.googleapis.com https://fonts.gstatic.com";
 
 // Optional observability endpoint — added to connect-src when configured
@@ -22,11 +23,11 @@ try {
 
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline' ${LANDING_ORIGINS}`,
+  `script-src 'self' 'unsafe-inline'`,
   `style-src 'self' 'unsafe-inline' ${FONTS_ORIGINS}`,
   `font-src 'self' ${FONTS_ORIGINS}`,
-  `img-src 'self' data: blob: https://*.supabase.co ${LANDING_ORIGINS}`,
-  `connect-src 'self' ${SUPABASE_HOSTS} ${LANDING_ORIGINS} ${SENTRY_HOST}`.trim(),
+  `img-src 'self' data: blob: https://*.supabase.co`,
+  `connect-src 'self' ${SUPABASE_HOSTS} ${SENTRY_HOST}`.trim(),
   `frame-ancestors 'none'`,
   `form-action 'self'`,
   `base-uri 'self'`,

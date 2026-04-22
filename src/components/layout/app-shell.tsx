@@ -18,7 +18,11 @@ declare module "react" {
   namespace JSX {
     interface IntrinsicElements {
       "njd-navbar": React.DetailedHTMLProps<
-        React.HTMLAttributes<HTMLElement> & { lang?: string; app?: string },
+        React.HTMLAttributes<HTMLElement> & {
+          lang?: string;
+          app?: string;
+          logo?: string;
+        },
         HTMLElement
       >;
     }
@@ -110,7 +114,8 @@ function NJDNavbar() {
 
   return (
     <>
-      <njd-navbar ref={navRef} lang={lang} app="hr" />
+      {/* logo="/logo.png" overrides the default absolute Landing URL so the image loads same-origin. */}
+      <njd-navbar ref={navRef} lang={lang} app="hr" logo="/logo.png" />
       <NotificationsPanel
         open={notifOpen}
         onClose={handleCloseNotifs}
