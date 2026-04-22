@@ -17,8 +17,8 @@ type DataSlice = Parameters<ReturnType<typeof useData>["hydrate"]>[0];
  */
 export function useDataHydration(slice: DataSlice) {
   const { hydrate } = useData();
-  const seeded = useRef(false);
-  if (!seeded.current) {
+  const seeded = useRef<boolean | null>(null);
+  if (seeded.current == null) {
     seeded.current = true;
     hydrate(slice);
   }
