@@ -462,10 +462,6 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
 
   // ── Overview KPIs (admin only) ──
   const totalEmployees = employees.length;
-  // Employees who have a record today but no check_in time = incomplete
-  const incompleteCount = store.todayAttendance.filter(
-    (a) => a.checkIn && !a.checkOut
-  ).length;
   // Employees scheduled today but have no attendance record at all = unscheduled / no-show
   const unscheduledCount = Math.max(
     0,
@@ -524,11 +520,10 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Main KPIs (left two-thirds) */}
           <div className="lg:col-span-2 space-y-6">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {[
                 { iconName: "person_off", label: isAr ? "غياب" : "Absence", count: absentCount, sub: isAr ? "موظف" : "employees", color: "text-md-error", bg: "bg-error-container/20" },
                 { iconName: "schedule", label: isAr ? "تأخّر" : "Late", count: lateCount, sub: isAr ? "موظف" : "employees", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/15" },
-                { iconName: "pending", label: isAr ? "سجلات ناقصة" : "Incomplete", count: incompleteCount, sub: isAr ? "سجل" : "records", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/15" },
                 { iconName: "event_busy", label: isAr ? "غير مجدول" : "Unscheduled", count: unscheduledCount, sub: isAr ? "موظف" : "employees", color: "text-on-surface-variant", bg: "bg-surface-container-high" },
               ].map((c, i) => (
                 <div
