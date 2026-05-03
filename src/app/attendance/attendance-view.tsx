@@ -231,6 +231,8 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const departments = store.departments;
   const isAr = lang === "ar";
   const [selectedDept, setSelectedDept] = useState("all");
+  // Overview vs Tracking — admin-only toggle. Default Overview for KPI bird's-eye.
+  const [adminTab, setAdminTab] = useState<"overview" | "tracking">("overview");
 
   const currentUserId = isAdmin ? null : user.id;
   const existingRecord = currentUserId
@@ -458,6 +460,25 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     { iconName: "event_busy", label: t.att.onLeave, count: onLeaveCount, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/15" },
   ];
 
+  // ── Overview KPIs (admin only) ──
+  const totalEmployees = employees.length;
+  // Employees who have a record today but no check_in time = incomplete
+  const incompleteCount = store.todayAttendance.filter(
+    (a) => a.checkIn && !a.checkOut
+  ).length;
+  // Employees scheduled today but have no attendance record at all = unscheduled / no-show
+  const unscheduledCount = Math.max(
+    0,
+    totalEmployees - store.todayAttendance.length - onLeaveCount
+  );
+  // Cross-feature pending counters
+  const pendingAdjustments = store.attendanceAdjustments.filter((a) => a.status === "pending").length;
+  const pendingLeaveRequests = store.leaveRequests.filter((r) => r.status === "pending").length;
+  const pendingEmployeeRequests = store.employeeRequests.filter((r) => r.status === "pending").length;
+  const totalPendingRequests = pendingAdjustments + pendingLeaveRequests + pendingEmployeeRequests;
+  const totalPendingActions = pendingAdjustments; // attendance-specific actions awaiting admin
+  const readyForPayroll = store.salaryAdvances.filter((a) => a.status === "approved" && a.remainingBalance > 0).length;
+
   const geofenceDisabled = locationRequired && !isInsideGeofence;
 
   return (
@@ -470,6 +491,132 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
         <p className="text-sm text-on-surface-variant mt-2">{t.att.today}</p>
       </div>
 
+      {/* Admin tabs (Overview / Tracking) — employees see only their own clock UI */}
+      {isAdmin && (
+        <div className="inline-flex items-center bg-surface-container rounded-full p-1">
+          <button
+            onClick={() => setAdminTab("overview")}
+            className={cn(
+              "px-5 py-2 rounded-full text-sm font-bold transition-all",
+              adminTab === "overview"
+                ? "gradient-btn shadow-primary-glow"
+                : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            {isAr ? "نظرة عامة" : "Overview"}
+          </button>
+          <button
+            onClick={() => setAdminTab("tracking")}
+            className={cn(
+              "px-5 py-2 rounded-full text-sm font-bold transition-all",
+              adminTab === "tracking"
+                ? "gradient-btn shadow-primary-glow"
+                : "text-on-surface-variant hover:text-on-surface"
+            )}
+          >
+            {isAr ? "تتبّع تفصيلي" : "Tracking"}
+          </button>
+        </div>
+      )}
+
+      {/* ── Admin Overview ─────────────────────────────── */}
+      {isAdmin && adminTab === "overview" && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main KPIs (left two-thirds) */}
+          <div className="lg:col-span-2 space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                { iconName: "person_off", label: isAr ? "غياب" : "Absence", count: absentCount, sub: isAr ? "إجمالي" : "overall", color: "text-md-error", bg: "bg-error-container/20" },
+                { iconName: "schedule", label: isAr ? "تأخّر" : "Late", count: lateCount, sub: isAr ? "إجمالي" : "overall", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/15" },
+                { iconName: "pending", label: isAr ? "سجلات ناقصة" : "Incomplete records", count: incompleteCount, sub: isAr ? "إجمالي" : "overall", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/15" },
+                { iconName: "event_busy", label: isAr ? "غير مجدول" : "Unscheduled", count: unscheduledCount, sub: isAr ? "إجمالي" : "overall", color: "text-on-surface-variant", bg: "bg-surface-container-high" },
+              ].map((c, i) => (
+                <div key={i} className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm">
+                  <div className="flex items-start gap-3">
+                    <div className={cn("w-11 h-11 rounded-2xl flex items-center justify-center shrink-0", c.bg, c.color)}>
+                      <Icon name={c.iconName} size={22} fill />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm text-on-surface-variant font-medium leading-tight">{c.label}</p>
+                      <p className="font-headline text-3xl font-black text-on-surface tabular-nums mt-1">
+                        {c.count}
+                      </p>
+                      <p className="text-[11px] text-on-surface-variant/70 mt-0.5">{c.sub}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Pending counters bar */}
+            <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
+                <a href="/requests?status=pending" className="px-5 py-3 rounded-xl hover:bg-surface-container-low transition-colors flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-on-surface-variant">
+                    {isAr ? "طلبات معلّقة" : "Pending requests"}
+                  </span>
+                  <span className="font-headline text-lg font-black text-on-surface tabular-nums bg-amber-500/15 text-amber-600 dark:text-amber-400 rounded-full min-w-[28px] h-7 inline-flex items-center justify-center px-2">
+                    {totalPendingRequests}
+                  </span>
+                </a>
+                <a href="/requests?status=pending&type=attendanceAdjust" className="px-5 py-3 rounded-xl hover:bg-surface-container-low transition-colors flex items-center justify-between gap-2 border-x border-outline-variant/10">
+                  <span className="text-sm font-medium text-on-surface-variant">
+                    {isAr ? "إجراءات معلّقة" : "Pending actions"}
+                  </span>
+                  <span className="font-headline text-lg font-black text-on-surface tabular-nums bg-blue-500/15 text-blue-600 dark:text-blue-400 rounded-full min-w-[28px] h-7 inline-flex items-center justify-center px-2">
+                    {totalPendingActions}
+                  </span>
+                </a>
+                <a href="/payroll" className="px-5 py-3 rounded-xl hover:bg-surface-container-low transition-colors flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-on-surface-variant">
+                    {isAr ? "جاهز للرواتب" : "Ready for payroll"}
+                  </span>
+                  <span className="font-headline text-lg font-black text-on-surface tabular-nums bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 rounded-full min-w-[28px] h-7 inline-flex items-center justify-center px-2">
+                    {readyForPayroll}
+                  </span>
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Policies sidebar (right third) */}
+          <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <Icon name="gavel" size={20} className="text-primary" />
+              <h3 className="font-headline font-bold text-base">{isAr ? "السياسات" : "Policies"}</h3>
+            </div>
+            <ul className="space-y-2">
+              {[
+                { icon: "schedule", label: isAr ? "سياسة العمل الإضافي" : "Overtime Policy", href: "/settings#penalties" },
+                { icon: "task_alt", label: isAr ? "الأعذار" : "Excuses", href: "/requests?type=permission" },
+                { icon: "money_off", label: isAr ? "إعفاءات الخصم" : "Deduction exemptions", href: "/settings#penalties" },
+                { icon: "rule", label: isAr ? "قواعد الجزاءات" : "Penalty rules", href: "/settings#penalties" },
+              ].map((p, i) => (
+                <li key={i}>
+                  <a
+                    href={p.href}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl hover:bg-surface-container-low transition-colors text-sm group"
+                  >
+                    <span className="flex items-center gap-2 text-on-surface font-medium">
+                      <Icon name={p.icon} size={16} className="text-on-surface-variant" />
+                      {p.label}
+                    </span>
+                    <Icon
+                      name={isAr ? "arrow_back" : "arrow_forward"}
+                      size={14}
+                      className="text-on-surface-variant opacity-0 group-hover:opacity-100 transition-opacity"
+                    />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tracking-only sections (clock + table + penalty rules) ─── */}
+      {(!isAdmin || adminTab === "tracking") && (
+      <div className="space-y-8">
       {/* ── Clock In/Out Panel ─────────────────────────── */}
       <div className="bg-surface-container-lowest rounded-2xl p-6 lg:p-8 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center gap-8">
@@ -825,6 +972,8 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
           <span>{t.penalty.autoCalculated}</span>
         </div>
       </div>
+      </div>
+      )}
 
       {/* ── Adjustment Dialog ─────────────────────────── */}
       <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>

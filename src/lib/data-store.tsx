@@ -22,6 +22,8 @@ import {
   type Branch,
   type Role,
   type ComplianceItem,
+  type EmployeeAsset,
+  type AssetType,
 } from "./mock-data";
 import { createNotification, notifyAdmins } from "./notifications";
 import { supabase } from "./supabase";
@@ -98,6 +100,7 @@ interface DataState {
   branches: Branch[];
   roles: Role[];
   compliance: ComplianceItem[];
+  assets: EmployeeAsset[];
 }
 
 // ─── Default State ───────────────────────────────────────────────────
@@ -133,6 +136,7 @@ function getDefaultState(): DataState {
     branches: [...defaultBranches],
     roles: [...defaultRoles],
     compliance: [...defaultCompliance],
+    assets: [],
   };
 }
 
@@ -250,6 +254,15 @@ interface DataContextType extends DataState {
   // Compliance Items (Supabase: compliance_items)
   refreshCompliance: () => Promise<void>;
   updateCompliance: (id: string, updates: Partial<ComplianceItem>) => Promise<void>;
+
+  // Employee Assets (Supabase: employee_assets)
+  refreshAssets: () => Promise<void>;
+  addAsset: (a: Omit<EmployeeAsset, "id" | "issuedBy">) => Promise<void>;
+  updateAsset: (id: string, updates: Partial<EmployeeAsset>) => Promise<void>;
+  removeAsset: (id: string) => Promise<void>;
+
+  // Manager assignment (writes profiles.manager_id)
+  updateEmployeeManager: (employeeId: string, managerId: string | null) => Promise<void>;
 
   // Profile completion
   acceptInvitation: (email: string) => void;
@@ -1264,6 +1277,94 @@ export function DataProvider({
     await refreshCompliance();
   }, [refreshCompliance]);
 
+  // ── Employee Assets (Supabase: employee_assets) ──
+
+  const refreshAssets = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("employee_assets")
+      .select("*")
+      .order("issued_at", { ascending: false });
+    if (error) {
+      console.error("[data-store] refreshAssets failed:", error.message);
+      return;
+    }
+    if (!data) return;
+    const mapped: EmployeeAsset[] = data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      employeeId: r.employee_id as string,
+      assetType: r.asset_type as AssetType,
+      nameAr: r.name_ar as string,
+      nameEn: r.name_en as string,
+      serialNumber: (r.serial_number as string) || undefined,
+      notes: (r.notes as string) || undefined,
+      issuedAt: r.issued_at as string,
+      returnedAt: (r.returned_at as string) || null,
+      status: (r.status as EmployeeAsset["status"]) || "issued",
+      issuedBy: (r.issued_by as string) || null,
+    }));
+    setState((p) => ({ ...p, assets: mapped }));
+  }, []);
+
+  const addAsset = useCallback(async (a: Omit<EmployeeAsset, "id" | "issuedBy">) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const issuedBy = session?.user?.id;
+    const { error } = await supabase.from("employee_assets").insert({
+      employee_id: a.employeeId,
+      asset_type: a.assetType,
+      name_ar: a.nameAr,
+      name_en: a.nameEn,
+      serial_number: a.serialNumber || null,
+      notes: a.notes || null,
+      issued_at: a.issuedAt,
+      returned_at: a.returnedAt || null,
+      status: a.status,
+      issued_by: issuedBy,
+    });
+    if (error) throw error;
+    await refreshAssets();
+  }, [refreshAssets]);
+
+  const updateAsset = useCallback(async (id: string, updates: Partial<EmployeeAsset>) => {
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.assetType !== undefined) patch.asset_type = updates.assetType;
+    if (updates.nameAr !== undefined) patch.name_ar = updates.nameAr;
+    if (updates.nameEn !== undefined) patch.name_en = updates.nameEn;
+    if (updates.serialNumber !== undefined) patch.serial_number = updates.serialNumber || null;
+    if (updates.notes !== undefined) patch.notes = updates.notes || null;
+    if (updates.issuedAt !== undefined) patch.issued_at = updates.issuedAt;
+    if (updates.returnedAt !== undefined) patch.returned_at = updates.returnedAt || null;
+    if (updates.status !== undefined) patch.status = updates.status;
+    const { error } = await supabase.from("employee_assets").update(patch).eq("id", id);
+    if (error) throw error;
+    await refreshAssets();
+  }, [refreshAssets]);
+
+  const removeAsset = useCallback(async (id: string) => {
+    const { error } = await supabase.from("employee_assets").delete().eq("id", id);
+    if (error) throw error;
+    await refreshAssets();
+  }, [refreshAssets]);
+
+  // ── Manager assignment (writes profiles.manager_id) ──
+
+  const updateEmployeeManager = useCallback(async (employeeId: string, managerId: string | null) => {
+    // Optimistic update of local employees state
+    setState((p) => ({
+      ...p,
+      employees: p.employees.map((e) =>
+        e.id === employeeId ? { ...e, managerId } : e
+      ),
+    }));
+    const { error } = await supabase
+      .from("profiles")
+      .update({ manager_id: managerId })
+      .eq("id", employeeId);
+    if (error) {
+      console.error("[data-store] updateEmployeeManager failed:", error.message);
+      throw error;
+    }
+  }, []);
+
   const processPayroll = useCallback(() => {
     setState((p) => {
       p.employees.forEach((emp) => {
@@ -1431,6 +1532,11 @@ export function DataProvider({
     removeRole,
     refreshCompliance,
     updateCompliance,
+    refreshAssets,
+    addAsset,
+    updateAsset,
+    removeAsset,
+    updateEmployeeManager,
     acceptInvitation,
     completeProfile,
     processPayroll,

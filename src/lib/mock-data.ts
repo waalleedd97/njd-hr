@@ -37,7 +37,40 @@ export interface Employee {
     passport?: UploadedDocument;
   };
   locationRequired?: boolean;
+  /** Supabase UUID of the direct line manager — used by the Org Chart tab */
+  managerId?: string | null;
+  /** Saudi Commercial Registration / مسجّل تجاري — flagged in onboarding banner */
+  commercialRegistration?: string | null;
 }
+
+// ─── Employee Assets (company-issued equipment) ─────────────────────
+
+export type AssetType = "laptop" | "phone" | "vehicle" | "sim" | "access_card" | "other";
+export type AssetStatus = "issued" | "returned" | "lost" | "damaged";
+
+export interface EmployeeAsset {
+  id: string;
+  employeeId: string;
+  assetType: AssetType;
+  nameAr: string;
+  nameEn: string;
+  serialNumber?: string;
+  notes?: string;
+  issuedAt: string;        // ISO date (YYYY-MM-DD)
+  returnedAt?: string | null;
+  status: AssetStatus;
+  issuedBy?: string | null; // UUID of admin who issued
+}
+
+/** Asset type → icon + color metadata for the UI */
+export const ASSET_TYPES: Record<AssetType, { iconName: string; tone: string }> = {
+  laptop:      { iconName: "laptop_mac",       tone: "text-blue-600 dark:text-blue-400" },
+  phone:       { iconName: "smartphone",       tone: "text-emerald-600 dark:text-emerald-400" },
+  vehicle:     { iconName: "directions_car",   tone: "text-amber-600 dark:text-amber-400" },
+  sim:         { iconName: "sim_card",         tone: "text-tertiary" },
+  access_card: { iconName: "badge",            tone: "text-purple-600 dark:text-purple-400" },
+  other:       { iconName: "category",         tone: "text-on-surface-variant" },
+};
 
 export const departments: Record<string, { ar: string; en: string }> = {
   "software-dev": { ar: "تطوير البرمجيات", en: "Software Development" },

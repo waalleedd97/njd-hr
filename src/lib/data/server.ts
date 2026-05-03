@@ -13,6 +13,7 @@ import type {
   Branch,
   Role,
   ComplianceItem,
+  EmployeeAsset,
 } from "@/lib/mock-data";
 
 // ─── Shared types (mirror data-store.tsx) ────────────────────────────
@@ -285,10 +286,33 @@ export async function fetchEmployees(): Promise<Employee[]> {
       "bg-cyan-500",
       "bg-orange-500",
     ];
+    // Enrich with manager_id + commercial_registration from profiles —
+    // admin_list_users RPC doesn't return these, so we batch-fetch by ID.
+    const userIds = users.map((u) => u.user_id);
+    let extras = new Map<string, { managerId: string | null; cr: string | null }>();
+    if (userIds.length > 0) {
+      const { data: profileExtras } = await supabase
+        .from("profiles")
+        .select("id, manager_id, commercial_registration")
+        .in("id", userIds);
+      if (profileExtras) {
+        extras = new Map(
+          profileExtras.map((p: Record<string, unknown>) => [
+            p.id as string,
+            {
+              managerId: (p.manager_id as string) || null,
+              cr: (p.commercial_registration as string) || null,
+            },
+          ])
+        );
+      }
+    }
+
     return users.map((u, i): Employee => {
       const firstAr = (u.full_name_ar || u.name_ar || "").trim();
       const firstEn = (u.full_name_en || u.name_en || "").trim();
       const initialsSrc = firstEn || firstAr || u.email || "?";
+      const extra = extras.get(u.user_id);
       return {
         id: u.user_id,
         nameAr: firstAr || u.email?.split("@")[0] || "",
@@ -304,6 +328,8 @@ export async function fetchEmployees(): Promise<Employee[]> {
         salary: { basic: 0, housing: 0, transport: 0, other: 0 },
         color: colors[i % colors.length],
         profileCompleted: u.profile_completed ?? false,
+        managerId: extra?.managerId ?? null,
+        commercialRegistration: extra?.cr ?? null,
       };
     });
   } catch {
@@ -356,15 +382,18 @@ export async function fetchRequestsSlice(): Promise<RequestsSlice> {
 export interface EmployeesSlice {
   employees: Employee[];
   pendingInvitations: PendingInvitation[];
+  assets: EmployeeAsset[];
 }
 
 export async function fetchEmployeesSlice(): Promise<EmployeesSlice> {
-  const [employees, pendingInvitations] = await Promise.all([
+  const [employees, pendingInvitations, assets] = await Promise.all([
     fetchEmployees(),
     fetchPendingInvitations(),
+    fetchAssets(),
   ]);
-  return { employees, pendingInvitations };
+  return { employees, pendingInvitations, assets };
 }
+
 
 export interface PayrollSlice {
   employees: Employee[];
@@ -518,6 +547,34 @@ export async function fetchSettingsSlice(): Promise<SettingsSlice> {
     fetchCompliance(),
   ]);
   return { employees, pendingInvitations, branches, roles, compliance };
+}
+
+// ─── Employee Assets ────────────────────────────────────────────────
+
+export async function fetchAssets(): Promise<EmployeeAsset[]> {
+  try {
+    const supabase = await createServerClient();
+    const { data, error } = await supabase
+      .from("employee_assets")
+      .select("*")
+      .order("issued_at", { ascending: false });
+    if (error || !data) return [];
+    return data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      employeeId: r.employee_id as string,
+      assetType: r.asset_type as EmployeeAsset["assetType"],
+      nameAr: r.name_ar as string,
+      nameEn: r.name_en as string,
+      serialNumber: (r.serial_number as string) || undefined,
+      notes: (r.notes as string) || undefined,
+      issuedAt: r.issued_at as string,
+      returnedAt: (r.returned_at as string) || null,
+      status: (r.status as EmployeeAsset["status"]) || "issued",
+      issuedBy: (r.issued_by as string) || null,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export interface DailyReportRow {

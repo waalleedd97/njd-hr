@@ -73,17 +73,6 @@ const statusBadgeVariant: Record<string, "warning" | "success" | "destructive" |
 
 // ---------- helpers ----------
 
-function getWeekDays(refDate: Date) {
-  const day = refDate.getDay();
-  const sun = new Date(refDate);
-  sun.setDate(refDate.getDate() - day);
-  return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(sun);
-    d.setDate(sun.getDate() + i);
-    return d;
-  });
-}
-
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -110,6 +99,50 @@ function getHolidayForDate(date: Date) {
 // ---------- component ----------
 
 type TabKey = "balance" | "requests" | "calendar";
+
+// ── Helpers for the Team Timeline (Gantt) view ───────────────────────
+
+function getMonthDays(refDate: Date): Date[] {
+  const year = refDate.getFullYear();
+  const month = refDate.getMonth();
+  const last = new Date(year, month + 1, 0).getDate();
+  return Array.from({ length: last }, (_, i) => new Date(year, month, i + 1));
+}
+
+function fmtMonthYear(d: Date, lang: "ar" | "en"): string {
+  return d.toLocaleDateString(lang === "ar" ? "ar-SA-u-nu-latn" : "en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
+interface LeaveOverlap {
+  date: Date;
+  employees: { id: string; nameAr: string; nameEn: string }[];
+}
+
+function detectOverlaps(
+  monthDays: Date[],
+  approvedLeaves: { employeeId: string; startDate: string; endDate: string }[],
+  resolveEmp: (id: string) => { id: string; nameAr: string; nameEn: string }
+): LeaveOverlap[] {
+  const overlaps: LeaveOverlap[] = [];
+  for (const day of monthDays) {
+    const onLeave = approvedLeaves.filter((lr) =>
+      isDateInRange(day, lr.startDate, lr.endDate)
+    );
+    if (onLeave.length >= 2) {
+      overlaps.push({
+        date: day,
+        employees: onLeave.map((lr) => {
+          const emp = resolveEmp(lr.employeeId);
+          return { id: emp.id, nameAr: emp.nameAr, nameEn: emp.nameEn };
+        }),
+      });
+    }
+  }
+  return overlaps;
+}
 
 export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesSlice; initialTab?: string }) {
   useDataHydration(initialSlice);
@@ -156,8 +189,70 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
   const [formReason, setFormReason] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
 
-  const weekDays = useMemo(() => getWeekDays(new Date()), []);
   const totalHolidayDays = useMemo(() => saudiHolidays.reduce((sum, h) => sum + h.days, 0), []);
+
+  // Team Timeline state — month navigation
+  const [timelineMonth, setTimelineMonth] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1);
+  });
+  const monthDays = useMemo(() => getMonthDays(timelineMonth), [timelineMonth]);
+  const today = useMemo(() => new Date(), []);
+  const upcomingHolidays = useMemo(() => {
+    const t = new Date();
+    const horizon = new Date(t.getFullYear() + 1, t.getMonth(), t.getDate());
+    return saudiHolidays
+      .filter((h) => {
+        if (!h.startDate) return false;
+        const d = new Date(h.startDate);
+        return d >= t && d <= horizon;
+      })
+      .slice(0, 4);
+  }, []);
+
+  const approvedLeaves = useMemo(
+    () => leaveRequests.filter((lr) => lr.status === "approved"),
+    [leaveRequests]
+  );
+  const overlaps = useMemo(
+    () => detectOverlaps(monthDays, approvedLeaves, resolveEmployee),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [monthDays, approvedLeaves]
+  );
+  const pendingLeaves = useMemo(
+    () => leaveRequests.filter((lr) => lr.status === "pending").length,
+    [leaveRequests]
+  );
+
+  // Employees on leave anywhere in the visible month (deduped count)
+  const employeesOnLeave = useMemo(() => {
+    const ids = new Set<string>();
+    for (const lr of approvedLeaves) {
+      const start = new Date(lr.startDate + "T00:00:00");
+      const end = new Date(lr.endDate + "T00:00:00");
+      const monthStart = monthDays[0];
+      const monthEnd = monthDays[monthDays.length - 1];
+      if (end >= monthStart && start <= monthEnd) ids.add(lr.employeeId);
+    }
+    return ids.size;
+  }, [approvedLeaves, monthDays]);
+
+  // Early-resumption requests = approved leaves that the employee returned
+  // from before endDate (heuristic: there's an attendance record on or after
+  // the original return). For now we surface leaves whose endDate is in
+  // the future but a check-in exists for today (cheap heuristic; precise
+  // detection would query attendance.date > today which we don't have here).
+  const earlyResumptionCandidates = useMemo(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    return approvedLeaves
+      .filter((lr) => lr.endDate > todayStr)
+      .slice(0, 4)
+      .map((lr) => ({
+        ...lr,
+        employee: resolveEmployee(lr.employeeId),
+      }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [approvedLeaves]);
 
   const tabs: { key: TabKey; label: string }[] = isAdmin
     ? [
@@ -171,7 +266,6 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
       ];
 
   const leaveTypeOptions = ["annual", "sick", "unpaid", "marriage", "paternity"] as const;
-  const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -475,71 +569,259 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
 
       {/* ── TEAM CALENDAR TAB ─────────────────────────── */}
       {activeTab === "calendar" && (
-        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-5">
-            <span className="w-1.5 h-7 bg-primary rounded-full" />
-            <Icon name="calendar_month" size={22} className="text-primary" />
-            <h3 className="font-headline font-bold text-xl">{t.lev.teamCalendar}</h3>
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
+          {/* Main timeline column */}
+          <div className="xl:col-span-3 space-y-6">
+            {/* Header with month navigation */}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <Icon name="calendar_month" size={22} className="text-primary" />
+                <h3 className="font-headline font-bold text-xl">
+                  {isAr ? "الجدول الزمني للفريق" : "Team Timeline"}
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setTimelineMonth(new Date(timelineMonth.getFullYear(), timelineMonth.getMonth() - 1, 1))}
+                  className="w-9 h-9 rounded-xl bg-surface-container-high hover:bg-surface-container-highest flex items-center justify-center transition-colors"
+                  aria-label={isAr ? "الشهر السابق" : "Previous month"}
+                >
+                  <Icon name={isAr ? "chevron_right" : "chevron_left"} size={18} />
+                </button>
+                <span className="text-sm font-bold tabular-nums px-3 py-2 bg-surface-container-high rounded-xl min-w-[140px] text-center">
+                  {fmtMonthYear(timelineMonth, lang)}
+                </span>
+                <button
+                  onClick={() => setTimelineMonth(new Date(timelineMonth.getFullYear(), timelineMonth.getMonth() + 1, 1))}
+                  className="w-9 h-9 rounded-xl bg-surface-container-high hover:bg-surface-container-highest flex items-center justify-center transition-colors"
+                  aria-label={isAr ? "الشهر التالي" : "Next month"}
+                >
+                  <Icon name={isAr ? "chevron_left" : "chevron_right"} size={18} />
+                </button>
+                <button
+                  onClick={() => setTimelineMonth(new Date(today.getFullYear(), today.getMonth(), 1))}
+                  className="px-3 h-9 rounded-xl bg-primary-container/30 text-primary text-sm font-bold hover:bg-primary-container/50 transition-colors"
+                >
+                  {isAr ? "اليوم" : "Today"}
+                </button>
+              </div>
+            </div>
+
+            {/* KPI cards (Employees on leave / Overlaps / Pending) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm">
+                <p className="text-sm text-on-surface-variant font-medium">
+                  {isAr ? "موظفون في إجازة" : "Employees on leave"}
+                </p>
+                <p className="font-headline text-3xl font-black text-on-surface tabular-nums mt-2">
+                  {employeesOnLeave}
+                </p>
+              </div>
+              <div className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm">
+                <p className="text-sm text-on-surface-variant font-medium flex items-center gap-1.5">
+                  {isAr ? "أيام تداخل" : "Overlap days"}
+                  {overlaps.length > 0 && (
+                    <Icon name="warning" size={14} fill className="text-amber-600 dark:text-amber-400" />
+                  )}
+                </p>
+                <p className="font-headline text-3xl font-black text-on-surface tabular-nums mt-2">
+                  {overlaps.length}
+                </p>
+              </div>
+              <div className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm">
+                <p className="text-sm text-on-surface-variant font-medium">
+                  {isAr ? "طلبات معلّقة" : "Pending requests"}
+                </p>
+                <p className="font-headline text-3xl font-black text-on-surface tabular-nums mt-2">
+                  {pendingLeaves}
+                </p>
+              </div>
+            </div>
+
+            {/* Gantt-style monthly timeline */}
+            <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <div className="min-w-[900px]">
+                  {/* Day header strip */}
+                  <div className="flex border-b border-outline-variant/20">
+                    <div className="w-48 shrink-0 px-4 py-3 text-xs font-bold uppercase text-on-surface-variant bg-surface-container/30">
+                      {isAr ? "الموظف" : "Employee"}
+                    </div>
+                    <div className="flex flex-1">
+                      {monthDays.map((d) => {
+                        const isToday = isSameDay(d, today);
+                        const isWeekend = d.getDay() === 5 || d.getDay() === 6;
+                        const holiday = getHolidayForDate(d);
+                        return (
+                          <div
+                            key={d.getTime()}
+                            className={cn(
+                              "flex-1 min-w-[28px] py-2 text-center text-[10px] font-bold tabular-nums border-l border-outline-variant/10 first:border-l-0",
+                              isToday && "bg-primary-container/30 text-primary",
+                              !isToday && holiday && "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                              !isToday && !holiday && isWeekend && "bg-surface-container/40 text-on-surface-variant",
+                            )}
+                            title={holiday ? (isAr ? holiday.nameAr : holiday.nameEn) : ""}
+                          >
+                            {d.getDate()}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* One row per employee with approved leaves in this month */}
+                  {(() => {
+                    const empMap = new Map<string, typeof approvedLeaves>();
+                    for (const lr of approvedLeaves) {
+                      const arr = empMap.get(lr.employeeId) || [];
+                      arr.push(lr);
+                      empMap.set(lr.employeeId, arr);
+                    }
+                    const rows = Array.from(empMap.entries()).filter(([, leaves]) =>
+                      leaves.some((lr) => {
+                        const start = new Date(lr.startDate + "T00:00:00");
+                        const end = new Date(lr.endDate + "T00:00:00");
+                        return end >= monthDays[0] && start <= monthDays[monthDays.length - 1];
+                      })
+                    );
+                    if (rows.length === 0) {
+                      return (
+                        <div className="px-6 py-12 text-center text-on-surface-variant">
+                          <Icon name="event_available" size={36} className="opacity-40 mb-2" />
+                          <p className="text-sm font-medium">
+                            {isAr ? "لا إجازات معتمدة في هذا الشهر" : "No approved leaves this month"}
+                          </p>
+                        </div>
+                      );
+                    }
+                    return rows.map(([empId, leaves]) => {
+                      const emp = resolveEmployee(empId);
+                      return (
+                        <div key={empId} className="flex border-b border-outline-variant/10 last:border-0 hover:bg-surface-container-low/30 transition-colors">
+                          <div className="w-48 shrink-0 px-4 py-3 flex items-center gap-2">
+                            <Avatar className="w-7 h-7">
+                              <AvatarFallback className={cn("text-white text-[10px] font-bold", emp.color)}>
+                                {emp.initials}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-xs font-bold truncate">
+                              {isAr ? emp.nameAr : emp.nameEn}
+                            </span>
+                          </div>
+                          <div className="flex flex-1 relative items-center py-2">
+                            {monthDays.map((d) => {
+                              const lr = leaves.find((x) => isDateInRange(d, x.startDate, x.endDate));
+                              const config = lr ? typeConfig[lr.typeKey] ?? typeConfig.annual : null;
+                              return (
+                                <div
+                                  key={d.getTime()}
+                                  className={cn(
+                                    "flex-1 min-w-[28px] h-6 border-l border-outline-variant/5 first:border-l-0",
+                                    lr && "bg-gradient-to-r " + (config?.bar ?? "from-emerald-400 to-emerald-600") + " opacity-80",
+                                  )}
+                                  title={lr ? `${lr.startDate} → ${lr.endDate}` : ""}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-7 gap-2">
-            {weekDays.map((wd, i) => {
-              const isToday = isSameDay(wd, new Date());
-              return (
-                <div key={i} className="text-center">
-                  <p className="text-xs font-bold uppercase text-on-surface-variant mb-1.5">{t.days[dayKeys[i]]}</p>
-                  <p className={cn(
-                    "text-sm font-bold mb-2 inline-flex items-center justify-center w-8 h-8 rounded-full tabular-nums transition-all",
-                    isToday ? "gradient-btn shadow-primary-glow" : "text-on-surface"
-                  )}>
-                    {wd.getDate()}
-                  </p>
+          {/* Sidebar (right) */}
+          <div className="xl:col-span-1 space-y-6">
+            {/* Upcoming holidays */}
+            <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <Icon name="event" size={18} className="text-primary" />
+                <h4 className="font-headline font-bold text-sm">
+                  {isAr ? "العطل القادمة" : "Upcoming holidays"}
+                </h4>
+              </div>
+              {upcomingHolidays.length === 0 ? (
+                <p className="text-xs text-on-surface-variant text-center py-4">
+                  {isAr ? "لا عطل قادمة قريباً" : "No upcoming holidays"}
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {upcomingHolidays.map((h) => (
+                    <li key={h.id} className="flex items-center gap-2 px-2 py-2 rounded-xl bg-amber-500/10">
+                      <Icon name="star" size={14} fill className="text-amber-600 dark:text-amber-400 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold truncate">
+                          {isAr ? h.nameAr : h.nameEn}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant tabular-nums">
+                          {h.startDate}
+                          {h.endDate && h.startDate !== h.endDate ? ` → ${h.endDate}` : ""}
+                        </p>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Overlaps panel */}
+            {overlaps.length > 0 && (
+              <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon name="warning" size={18} fill className="text-amber-600 dark:text-amber-400" />
+                  <h4 className="font-headline font-bold text-sm">
+                    {isAr ? "أيام التداخل" : "Overlap days"}
+                  </h4>
                 </div>
-              );
-            })}
+                <ul className="space-y-2 max-h-64 overflow-y-auto">
+                  {overlaps.slice(0, 8).map((o) => (
+                    <li key={o.date.getTime()} className="text-xs">
+                      <p className="font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                        {fmtDate(o.date.toISOString().split("T")[0], lang)}
+                      </p>
+                      <p className="text-on-surface-variant text-[11px] mt-0.5">
+                        {o.employees.length} {isAr ? "موظف في إجازة" : "employees on leave"}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
-            {weekDays.map((wd, i) => {
-              const onLeave = leaveRequests
-                .filter((lr) => lr.status === "approved" && isDateInRange(wd, lr.startDate, lr.endDate))
-                .map((lr) => resolveEmployee(lr.employeeId));
-              const holiday = getHolidayForDate(wd);
-
-              return (
-                <div
-                  key={`ppl-${i}`}
-                  className={cn(
-                    "min-h-[90px] rounded-2xl p-2 space-y-1",
-                    isSameDay(wd, new Date()) ? "bg-primary-container/20" :
-                    holiday ? "bg-amber-500/10" : "bg-surface-container-low"
-                  )}
-                >
-                  {holiday && (
-                    <div className="flex items-center gap-1 rounded-xl bg-amber-500/20 px-2 py-1">
-                      <Icon name="star" size={12} fill className="text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                      <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 truncate">
-                        {isAr ? holiday.nameAr : holiday.nameEn}
-                      </span>
-                    </div>
-                  )}
-
-                  {onLeave.length === 0 && !holiday && (
-                    <p className="text-xs text-on-surface-variant/50 text-center mt-6">-</p>
-                  )}
-                  {onLeave.map((emp) => (
-                    <div key={emp.id} className="flex items-center gap-1 rounded-xl bg-surface-container-lowest px-2 py-1">
-                      <Avatar className="w-5 h-5" size="sm">
-                        <AvatarFallback className={cn("text-white text-[8px] font-bold", emp.color)}>
-                          {emp.initials}
+            {/* Early resumption candidates */}
+            {earlyResumptionCandidates.length > 0 && (
+              <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon name="history" size={18} className="text-blue-600 dark:text-blue-400" />
+                  <h4 className="font-headline font-bold text-sm">
+                    {isAr ? "إجازات جارية" : "Active leaves"}
+                  </h4>
+                </div>
+                <ul className="space-y-2">
+                  {earlyResumptionCandidates.map((er) => (
+                    <li key={er.id} className="flex items-center gap-2 px-2 py-2 rounded-xl bg-surface-container-low">
+                      <Avatar className="w-7 h-7">
+                        <AvatarFallback className={cn("text-white text-[10px] font-bold", er.employee.color)}>
+                          {er.employee.initials}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-[10px] font-bold truncate">
-                        {isAr ? emp.nameAr.split(" ")[0] : emp.nameEn.split(" ")[0]}
-                      </span>
-                    </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold truncate">
+                          {isAr ? er.employee.nameAr : er.employee.nameEn}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant tabular-nums">
+                          → {er.endDate}
+                        </p>
+                      </div>
+                    </li>
                   ))}
-                </div>
-              );
-            })}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
       )}
