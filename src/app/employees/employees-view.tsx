@@ -168,9 +168,11 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
   const invites = store.pendingInvitations;
   const assets = store.assets;
 
-  // Onboarding banner: employees missing key gov data (Commercial Registration)
-  const missingCRCount = useMemo(
-    () => employees.filter((e) => !e.commercialRegistration && e.status !== "inactive").length,
+  // Onboarding banner: employees missing the National ID / Iqama
+  // (هوية وطنية أو رقم إقامة — the per-individual identifier, NOT
+  // commercial registration which is a company-level field).
+  const missingNationalIdCount = useMemo(
+    () => employees.filter((e) => !e.nationalId && e.status !== "inactive").length,
     [employees]
   );
 
@@ -491,8 +493,8 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
         </div>
       )}
 
-      {/* Onboarding banner: missing CR */}
-      {isAdmin && missingCRCount > 0 && (
+      {/* Onboarding banner: missing National ID / Iqama */}
+      {isAdmin && missingNationalIdCount > 0 && (
         <div className="bg-error-container/30 border border-md-error/20 rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-9 h-9 rounded-full bg-md-error/10 flex items-center justify-center shrink-0">
@@ -500,8 +502,8 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
             </div>
             <p className="text-sm font-medium text-on-surface truncate">
               {isAr
-                ? `لديك ${missingCRCount} موظف بدون رقم سجل تجاري مسجّل`
-                : `You have ${missingCRCount} employee${missingCRCount === 1 ? "" : "s"} without Commercial Registration`}
+                ? `لديك ${missingNationalIdCount} موظف بدون رقم هوية وطنية / إقامة مسجّل`
+                : `You have ${missingNationalIdCount} employee${missingNationalIdCount === 1 ? "" : "s"} without a National ID / Iqama on file`}
             </p>
           </div>
           <button
@@ -726,7 +728,7 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
                     {isAr ? "حالة الملف" : "Profile status"}
                   </th>
                   <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                    {isAr ? "السجل التجاري" : "CR"}
+                    {isAr ? "الهوية الوطنية / الإقامة" : "National ID / Iqama"}
                   </th>
                 </tr>
               </thead>
@@ -759,9 +761,9 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
                         </Badge>
                       </td>
                       <td className="px-6 py-4">
-                        {emp.commercialRegistration ? (
-                          <span className="text-sm text-on-surface-variant tabular-nums">
-                            {emp.commercialRegistration}
+                        {emp.nationalId ? (
+                          <span className="text-sm text-on-surface-variant tabular-nums font-mono" dir="ltr">
+                            {emp.nationalId}
                           </span>
                         ) : (
                           <Badge variant="destructive">{isAr ? "مفقود" : "Missing"}</Badge>

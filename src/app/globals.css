@@ -261,14 +261,16 @@ html:not(.fonts-loaded) .material-symbols-outlined {
    "Gamified Atelier" utilities — glass, gradient, tonal
    ═══════════════════════════════════════════════════════════ */
 @layer utilities {
-  /* Gradient CTA — primary → primary-container at 135deg */
+  /* Primary CTA — solid brand purple. (Class kept named "gradient-btn" for
+     backward compatibility with existing callers; the gradient was retired
+     after a UX review showed the soft fade reading as washed out.) */
   .gradient-btn {
-    background: linear-gradient(135deg, var(--md-primary) 0%, var(--md-primary-container) 100%);
+    background: var(--md-primary);
     color: var(--md-on-primary);
   }
 
   .gradient-btn:hover {
-    background: linear-gradient(135deg, var(--md-primary-dim) 0%, var(--md-primary) 100%);
+    background: var(--md-primary-dim);
   }
 
   /* Glassmorphism — for nav bars, floating modals */

@@ -577,7 +577,97 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                 </a>
               </div>
             </div>
-          </div>
+
+            {/* Today's Attendance — full list of who came/who didn't */}
+            <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/10">
+                <div className="flex items-center gap-2">
+                  <Icon name="event_available" size={18} className="text-primary" />
+                  <h3 className="font-headline font-bold text-base">
+                    {isAr ? "حضور اليوم" : "Today's Attendance"}
+                  </h3>
+                </div>
+                <span className="text-xs text-on-surface-variant tabular-nums">
+                  {presentCount}/{employees.length} {isAr ? "حاضر" : "present"}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[520px]">
+                  <thead>
+                    <tr className="bg-surface-container/30">
+                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                        {t.att.employee}
+                      </th>
+                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                        {t.att.checkIn}
+                      </th>
+                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                        {t.att.checkOut}
+                      </th>
+                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                        {t.common.status}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employees.map((emp) => {
+                      const record = store.todayAttendance.find((a) => a.employeeId === emp.id);
+                      const status = record?.status ?? "absent";
+                      const dept = departments[emp.department];
+                      return (
+                        <tr key={emp.id} className="hover:bg-surface-container-low transition-colors">
+                          <td className="px-5 py-3">
+                            <div className="flex items-center gap-3">
+                              <Avatar className="w-8 h-8">
+                                <AvatarFallback className={cn("text-white text-[10px] font-bold", emp.color)}>
+                                  {emp.initials}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold truncate">
+                                  {isAr ? emp.nameAr : emp.nameEn}
+                                </p>
+                                {dept && (
+                                  <p className="text-[10px] text-on-surface-variant truncate">
+                                    {isAr ? dept.ar : dept.en}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-sm text-on-surface-variant tabular-nums font-medium">
+                            {record?.checkIn ?? "—"}
+                          </td>
+                          <td className="px-5 py-3 text-sm text-on-surface-variant tabular-nums font-medium">
+                            {record?.checkOut ?? "—"}
+                          </td>
+                          <td className="px-5 py-3">
+                            {record ? (
+                              <Badge variant={statusBadgeVariant[status] ?? "secondary"}>
+                                {statusLabelFn[status]?.(t) ?? status}
+                              </Badge>
+                            ) : (
+                              <Badge variant="warning">
+                                {isAr ? "لم يسجّل" : "Not checked in"}
+                              </Badge>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {employees.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-12 text-center text-on-surface-variant">
+                          <Icon name="event_busy" size={36} className="opacity-40 mb-2" />
+                          <p className="text-sm font-medium">{t.common.noData}</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>{/* /lg:col-span-2 */}
 
           {/* Policies sidebar (right third) */}
           <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5">

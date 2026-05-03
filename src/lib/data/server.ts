@@ -286,14 +286,17 @@ export async function fetchEmployees(): Promise<Employee[]> {
       "bg-cyan-500",
       "bg-orange-500",
     ];
-    // Enrich with manager_id + commercial_registration from profiles —
+    // Enrich with manager_id + national_id from profiles —
     // admin_list_users RPC doesn't return these, so we batch-fetch by ID.
+    // National ID (هوية وطنية / إقامة) is the personal identifier used by the
+    // Onboarding banner to flag employees with missing ID. It's per-individual,
+    // unlike a Commercial Registration (which belongs to companies, not people).
     const userIds = users.map((u) => u.user_id);
-    let extras = new Map<string, { managerId: string | null; cr: string | null }>();
+    let extras = new Map<string, { managerId: string | null; nationalId: string | null }>();
     if (userIds.length > 0) {
       const { data: profileExtras } = await supabase
         .from("profiles")
-        .select("id, manager_id, commercial_registration")
+        .select("id, manager_id, national_id")
         .in("id", userIds);
       if (profileExtras) {
         extras = new Map(
@@ -301,7 +304,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
             p.id as string,
             {
               managerId: (p.manager_id as string) || null,
-              cr: (p.commercial_registration as string) || null,
+              nationalId: (p.national_id as string) || null,
             },
           ])
         );
@@ -329,7 +332,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
         color: colors[i % colors.length],
         profileCompleted: u.profile_completed ?? false,
         managerId: extra?.managerId ?? null,
-        commercialRegistration: extra?.cr ?? null,
+        nationalId: extra?.nationalId ?? undefined,
       };
     });
   } catch {

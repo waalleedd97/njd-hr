@@ -39,8 +39,6 @@ export interface Employee {
   locationRequired?: boolean;
   /** Supabase UUID of the direct line manager — used by the Org Chart tab */
   managerId?: string | null;
-  /** Saudi Commercial Registration / مسجّل تجاري — flagged in onboarding banner */
-  commercialRegistration?: string | null;
 }
 
 // ─── Employee Assets (company-issued equipment) ─────────────────────
