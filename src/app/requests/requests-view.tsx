@@ -23,13 +23,6 @@ import type { RequestsSlice } from "@/lib/data/server";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
-const statusBadgeVariant: Record<string, "warning" | "info" | "success" | "destructive"> = {
-  pending: "warning",
-  "in-review": "info",
-  approved: "success",
-  rejected: "destructive",
-};
-
 const typeConfig: Record<string, { iconName: string; bg: string; icon: string }> = {
   leaveRequest: { iconName: "event_busy", bg: "bg-blue-500/15", icon: "text-blue-600 dark:text-blue-400" },
   salaryCert: { iconName: "workspace_premium", bg: "bg-emerald-500/15", icon: "text-emerald-600 dark:text-emerald-400" },

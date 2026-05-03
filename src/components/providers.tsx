@@ -95,7 +95,10 @@ function AuthProvider({
   initialRole: UserRole;
 }) {
   const [role, setRole] = useState<UserRole>(initialRole);
-  const [user, setUser] = useState<UserProfile>(initialUser);
+  // initialUser is passed in by the server-rendered layout, never mutated client-side.
+  // No setUser exposed because client-side profile edits flow through useData() →
+  // updateEmployee(), not through this auth context.
+  const [user] = useState<UserProfile>(initialUser);
   // Layout already gated unauthenticated users to Landing — reaching here means authed.
   const [isAuthenticated] = useState(true);
 
@@ -138,9 +141,11 @@ function AuthProvider({
     };
   }, [initialUser.email]);
 
-  const login = useCallback((email: string, password: string): boolean => {
-    void email;
-    void password;
+  // login() is intentionally a no-op stub: this app never renders a sign-in UI.
+  // All authentication lives in the Landing project. Kept in the context shape
+  // only because older consumers still destructure it.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const login = useCallback((_email: string, _password: string): boolean => {
     return false;
   }, []);
 
