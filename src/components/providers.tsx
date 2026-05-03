@@ -14,6 +14,8 @@ import { type UserRole } from "@/lib/navigation";
 import { DataProvider } from "@/lib/data-store";
 import { supabase } from "@/lib/supabase";
 import type { UserProfile } from "@/lib/auth/types";
+import { ToastProvider } from "@/components/ui/toast";
+import { ConfirmProvider } from "@/components/ui/confirm-dialog";
 
 // Re-export UserProfile so existing imports from "@/components/providers" keep working.
 export type { UserProfile };
@@ -201,7 +203,11 @@ export function Providers({
     >
       <LanguageProvider>
         <AuthProvider initialUser={initialUser} initialRole={initialRole}>
-          <DataProvider seedFromServer>{children}</DataProvider>
+          <DataProvider seedFromServer>
+            <ToastProvider>
+              <ConfirmProvider>{children}</ConfirmProvider>
+            </ToastProvider>
+          </DataProvider>
         </AuthProvider>
       </LanguageProvider>
     </NextThemeProvider>

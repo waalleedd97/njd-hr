@@ -65,21 +65,52 @@ export const leaveRequests: { id: string; employeeId: string; typeKey: string; s
 
 export const employeeRequests: { id: string; employeeId: string; typeKey: string; date: string; status: "pending" | "in-review" | "approved" | "rejected"; detailsAr: string; detailsEn: string }[] = [];
 
-export const branches = [
+// Settings entities — backed by Supabase tables (branches/custom_roles/compliance_items)
+// after first refresh; defaults below ensure UI never shows empty tables.
+
+export interface Branch {
+  id: string;
+  nameAr: string;
+  nameEn: string;
+  cityAr: string;
+  cityEn: string;
+  employeeCount: number;
+  isMain: boolean;
+}
+
+export interface Role {
+  id: string;
+  nameAr: string;
+  nameEn: string;
+  users: number;
+  permissions: string[];
+}
+
+export interface ComplianceItem {
+  id: string;
+  titleAr: string;
+  titleEn: string;
+  descAr: string;
+  descEn: string;
+  compliant: boolean;
+  reviewedAt?: string;
+}
+
+export const branches: Branch[] = [
   { id: "BR001", nameAr: "المقر الرئيسي", nameEn: "Headquarters", cityAr: "الرياض", cityEn: "Riyadh", employeeCount: 1, isMain: true },
 ];
 
-export const roles = [
+export const roles: Role[] = [
   { id: "R001", nameAr: "مدير النظام", nameEn: "System Admin", users: 1, permissions: ["all"] },
   { id: "R002", nameAr: "مدير الموارد البشرية", nameEn: "HR Manager", users: 0, permissions: ["employees", "attendance", "leaves", "payroll", "requests", "reports"] },
   { id: "R003", nameAr: "مشرف", nameEn: "Supervisor", users: 0, permissions: ["attendance", "leaves", "requests"] },
   { id: "R004", nameAr: "موظف", nameEn: "Employee", users: 0, permissions: ["self-service"] },
 ];
 
-export const complianceItems = [
+export const complianceItems: ComplianceItem[] = [
   { id: "C001", titleAr: "عقود العمل", titleEn: "Employment Contracts", descAr: "جميع الموظفين لديهم عقود عمل موقعة ومحدثة", descEn: "All employees have signed and updated contracts", compliant: true },
   { id: "C002", titleAr: "تسجيل التأمينات الاجتماعية", titleEn: "GOSI Registration", descAr: "جميع الموظفين مسجلين في نظام التأمينات الاجتماعية", descEn: "All employees registered in GOSI system", compliant: true },
-  { id: "C003", titleAr: "نسبة السعودة", titleEn: "Saudization (Nitaqat)", descAr: "الشركة في النطاق الأخضر المرتفع بنسبة 72%", descEn: "Company in high green zone at 72%", compliant: true },
+  { id: "C003", titleAr: "نسبة السعودة", titleEn: "Saudization (Nitaqat)", descAr: "الشركة في النطاق الأخضر المرتفع", descEn: "Company in high green zone", compliant: true },
   { id: "C004", titleAr: "حماية الأجور", titleEn: "Wage Protection (WPS)", descAr: "تحويل الرواتب عبر نظام حماية الأجور", descEn: "Salaries transferred via WPS system", compliant: true },
   { id: "C005", titleAr: "ساعات العمل", titleEn: "Working Hours", descAr: "الالتزام بحد أقصى 48 ساعة عمل أسبوعياً", descEn: "Maximum 48 working hours per week observed", compliant: true },
   { id: "C006", titleAr: "الإجازات السنوية", titleEn: "Annual Leave", descAr: "توفير 21 يوم إجازة سنوية كحد أدنى", descEn: "Minimum 21 days annual leave provided", compliant: true },
@@ -88,6 +119,20 @@ export const complianceItems = [
   { id: "C009", titleAr: "سياسة التحرش", titleEn: "Anti-Harassment Policy", descAr: "وجود سياسة مكتوبة لمنع التحرش في بيئة العمل", descEn: "Written anti-harassment workplace policy", compliant: true },
   { id: "C010", titleAr: "السلامة المهنية", titleEn: "Occupational Safety", descAr: "الالتزام بمعايير السلامة والصحة المهنية", descEn: "Compliance with OHS standards", compliant: false },
 ];
+
+/** Available permission keys used by Settings → Roles editor. */
+export const ROLE_PERMISSIONS = [
+  "all",
+  "self-service",
+  "employees",
+  "attendance",
+  "leaves",
+  "payroll",
+  "requests",
+  "reports",
+  "settings",
+] as const;
+export type RolePermission = typeof ROLE_PERMISSIONS[number];
 
 export function getEmployeeById(id: string) {
   return employees.find((e) => e.id === id);
@@ -133,10 +178,13 @@ export interface Holiday {
   days: number;
 }
 
+// Saudi public holidays for 2026.
+// Note: Eid Al-Fitr and Eid Al-Adha follow the Hijri calendar — admin should
+// confirm exact Gregorian dates each year via the official MHRSD announcement.
 export const saudiHolidays: Holiday[] = [
   { id: "H001", nameAr: "يوم التأسيس", nameEn: "Founding Day", startDate: "2026-02-22", endDate: "2026-02-22", days: 1 },
-  { id: "H002", nameAr: "عيد الفطر", nameEn: "Eid Al-Fitr", startDate: "", endDate: "", days: 4 },
-  { id: "H003", nameAr: "عيد الأضحى", nameEn: "Eid Al-Adha", startDate: "", endDate: "", days: 4 },
+  { id: "H002", nameAr: "عيد الفطر", nameEn: "Eid Al-Fitr", startDate: "2026-03-20", endDate: "2026-03-23", days: 4 },
+  { id: "H003", nameAr: "عيد الأضحى", nameEn: "Eid Al-Adha", startDate: "2026-05-26", endDate: "2026-05-29", days: 4 },
   { id: "H004", nameAr: "اليوم الوطني", nameEn: "National Day", startDate: "2026-09-23", endDate: "2026-09-23", days: 1 },
 ];
 

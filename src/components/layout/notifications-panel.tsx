@@ -111,7 +111,7 @@ export function NotificationsPanel({ open, onClose, onUnreadCountChange }: Notif
       )
       .subscribe((status: string, err?: Error) => {
         if (status === "SUBSCRIBED") {
-          console.log("[HR] Realtime: notifications channel subscribed ✓");
+          // Channel ready — silent in production
         } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
           console.warn(
             "[HR] Realtime: notifications channel status =",

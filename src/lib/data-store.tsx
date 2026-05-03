@@ -11,11 +11,17 @@ import {
 import {
   employees as defaultEmployees,
   departments as defaultDepartments,
+  branches as defaultBranches,
+  roles as defaultRoles,
+  complianceItems as defaultCompliance,
   type Employee,
   type Notification,
   type SalaryAdvance,
   type AttendanceAdjustment,
   type PendingInvitation,
+  type Branch,
+  type Role,
+  type ComplianceItem,
 } from "./mock-data";
 import { createNotification, notifyAdmins } from "./notifications";
 import { supabase } from "./supabase";
@@ -89,6 +95,9 @@ interface DataState {
   settings: AppSettings;
   payrollProcessed: boolean;
   departments: Record<string, { ar: string; en: string }>;
+  branches: Branch[];
+  roles: Role[];
+  compliance: ComplianceItem[];
 }
 
 // ─── Default State ───────────────────────────────────────────────────
@@ -121,6 +130,9 @@ function getDefaultState(): DataState {
     },
     payrollProcessed: false,
     departments: { ...defaultDepartments },
+    branches: [...defaultBranches],
+    roles: [...defaultRoles],
+    compliance: [...defaultCompliance],
   };
 }
 
@@ -214,13 +226,30 @@ interface DataContextType extends DataState {
   // Employees
   updateEmployee: (id: string, updates: Partial<Employee>) => void;
 
-  // Settings (local)
-  updateSettings: (updates: Partial<AppSettings>) => void;
+  // Settings (Supabase-backed via app_settings.key='company_settings')
+  updateSettings: (updates: Partial<AppSettings>) => Promise<void>;
+  refreshSettings: () => Promise<void>;
 
   // Departments
   addDepartment: (key: string, ar: string, en: string) => void;
   updateDepartment: (key: string, ar: string, en: string) => void;
   removeDepartment: (key: string) => void;
+
+  // Branches (Supabase: branches)
+  refreshBranches: () => Promise<void>;
+  addBranch: (b: Omit<Branch, "id" | "employeeCount"> & { id?: string }) => Promise<void>;
+  updateBranch: (id: string, updates: Partial<Branch>) => Promise<void>;
+  removeBranch: (id: string) => Promise<void>;
+
+  // Custom Roles (Supabase: custom_roles)
+  refreshRoles: () => Promise<void>;
+  addRole: (r: Omit<Role, "id" | "users"> & { id?: string }) => Promise<void>;
+  updateRole: (id: string, updates: Partial<Role>) => Promise<void>;
+  removeRole: (id: string) => Promise<void>;
+
+  // Compliance Items (Supabase: compliance_items)
+  refreshCompliance: () => Promise<void>;
+  updateCompliance: (id: string, updates: Partial<ComplianceItem>) => Promise<void>;
 
   // Profile completion
   acceptInvitation: (email: string) => void;
@@ -1043,14 +1072,197 @@ export function DataProvider({
     []
   );
 
-  // ── Settings (local only) ──
+  // ── Settings (Supabase-backed via app_settings.key='company_settings') ──
 
-  const updateSettings = useCallback((updates: Partial<AppSettings>) => {
-    setState((p) => ({
-      ...p,
-      settings: { ...p.settings, ...updates },
-    }));
+  const refreshSettings = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("key", "company_settings")
+        .maybeSingle();
+      if (error) {
+        console.error("[data-store] refreshSettings failed:", error.message);
+        return;
+      }
+      if (data?.value && typeof data.value === "object") {
+        setState((p) => ({
+          ...p,
+          settings: { ...p.settings, ...(data.value as Partial<AppSettings>) },
+        }));
+      }
+    } catch (err) {
+      console.error("[data-store] refreshSettings exception:", err);
+    }
   }, []);
+
+  const updateSettings = useCallback(async (updates: Partial<AppSettings>) => {
+    let previous: AppSettings = getDefaultState().settings;
+    setState((p) => {
+      previous = p.settings;
+      return { ...p, settings: { ...p.settings, ...updates } };
+    });
+    const next = { ...previous, ...updates };
+    const { error } = await supabase
+      .from("app_settings")
+      .upsert({ key: "company_settings", value: next }, { onConflict: "key" });
+    if (error) {
+      console.error("[data-store] updateSettings Supabase error:", error.message);
+      // Rollback
+      setState((p) => ({ ...p, settings: previous }));
+      throw error;
+    }
+  }, []);
+
+  // ── Branches (Supabase: branches) ──
+
+  const refreshBranches = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("branches")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("[data-store] refreshBranches failed:", error.message);
+      return;
+    }
+    if (!data) return;
+    const mapped: Branch[] = data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      nameAr: r.name_ar as string,
+      nameEn: r.name_en as string,
+      cityAr: r.city_ar as string,
+      cityEn: r.city_en as string,
+      employeeCount: (r.employee_count as number) ?? 0,
+      isMain: (r.is_main as boolean) ?? false,
+    }));
+    setState((p) => ({ ...p, branches: mapped }));
+  }, []);
+
+  const addBranch = useCallback(async (b: Omit<Branch, "id" | "employeeCount"> & { id?: string }) => {
+    const id = b.id || `BR${Date.now().toString().slice(-6)}`;
+    const { error } = await supabase.from("branches").insert({
+      id,
+      name_ar: b.nameAr,
+      name_en: b.nameEn,
+      city_ar: b.cityAr,
+      city_en: b.cityEn,
+      is_main: b.isMain,
+      employee_count: 0,
+    });
+    if (error) throw error;
+    await refreshBranches();
+  }, [refreshBranches]);
+
+  const updateBranch = useCallback(async (id: string, updates: Partial<Branch>) => {
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.nameAr !== undefined) patch.name_ar = updates.nameAr;
+    if (updates.nameEn !== undefined) patch.name_en = updates.nameEn;
+    if (updates.cityAr !== undefined) patch.city_ar = updates.cityAr;
+    if (updates.cityEn !== undefined) patch.city_en = updates.cityEn;
+    if (updates.isMain !== undefined) patch.is_main = updates.isMain;
+    const { error } = await supabase.from("branches").update(patch).eq("id", id);
+    if (error) throw error;
+    await refreshBranches();
+  }, [refreshBranches]);
+
+  const removeBranch = useCallback(async (id: string) => {
+    const { error } = await supabase.from("branches").delete().eq("id", id);
+    if (error) throw error;
+    await refreshBranches();
+  }, [refreshBranches]);
+
+  // ── Custom Roles (Supabase: custom_roles) ──
+
+  const refreshRoles = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("custom_roles")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error) {
+      console.error("[data-store] refreshRoles failed:", error.message);
+      return;
+    }
+    if (!data) return;
+    const mapped: Role[] = data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      nameAr: r.name_ar as string,
+      nameEn: r.name_en as string,
+      users: (r.user_count as number) ?? 0,
+      permissions: Array.isArray(r.permissions) ? (r.permissions as string[]) : [],
+    }));
+    setState((p) => ({ ...p, roles: mapped }));
+  }, []);
+
+  const addRole = useCallback(async (r: Omit<Role, "id" | "users"> & { id?: string }) => {
+    const id = r.id || `R${Date.now().toString().slice(-6)}`;
+    const { error } = await supabase.from("custom_roles").insert({
+      id,
+      name_ar: r.nameAr,
+      name_en: r.nameEn,
+      permissions: r.permissions,
+      user_count: 0,
+    });
+    if (error) throw error;
+    await refreshRoles();
+  }, [refreshRoles]);
+
+  const updateRole = useCallback(async (id: string, updates: Partial<Role>) => {
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (updates.nameAr !== undefined) patch.name_ar = updates.nameAr;
+    if (updates.nameEn !== undefined) patch.name_en = updates.nameEn;
+    if (updates.permissions !== undefined) patch.permissions = updates.permissions;
+    const { error } = await supabase.from("custom_roles").update(patch).eq("id", id);
+    if (error) throw error;
+    await refreshRoles();
+  }, [refreshRoles]);
+
+  const removeRole = useCallback(async (id: string) => {
+    const { error } = await supabase.from("custom_roles").delete().eq("id", id);
+    if (error) throw error;
+    await refreshRoles();
+  }, [refreshRoles]);
+
+  // ── Compliance Items (Supabase: compliance_items) ──
+
+  const refreshCompliance = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("compliance_items")
+      .select("*")
+      .order("id", { ascending: true });
+    if (error) {
+      console.error("[data-store] refreshCompliance failed:", error.message);
+      return;
+    }
+    if (!data) return;
+    const mapped: ComplianceItem[] = data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      titleAr: r.title_ar as string,
+      titleEn: r.title_en as string,
+      descAr: (r.desc_ar as string) || "",
+      descEn: (r.desc_en as string) || "",
+      compliant: (r.compliant as boolean) ?? false,
+      reviewedAt: (r.reviewed_at as string) || undefined,
+    }));
+    setState((p) => ({ ...p, compliance: mapped }));
+  }, []);
+
+  const updateCompliance = useCallback(async (id: string, updates: Partial<ComplianceItem>) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    const patch: Record<string, unknown> = {
+      reviewed_by: userId,
+      reviewed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.titleAr !== undefined) patch.title_ar = updates.titleAr;
+    if (updates.titleEn !== undefined) patch.title_en = updates.titleEn;
+    if (updates.descAr !== undefined) patch.desc_ar = updates.descAr;
+    if (updates.descEn !== undefined) patch.desc_en = updates.descEn;
+    if (updates.compliant !== undefined) patch.compliant = updates.compliant;
+    const { error } = await supabase.from("compliance_items").update(patch).eq("id", id);
+    if (error) throw error;
+    await refreshCompliance();
+  }, [refreshCompliance]);
 
   const processPayroll = useCallback(() => {
     setState((p) => {
@@ -1205,9 +1417,20 @@ export function DataProvider({
     addNotification,
     updateEmployee,
     updateSettings,
+    refreshSettings,
     addDepartment,
     updateDepartment,
     removeDepartment,
+    refreshBranches,
+    addBranch,
+    updateBranch,
+    removeBranch,
+    refreshRoles,
+    addRole,
+    updateRole,
+    removeRole,
+    refreshCompliance,
+    updateCompliance,
     acceptInvitation,
     completeProfile,
     processPayroll,

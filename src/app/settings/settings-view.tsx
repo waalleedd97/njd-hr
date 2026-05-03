@@ -10,14 +10,18 @@ import {
   requestPushPermission,
 } from "@/lib/notifications";
 import {
-  branches,
-  roles,
-  complianceItems,
   saudiHolidays,
   penaltyRules,
   earlyDepartureRules,
   geofenceConfig,
+  ROLE_PERMISSIONS,
+  type Branch,
+  type Role,
+  type ComplianceItem,
 } from "@/lib/mock-data";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { supabase } from "@/lib/supabase";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
@@ -83,7 +87,15 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
   const isAr = lang === "ar";
   const { user } = useAuth();
   const store = useData();
-  const { settings, updateSettings, addNotification } = store;
+  const toast = useToast();
+  const { confirm } = useConfirm();
+  const {
+    settings, updateSettings, addNotification,
+    branches: storeBranches, roles: storeRoles, compliance: storeCompliance,
+    addBranch, updateBranch, removeBranch,
+    addRole, updateRole, removeRole,
+    updateCompliance,
+  } = store;
 
   // Notification preferences
   const [notifPrefs, setNotifPrefs] = useState<NotificationPreferences>({
@@ -190,9 +202,171 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
   const inputClass =
     "h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40";
 
-  // Compliance calculations
-  const compliantCount = complianceItems.filter((item) => item.compliant).length;
-  const totalComplianceItems = complianceItems.length;
+  // Compliance calculations (Supabase-backed)
+  const compliantCount = storeCompliance.filter((item) => item.compliant).length;
+  const totalComplianceItems = Math.max(1, storeCompliance.length);
+
+  // Branch / Role / Compliance dialog state
+  const [branchDialogOpen, setBranchDialogOpen] = useState(false);
+  const [branchEditing, setBranchEditing] = useState<Branch | null>(null);
+  const [branchForm, setBranchForm] = useState({ nameAr: "", nameEn: "", cityAr: "", cityEn: "", isMain: false });
+  const [branchSaving, setBranchSaving] = useState(false);
+
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false);
+  const [roleEditing, setRoleEditing] = useState<Role | null>(null);
+  const [roleForm, setRoleForm] = useState<{ nameAr: string; nameEn: string; permissions: string[] }>({ nameAr: "", nameEn: "", permissions: [] });
+  const [roleSaving, setRoleSaving] = useState(false);
+
+  const [complianceDialogOpen, setComplianceDialogOpen] = useState(false);
+  const [complianceEditing, setComplianceEditing] = useState<ComplianceItem | null>(null);
+  const [complianceForm, setComplianceForm] = useState({ titleAr: "", titleEn: "", descAr: "", descEn: "", compliant: false });
+  const [complianceSaving, setComplianceSaving] = useState(false);
+
+  // Branch handlers
+  const openNewBranch = () => {
+    setBranchEditing(null);
+    setBranchForm({ nameAr: "", nameEn: "", cityAr: "", cityEn: "", isMain: false });
+    setBranchDialogOpen(true);
+  };
+  const openEditBranch = (b: Branch) => {
+    setBranchEditing(b);
+    setBranchForm({ nameAr: b.nameAr, nameEn: b.nameEn, cityAr: b.cityAr, cityEn: b.cityEn, isMain: b.isMain });
+    setBranchDialogOpen(true);
+  };
+  const submitBranch = async () => {
+    if (branchSaving) return;
+    if (!branchForm.nameAr || !branchForm.nameEn || !branchForm.cityAr || !branchForm.cityEn) {
+      toast.warning(isAr ? "كل الحقول مطلوبة" : "All fields required");
+      return;
+    }
+    setBranchSaving(true);
+    try {
+      if (branchEditing) {
+        await updateBranch(branchEditing.id, branchForm);
+        toast.success(isAr ? "تم تحديث الفرع" : "Branch updated");
+      } else {
+        await addBranch(branchForm);
+        toast.success(isAr ? "تمت إضافة الفرع" : "Branch added");
+      }
+      setBranchDialogOpen(false);
+    } catch (err) {
+      console.error("[settings] branch save failed:", err);
+      toast.error(isAr ? "فشل حفظ الفرع" : "Failed to save branch");
+    } finally {
+      setBranchSaving(false);
+    }
+  };
+  const deleteBranch = async (b: Branch) => {
+    const ok = await confirm({
+      title: isAr ? "حذف الفرع" : "Delete Branch",
+      description: isAr ? `حذف "${b.nameAr}"؟` : `Delete "${b.nameEn}"?`,
+      confirmLabel: isAr ? "حذف" : "Delete",
+      cancelLabel: isAr ? "إلغاء" : "Cancel",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await removeBranch(b.id);
+      toast.success(isAr ? "تم حذف الفرع" : "Branch deleted");
+    } catch (err) {
+      console.error("[settings] branch delete failed:", err);
+      toast.error(isAr ? "فشل حذف الفرع" : "Failed to delete branch");
+    }
+  };
+
+  // Role handlers
+  const openNewRole = () => {
+    setRoleEditing(null);
+    setRoleForm({ nameAr: "", nameEn: "", permissions: [] });
+    setRoleDialogOpen(true);
+  };
+  const openEditRole = (r: Role) => {
+    setRoleEditing(r);
+    setRoleForm({ nameAr: r.nameAr, nameEn: r.nameEn, permissions: [...r.permissions] });
+    setRoleDialogOpen(true);
+  };
+  const togglePermission = (p: string) => {
+    setRoleForm((prev) => ({
+      ...prev,
+      permissions: prev.permissions.includes(p)
+        ? prev.permissions.filter((x) => x !== p)
+        : [...prev.permissions, p],
+    }));
+  };
+  const submitRole = async () => {
+    if (roleSaving) return;
+    if (!roleForm.nameAr || !roleForm.nameEn) {
+      toast.warning(isAr ? "اسم الدور مطلوب بالعربية والإنجليزية" : "Role name required in both languages");
+      return;
+    }
+    setRoleSaving(true);
+    try {
+      if (roleEditing) {
+        await updateRole(roleEditing.id, roleForm);
+        toast.success(isAr ? "تم تحديث الدور" : "Role updated");
+      } else {
+        await addRole(roleForm);
+        toast.success(isAr ? "تمت إضافة الدور" : "Role added");
+      }
+      setRoleDialogOpen(false);
+    } catch (err) {
+      console.error("[settings] role save failed:", err);
+      toast.error(isAr ? "فشل حفظ الدور" : "Failed to save role");
+    } finally {
+      setRoleSaving(false);
+    }
+  };
+  const deleteRole = async (r: Role) => {
+    if (r.users > 0) {
+      toast.warning(isAr ? "لا يمكن حذف دور مرتبط بمستخدمين" : "Cannot delete a role with assigned users");
+      return;
+    }
+    const ok = await confirm({
+      title: isAr ? "حذف الدور" : "Delete Role",
+      description: isAr ? `حذف "${r.nameAr}"؟` : `Delete "${r.nameEn}"?`,
+      confirmLabel: isAr ? "حذف" : "Delete",
+      cancelLabel: isAr ? "إلغاء" : "Cancel",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await removeRole(r.id);
+      toast.success(isAr ? "تم حذف الدور" : "Role deleted");
+    } catch (err) {
+      console.error("[settings] role delete failed:", err);
+      toast.error(isAr ? "فشل حذف الدور" : "Failed to delete role");
+    }
+  };
+
+  // Compliance handlers
+  const openEditCompliance = (item: ComplianceItem) => {
+    setComplianceEditing(item);
+    setComplianceForm({ titleAr: item.titleAr, titleEn: item.titleEn, descAr: item.descAr, descEn: item.descEn, compliant: item.compliant });
+    setComplianceDialogOpen(true);
+  };
+  const submitCompliance = async () => {
+    if (complianceSaving || !complianceEditing) return;
+    setComplianceSaving(true);
+    try {
+      await updateCompliance(complianceEditing.id, complianceForm);
+      toast.success(isAr ? "تم تحديث بند الالتزام" : "Compliance item updated");
+      setComplianceDialogOpen(false);
+    } catch (err) {
+      console.error("[settings] compliance save failed:", err);
+      toast.error(isAr ? "فشل التحديث" : "Failed to update");
+    } finally {
+      setComplianceSaving(false);
+    }
+  };
+  const toggleCompliant = async (item: ComplianceItem) => {
+    try {
+      await updateCompliance(item.id, { compliant: !item.compliant });
+      toast.success(isAr ? "تم التحديث" : "Updated");
+    } catch (err) {
+      console.error("[settings] compliance toggle failed:", err);
+      toast.error(isAr ? "فشل التحديث" : "Failed to update");
+    }
+  };
   const compliancePercentage = Math.round(
     (compliantCount / totalComplianceItems) * 100
   );
@@ -298,13 +472,25 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
                     }}>
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
-                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600" onClick={() => {
+                    <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600" onClick={async () => {
                       if (empCount > 0) {
-                        addNotification({ type: "system", titleAr: "خطأ", titleEn: "Error", descAr: t.dept.hasEmployees, descEn: t.dept.hasEmployees, time: 0, read: false });
+                        toast.warning(t.dept.hasEmployees);
                         return;
                       }
-                      if (confirm(t.dept.confirmDelete)) {
-                        store.removeDepartment(key);
+                      const ok = await confirm({
+                        title: isAr ? "حذف القسم" : "Delete Department",
+                        description: t.dept.confirmDelete,
+                        confirmLabel: isAr ? "حذف" : "Delete",
+                        cancelLabel: isAr ? "إلغاء" : "Cancel",
+                        variant: "danger",
+                      });
+                      if (ok) {
+                        try {
+                          store.removeDepartment(key);
+                          toast.success(isAr ? "تم حذف القسم" : "Department deleted");
+                        } catch {
+                          toast.error(isAr ? "فشل حذف القسم" : "Failed to delete department");
+                        }
                       }
                     }}>
                       <Trash2 className="w-3.5 h-3.5" />
@@ -412,31 +598,28 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
           <div className="flex justify-end mt-6 pt-4 border-t border-outline-variant/20">
             <Button
               className="gap-2"
-              onClick={() => {
-                updateSettings({
-                  companyNameAr: isAr ? companyName : settings.companyNameAr,
-                  companyNameEn: isAr ? settings.companyNameEn : companyName,
-                  crNumber,
-                  addressAr: isAr ? address : settings.addressAr,
-                  addressEn: isAr ? settings.addressEn : address,
-                  cityAr: isAr ? city : settings.cityAr,
-                  cityEn: isAr ? settings.cityEn : city,
-                  countryAr: isAr ? country : settings.countryAr,
-                  countryEn: isAr ? settings.countryEn : country,
-                  industryAr: isAr ? industry : settings.industryAr,
-                  industryEn: isAr ? settings.industryEn : industry,
-                });
-                addNotification({
-                  type: "system",
-                  titleAr: "تم الحفظ",
-                  titleEn: "Saved",
-                  descAr: "تم حفظ معلومات الشركة بنجاح",
-                  descEn: "Company info saved successfully",
-                  time: 0,
-                  read: false,
-                });
-                setCompanySaved(true);
-                setTimeout(() => setCompanySaved(false), 2000);
+              onClick={async () => {
+                try {
+                  await updateSettings({
+                    companyNameAr: isAr ? companyName : settings.companyNameAr,
+                    companyNameEn: isAr ? settings.companyNameEn : companyName,
+                    crNumber,
+                    addressAr: isAr ? address : settings.addressAr,
+                    addressEn: isAr ? settings.addressEn : address,
+                    cityAr: isAr ? city : settings.cityAr,
+                    cityEn: isAr ? settings.cityEn : city,
+                    countryAr: isAr ? country : settings.countryAr,
+                    countryEn: isAr ? settings.countryEn : country,
+                    industryAr: isAr ? industry : settings.industryAr,
+                    industryEn: isAr ? settings.industryEn : industry,
+                  });
+                  toast.success(isAr ? "تم حفظ معلومات الشركة" : "Company info saved");
+                  setCompanySaved(true);
+                  setTimeout(() => setCompanySaved(false), 2000);
+                } catch (err) {
+                  console.error("[settings] save company failed:", err);
+                  toast.error(isAr ? "فشل الحفظ في القاعدة" : "Failed to save to database");
+                }
               }}
             >
               {companySaved ? (
@@ -459,50 +642,35 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
               <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
                 <MapPin className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               </div>
-              <h2 className="text-lg font-semibold text-on-surface">
-                {t.set.branches}
-              </h2>
+              <h2 className="text-lg font-semibold text-on-surface">{t.set.branches}</h2>
             </div>
+            <Button className="gap-2" onClick={openNewBranch}>
+              <Plus className="w-4 h-4" />
+              {isAr ? "إضافة فرع" : "Add Branch"}
+            </Button>
           </div>
-
           <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
-            <table className="w-full min-w-[500px]">
+            <table className="w-full min-w-[600px]">
               <thead>
                 <tr className="text-xs text-on-surface-variant border-b border-outline-variant/20">
-                  <th className="text-start pb-3 font-medium">
-                    {t.set.branchName}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.set.location}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.set.employeeCount}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.common.status}
-                  </th>
+                  <th className="text-start pb-3 font-medium">{t.set.branchName}</th>
+                  <th className="text-start pb-3 font-medium">{t.set.location}</th>
+                  <th className="text-start pb-3 font-medium">{t.set.employeeCount}</th>
+                  <th className="text-start pb-3 font-medium">{t.common.status}</th>
+                  <th className="text-end pb-3 font-medium">{t.common.actions}</th>
                 </tr>
               </thead>
               <tbody>
-                {branches.map((branch) => (
-                  <tr
-                    key={branch.id}
-                    className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors"
-                  >
+                {storeBranches.map((branch) => (
+                  <tr key={branch.id} className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors">
                     <td className="py-3">
                       <div className="flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-on-surface-variant" />
-                        <span className="text-sm font-medium">
-                          {isAr ? branch.nameAr : branch.nameEn}
-                        </span>
+                        <span className="text-sm font-medium">{isAr ? branch.nameAr : branch.nameEn}</span>
                       </div>
                     </td>
-                    <td className="py-3 text-sm text-on-surface-variant">
-                      {isAr ? branch.cityAr : branch.cityEn}
-                    </td>
-                    <td className="py-3 text-sm text-on-surface-variant">
-                      {branch.employeeCount}
-                    </td>
+                    <td className="py-3 text-sm text-on-surface-variant">{isAr ? branch.cityAr : branch.cityEn}</td>
+                    <td className="py-3 text-sm text-on-surface-variant">{branch.employeeCount}</td>
                     <td className="py-3">
                       {branch.isMain ? (
                         <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400 border-0 text-[11px]">
@@ -514,8 +682,31 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
                         </Badge>
                       )}
                     </td>
+                    <td className="py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEditBranch(branch)} aria-label={isAr ? "تعديل" : "Edit"}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-600"
+                          onClick={() => deleteBranch(branch)}
+                          disabled={branch.isMain}
+                          title={branch.isMain ? (isAr ? "لا يمكن حذف الفرع الرئيسي" : "Main branch cannot be deleted") : ""}
+                          aria-label={isAr ? "حذف" : "Delete"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
+                {storeBranches.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="py-10 text-center text-on-surface-variant text-sm">{t.common.noData}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -524,59 +715,74 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
 
       {activeTab === "rolesPermissions" && (
         <div className="bg-surface-container-lowest rounded-2xl shadow-sm p-5 lg:p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
-              <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
+                <Users className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <h2 className="text-lg font-semibold text-on-surface">{t.set.rolesPermissions}</h2>
             </div>
-            <h2 className="text-lg font-semibold text-on-surface">
-              {t.set.rolesPermissions}
-            </h2>
+            <Button className="gap-2" onClick={openNewRole}>
+              <Plus className="w-4 h-4" />
+              {isAr ? "إضافة دور" : "Add Role"}
+            </Button>
           </div>
-
+          <p className="text-xs text-on-surface-variant mb-4 px-1">
+            {isAr
+              ? "ملاحظة: تخصيص هذه الأدوار للمستخدمين يتم من لوحة Landing Page الإدارية، ولا تستبدل نظام RBAC الأصلي (super_admin / employee)."
+              : "Note: assigning these roles to users is done in the Landing Page admin panel and does not replace the core RBAC roles (super_admin / employee)."}
+          </p>
           <div className="overflow-x-auto -mx-5 lg:-mx-6 px-5 lg:px-6">
-            <table className="w-full min-w-[600px]">
+            <table className="w-full min-w-[700px]">
               <thead>
                 <tr className="text-xs text-on-surface-variant border-b border-outline-variant/20">
-                  <th className="text-start pb-3 font-medium">
-                    {t.set.roleName}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.set.users}
-                  </th>
-                  <th className="text-start pb-3 font-medium">
-                    {t.set.permissions}
-                  </th>
+                  <th className="text-start pb-3 font-medium">{t.set.roleName}</th>
+                  <th className="text-start pb-3 font-medium">{t.set.users}</th>
+                  <th className="text-start pb-3 font-medium">{t.set.permissions}</th>
+                  <th className="text-end pb-3 font-medium">{t.common.actions}</th>
                 </tr>
               </thead>
               <tbody>
-                {roles.map((role) => (
-                  <tr
-                    key={role.id}
-                    className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors"
-                  >
+                {storeRoles.map((role) => (
+                  <tr key={role.id} className="border-b border-outline-variant/20/50 last:border-0 hover:bg-surface-container-low/30 transition-colors">
                     <td className="py-3">
-                      <span className="text-sm font-medium">
-                        {isAr ? role.nameAr : role.nameEn}
-                      </span>
+                      <span className="text-sm font-medium">{isAr ? role.nameAr : role.nameEn}</span>
                     </td>
-                    <td className="py-3 text-sm text-on-surface-variant">
-                      {role.users}
-                    </td>
+                    <td className="py-3 text-sm text-on-surface-variant tabular-nums">{role.users}</td>
                     <td className="py-3">
                       <div className="flex flex-wrap gap-1.5">
                         {role.permissions.map((perm) => (
-                          <Badge
-                            key={perm}
-                            variant="secondary"
-                            className="text-[10px] font-medium"
-                          >
+                          <Badge key={perm} variant="secondary" className="text-[10px] font-medium">
                             {perm}
                           </Badge>
                         ))}
                       </div>
                     </td>
+                    <td className="py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => openEditRole(role)} aria-label={isAr ? "تعديل" : "Edit"}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-500 hover:text-red-600"
+                          onClick={() => deleteRole(role)}
+                          disabled={role.users > 0}
+                          title={role.users > 0 ? (isAr ? "لا يمكن حذف دور مرتبط بمستخدمين" : "Role has assigned users") : ""}
+                          aria-label={isAr ? "حذف" : "Delete"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
+                {storeRoles.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-10 text-center text-on-surface-variant text-sm">{t.common.noData}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -592,25 +798,16 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
                 <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-on-surface">
-                  {t.set.complianceScore}
-                </h2>
-                <p className="text-sm text-on-surface-variant">
-                  {t.set.saudiLaborLaw}
-                </p>
+                <h2 className="text-lg font-semibold text-on-surface">{t.set.complianceScore}</h2>
+                <p className="text-sm text-on-surface-variant">{t.set.saudiLaborLaw}</p>
               </div>
             </div>
-
             <div className="flex items-end gap-4 mb-3">
-              <span className={cn("text-4xl font-bold", barTextColor)}>
-                {compliancePercentage}%
-              </span>
+              <span className={cn("text-4xl font-bold", barTextColor)}>{compliancePercentage}%</span>
               <span className="text-sm text-on-surface-variant pb-1">
                 {compliantCount}/{totalComplianceItems} {t.set.compliant}
               </span>
             </div>
-
-            {/* Progress Bar */}
             <div className="w-full h-3 rounded-full bg-muted overflow-hidden">
               <div
                 className={cn("h-full rounded-full transition-all", barColor)}
@@ -619,9 +816,9 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
             </div>
           </div>
 
-          {/* Compliance Checklist */}
+          {/* Compliance Checklist (editable — click icon to toggle, pencil to edit) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {complianceItems.map((item) => (
+            {storeCompliance.map((item) => (
               <div
                 key={item.id}
                 className={cn(
@@ -632,30 +829,51 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
                 )}
               >
                 <div className="flex items-start gap-3">
-                  {item.compliant ? (
-                    <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
-                  ) : (
-                    <XCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => toggleCompliant(item)}
+                    aria-label={isAr ? "تبديل الحالة" : "Toggle status"}
+                    className="shrink-0 mt-0.5 hover:scale-110 transition-transform"
+                  >
+                    {item.compliant ? (
+                      <CheckCircle className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                    )}
+                  </button>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2 mb-1">
                       <h3 className="text-sm font-semibold text-on-surface">
                         {isAr ? item.titleAr : item.titleEn}
                       </h3>
-                      <Badge
-                        className={cn(
-                          "text-[10px] font-medium shrink-0 border-0",
-                          item.compliant
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400"
-                            : "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400"
-                        )}
-                      >
-                        {item.compliant ? t.set.compliant : t.set.notCompliant}
-                      </Badge>
+                      <div className="flex items-center gap-1">
+                        <Badge
+                          className={cn(
+                            "text-[10px] font-medium shrink-0 border-0",
+                            item.compliant
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-400"
+                              : "bg-red-100 text-red-800 dark:bg-red-500/15 dark:text-red-400"
+                          )}
+                        >
+                          {item.compliant ? t.set.compliant : t.set.notCompliant}
+                        </Badge>
+                        <Button variant="ghost" size="sm" onClick={() => openEditCompliance(item)} aria-label={isAr ? "تعديل" : "Edit"} className="-mr-2">
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                      </div>
                     </div>
                     <p className="text-xs text-on-surface-variant leading-relaxed">
                       {isAr ? item.descAr : item.descEn}
                     </p>
+                    {item.reviewedAt && (
+                      <p className="text-[10px] text-on-surface-variant/70 mt-1.5 tabular-nums">
+                        {isAr ? "آخر مراجعة:" : "Last reviewed:"}{" "}
+                        {new Date(item.reviewedAt).toLocaleDateString(
+                          isAr ? "ar-SA-u-nu-latn" : "en-US",
+                          { year: "numeric", month: "short", day: "numeric" }
+                        )}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -1107,22 +1325,16 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
           <div className="flex justify-end mt-6 pt-4 border-t border-outline-variant/20">
             <Button
               className="gap-2"
-              onClick={() => {
-                updateSettings({
-                  geofenceEnabled,
-                  geofenceRadius,
-                });
-                addNotification({
-                  type: "system",
-                  titleAr: "تم الحفظ",
-                  titleEn: "Saved",
-                  descAr: "تم حفظ إعدادات النطاق الجغرافي بنجاح",
-                  descEn: "Geofence settings saved successfully",
-                  time: 0,
-                  read: false,
-                });
-                setGeofenceSaved(true);
-                setTimeout(() => setGeofenceSaved(false), 2000);
+              onClick={async () => {
+                try {
+                  await updateSettings({ geofenceEnabled, geofenceRadius });
+                  toast.success(isAr ? "تم حفظ إعدادات النطاق الجغرافي" : "Geofence settings saved");
+                  setGeofenceSaved(true);
+                  setTimeout(() => setGeofenceSaved(false), 2000);
+                } catch (err) {
+                  console.error("[settings] save geofence failed:", err);
+                  toast.error(isAr ? "فشل الحفظ في القاعدة" : "Failed to save to database");
+                }
               }}
             >
               {geofenceSaved ? (
@@ -1324,6 +1536,157 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
           </div>
         </div>
       )}
+
+      {/* ─── Branch Add/Edit Dialog ──────────────────────────────────── */}
+      <Dialog open={branchDialogOpen} onOpenChange={setBranchDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{branchEditing ? (isAr ? "تعديل الفرع" : "Edit Branch") : (isAr ? "إضافة فرع" : "Add Branch")}</DialogTitle>
+            <DialogDescription className="sr-only">{t.set.branches}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "الاسم (عربي)" : "Name (Arabic)"}</label>
+                <input type="text" value={branchForm.nameAr} onChange={(e) => setBranchForm((f) => ({ ...f, nameAr: e.target.value }))} dir="rtl" className={inputClass} />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "الاسم (إنجليزي)" : "Name (English)"}</label>
+                <input type="text" value={branchForm.nameEn} onChange={(e) => setBranchForm((f) => ({ ...f, nameEn: e.target.value }))} dir="ltr" className={inputClass} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "المدينة (عربي)" : "City (Arabic)"}</label>
+                <input type="text" value={branchForm.cityAr} onChange={(e) => setBranchForm((f) => ({ ...f, cityAr: e.target.value }))} dir="rtl" className={inputClass} />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "المدينة (إنجليزي)" : "City (English)"}</label>
+                <input type="text" value={branchForm.cityEn} onChange={(e) => setBranchForm((f) => ({ ...f, cityEn: e.target.value }))} dir="ltr" className={inputClass} />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={branchForm.isMain}
+                onChange={(e) => setBranchForm((f) => ({ ...f, isMain: e.target.checked }))}
+                className="w-4 h-4 rounded accent-primary"
+              />
+              <span>{isAr ? "الفرع الرئيسي" : "Main branch"}</span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBranchDialogOpen(false)} disabled={branchSaving}>{t.common.cancel}</Button>
+            <Button onClick={submitBranch} disabled={branchSaving}>
+              {branchSaving && <Icon name="progress_activity" size={16} className="animate-spin" />}
+              {branchSaving ? (isAr ? "جاري الحفظ..." : "Saving...") : (isAr ? "حفظ" : "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Role Add/Edit Dialog ────────────────────────────────────── */}
+      <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{roleEditing ? (isAr ? "تعديل الدور" : "Edit Role") : (isAr ? "إضافة دور" : "Add Role")}</DialogTitle>
+            <DialogDescription className="sr-only">{t.set.rolesPermissions}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "الاسم (عربي)" : "Name (Arabic)"}</label>
+                <input type="text" value={roleForm.nameAr} onChange={(e) => setRoleForm((f) => ({ ...f, nameAr: e.target.value }))} dir="rtl" className={inputClass} />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "الاسم (إنجليزي)" : "Name (English)"}</label>
+                <input type="text" value={roleForm.nameEn} onChange={(e) => setRoleForm((f) => ({ ...f, nameEn: e.target.value }))} dir="ltr" className={inputClass} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-2">{t.set.permissions}</label>
+              <div className="grid grid-cols-2 gap-2">
+                {ROLE_PERMISSIONS.map((perm) => (
+                  <label key={perm} className="flex items-center gap-2 text-sm cursor-pointer p-2 rounded-lg hover:bg-surface-container-low">
+                    <input
+                      type="checkbox"
+                      checked={roleForm.permissions.includes(perm)}
+                      onChange={() => togglePermission(perm)}
+                      className="w-4 h-4 rounded accent-primary"
+                    />
+                    <span className="font-mono text-xs">{perm}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRoleDialogOpen(false)} disabled={roleSaving}>{t.common.cancel}</Button>
+            <Button onClick={submitRole} disabled={roleSaving}>
+              {roleSaving && <Icon name="progress_activity" size={16} className="animate-spin" />}
+              {roleSaving ? (isAr ? "جاري الحفظ..." : "Saving...") : (isAr ? "حفظ" : "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Compliance Edit Dialog ──────────────────────────────────── */}
+      <Dialog open={complianceDialogOpen} onOpenChange={setComplianceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{isAr ? "تعديل بند الالتزام" : "Edit Compliance Item"}</DialogTitle>
+            <DialogDescription className="sr-only">{t.set.compliance}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "العنوان (عربي)" : "Title (Arabic)"}</label>
+                <input type="text" value={complianceForm.titleAr} onChange={(e) => setComplianceForm((f) => ({ ...f, titleAr: e.target.value }))} dir="rtl" className={inputClass} />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">{isAr ? "العنوان (إنجليزي)" : "Title (English)"}</label>
+                <input type="text" value={complianceForm.titleEn} onChange={(e) => setComplianceForm((f) => ({ ...f, titleEn: e.target.value }))} dir="ltr" className={inputClass} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{isAr ? "الوصف (عربي)" : "Description (Arabic)"}</label>
+              <textarea
+                value={complianceForm.descAr}
+                onChange={(e) => setComplianceForm((f) => ({ ...f, descAr: e.target.value }))}
+                rows={2}
+                dir="rtl"
+                className="w-full rounded-xl bg-surface-container-high px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1">{isAr ? "الوصف (إنجليزي)" : "Description (English)"}</label>
+              <textarea
+                value={complianceForm.descEn}
+                onChange={(e) => setComplianceForm((f) => ({ ...f, descEn: e.target.value }))}
+                rows={2}
+                dir="ltr"
+                className="w-full rounded-xl bg-surface-container-high px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={complianceForm.compliant}
+                onChange={(e) => setComplianceForm((f) => ({ ...f, compliant: e.target.checked }))}
+                className="w-4 h-4 rounded accent-primary"
+              />
+              <span>{isAr ? "متوافق حالياً" : "Currently compliant"}</span>
+            </label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setComplianceDialogOpen(false)} disabled={complianceSaving}>{t.common.cancel}</Button>
+            <Button onClick={submitCompliance} disabled={complianceSaving}>
+              {complianceSaving && <Icon name="progress_activity" size={16} className="animate-spin" />}
+              {complianceSaving ? (isAr ? "جاري الحفظ..." : "Saving...") : (isAr ? "حفظ" : "Save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Department Add/Edit Dialog ──────────────────────────────── */}
       <Dialog open={deptDialogOpen} onOpenChange={setDeptDialogOpen}>

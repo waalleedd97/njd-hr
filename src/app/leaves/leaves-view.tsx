@@ -20,6 +20,8 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { LeavesSlice } from "@/lib/data/server";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 // ---------- constants ----------
 
@@ -114,6 +116,8 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
   const store = useData();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const { leaveBalances, leaveRequests: allLeaveRequests } = store;
   const employees = store.employees;
   const getEmployee = (id: string) => employees.find((e) => e.id === id || e.email === id);
@@ -411,9 +415,20 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
                             <div className="flex items-center gap-1">
                               <button
                                 onClick={async () => {
-                                  if (!confirm(isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?")) return;
-                                  try { await store.approveLeaveRequest(lr.id); }
-                                  catch (e) { console.error("[HR] approve failed:", e); alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed"); }
+                                  const ok = await confirm({
+                                    title: isAr ? "تأكيد الموافقة" : "Approve Request",
+                                    description: isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?",
+                                    confirmLabel: isAr ? "موافقة" : "Approve",
+                                    cancelLabel: isAr ? "إلغاء" : "Cancel",
+                                  });
+                                  if (!ok) return;
+                                  try {
+                                    await store.approveLeaveRequest(lr.id);
+                                    toast.success(isAr ? "تمت الموافقة" : "Approved");
+                                  } catch (e) {
+                                    console.error("[HR] approve failed:", e);
+                                    toast.error(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
+                                  }
                                 }}
                                 className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-colors"
                                 title={isAr ? "موافقة" : "Approve"}
@@ -423,9 +438,21 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
                               </button>
                               <button
                                 onClick={async () => {
-                                  if (!confirm(isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?")) return;
-                                  try { await store.rejectLeaveRequest(lr.id); }
-                                  catch (e) { console.error("[HR] reject failed:", e); alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed"); }
+                                  const ok = await confirm({
+                                    title: isAr ? "تأكيد الرفض" : "Reject Request",
+                                    description: isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?",
+                                    confirmLabel: isAr ? "رفض" : "Reject",
+                                    cancelLabel: isAr ? "إلغاء" : "Cancel",
+                                    variant: "danger",
+                                  });
+                                  if (!ok) return;
+                                  try {
+                                    await store.rejectLeaveRequest(lr.id);
+                                    toast.success(isAr ? "تم الرفض" : "Rejected");
+                                  } catch (e) {
+                                    console.error("[HR] reject failed:", e);
+                                    toast.error(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
+                                  }
                                 }}
                                 className="p-2 rounded-full text-md-error hover:bg-error-container/20 transition-colors"
                                 title={isAr ? "رفض" : "Reject"}

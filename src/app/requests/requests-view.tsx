@@ -20,6 +20,8 @@ import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { RequestsSlice } from "@/lib/data/server";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const statusBadgeVariant: Record<string, "warning" | "info" | "success" | "destructive"> = {
   pending: "warning",
@@ -57,6 +59,8 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
   const { t, lang } = useLanguage();
   const { isAdmin, user } = useAuth();
   const store = useData();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const { initialLoaded } = store;
   const isAr = lang === "ar";
   const searchParams = useSearchParams();
@@ -405,7 +409,13 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
                               <div className="flex items-center gap-1">
                                 <button
                                   onClick={async () => {
-                                    if (!confirm(isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?")) return;
+                                    const ok = await confirm({
+                                      title: isAr ? "تأكيد الموافقة" : "Approve Request",
+                                      description: isAr ? "هل أنت متأكد من الموافقة على هذا الطلب؟" : "Are you sure you want to approve this request?",
+                                      confirmLabel: isAr ? "موافقة" : "Approve",
+                                      cancelLabel: isAr ? "إلغاء" : "Cancel",
+                                    });
+                                    if (!ok) return;
                                     try {
                                       if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
                                         await store.approveLeaveRequest(req.id);
@@ -416,9 +426,10 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
                                           : "employeeRequests" as const;
                                         await store.approveItem(collection, req.id);
                                       }
+                                      toast.success(isAr ? "تمت الموافقة" : "Approved");
                                     } catch (e) {
                                       console.error("[HR] approve failed:", e);
-                                      alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
+                                      toast.error(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
                                     }
                                   }}
                                   className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-colors"
@@ -429,7 +440,14 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
                                 </button>
                                 <button
                                   onClick={async () => {
-                                    if (!confirm(isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?")) return;
+                                    const ok = await confirm({
+                                      title: isAr ? "تأكيد الرفض" : "Reject Request",
+                                      description: isAr ? "هل أنت متأكد من رفض هذا الطلب؟" : "Are you sure you want to reject this request?",
+                                      confirmLabel: isAr ? "رفض" : "Reject",
+                                      cancelLabel: isAr ? "إلغاء" : "Cancel",
+                                      variant: "danger",
+                                    });
+                                    if (!ok) return;
                                     try {
                                       if (req.typeKey === "leaveRequest" && store.leaveRequests.some((lr) => lr.id === req.id)) {
                                         await store.rejectLeaveRequest(req.id);
@@ -440,9 +458,10 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
                                           : "employeeRequests" as const;
                                         await store.rejectItem(collection, req.id);
                                       }
+                                      toast.success(isAr ? "تم الرفض" : "Rejected");
                                     } catch (e) {
                                       console.error("[HR] reject failed:", e);
-                                      alert(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
+                                      toast.error(isAr ? "فشل تنفيذ الإجراء" : "Action failed");
                                     }
                                   }}
                                   className="p-2 rounded-full text-md-error hover:bg-error-container/20 transition-colors"

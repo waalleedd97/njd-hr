@@ -7,6 +7,8 @@ import { formatDate, getKSANow } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type Tab = "attendance" | "leaves" | "requests";
 
@@ -17,6 +19,8 @@ interface RequestRow { id: string; type_key: string; date: string; status: strin
 export default function MyHistoryPage() {
   const { t, lang } = useLanguage();
   const { user } = useAuth();
+  const toast = useToast();
+  const { confirm } = useConfirm();
   const isAr = lang === "ar";
 
   const [tab, setTab] = useState<Tab>("attendance");
@@ -76,49 +80,75 @@ export default function MyHistoryPage() {
     return () => { cancelled = true; };
   }, [tab, from, to, user.id]);
 
+  const [downloading, setDownloading] = useState(false);
+  const [erasureSending, setErasureSending] = useState(false);
+
   const downloadData = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return;
-    const res = await fetch("/api/my-data", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}` },
-    });
-    if (!res.ok) {
-      alert(isAr ? "فشل تحميل البيانات" : "Failed to download data");
-      return;
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error(isAr ? "الجلسة منتهية" : "Session expired");
+        return;
+      }
+      const res = await fetch("/api/my-data", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) {
+        toast.error(isAr ? "فشل تحميل البيانات" : "Failed to download data");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `njd-hr-my-data-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(isAr ? "تم تحميل بياناتك" : "Your data has been downloaded");
+    } finally {
+      setDownloading(false);
     }
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `njd-hr-my-data-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const requestErasure = async () => {
-    if (!confirm(
-      isAr
+    if (erasureSending) return;
+    const ok = await confirm({
+      title: isAr ? "طلب حذف البيانات (PDPL)" : "Data Erasure Request (PDPL)",
+      description: isAr
         ? "طلب حذف بياناتك الشخصية؟ ستتم مراجعة الطلب من قبل الموارد البشرية خلال 30 يوماً."
-        : "Request erasure of your personal data? HR will review within 30 days."
-    )) return;
-
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) return;
-
-    const res = await fetch("/api/erasure-request", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({}),
+        : "Request erasure of your personal data? HR will review within 30 days.",
+      confirmLabel: isAr ? "تقديم الطلب" : "Submit Request",
+      cancelLabel: isAr ? "إلغاء" : "Cancel",
+      variant: "danger",
     });
-    const body = await res.json().catch(() => ({}));
-    if (res.ok) {
-      alert(body.message || (isAr ? "تم تقديم الطلب" : "Request filed"));
-    } else {
-      alert(body.error || (isAr ? "فشل الطلب" : "Request failed"));
+    if (!ok) return;
+
+    setErasureSending(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error(isAr ? "الجلسة منتهية" : "Session expired");
+        return;
+      }
+      const res = await fetch("/api/erasure-request", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        toast.success(body.message || (isAr ? "تم تقديم الطلب" : "Request filed"));
+      } else {
+        toast.error(body.error || (isAr ? "فشل الطلب" : "Request failed"));
+      }
+    } finally {
+      setErasureSending(false);
     }
   };
 

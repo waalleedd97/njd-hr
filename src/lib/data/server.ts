@@ -1,10 +1,18 @@
 import { createServerClient } from "@/lib/supabase/server";
-import { employees as defaultEmployees } from "@/lib/mock-data";
+import {
+  employees as defaultEmployees,
+  branches as defaultBranches,
+  roles as defaultRoles,
+  complianceItems as defaultCompliance,
+} from "@/lib/mock-data";
 import type {
   Employee,
   SalaryAdvance,
   AttendanceAdjustment,
   PendingInvitation,
+  Branch,
+  Role,
+  ComplianceItem,
 } from "@/lib/mock-data";
 
 // ─── Shared types (mirror data-store.tsx) ────────────────────────────
@@ -429,17 +437,87 @@ export async function fetchAttendanceSlice(userId: string): Promise<AttendanceSl
   return { todayAttendance, employees, attendanceAdjustments, locationRequired };
 }
 
+export async function fetchBranches(): Promise<Branch[]> {
+  try {
+    const supabase = await createServerClient();
+    const { data, error } = await supabase
+      .from("branches")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error || !data) return [...defaultBranches];
+    return data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      nameAr: r.name_ar as string,
+      nameEn: r.name_en as string,
+      cityAr: r.city_ar as string,
+      cityEn: r.city_en as string,
+      employeeCount: (r.employee_count as number) ?? 0,
+      isMain: (r.is_main as boolean) ?? false,
+    }));
+  } catch {
+    return [...defaultBranches];
+  }
+}
+
+export async function fetchRoles(): Promise<Role[]> {
+  try {
+    const supabase = await createServerClient();
+    const { data, error } = await supabase
+      .from("custom_roles")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error || !data) return [...defaultRoles];
+    return data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      nameAr: r.name_ar as string,
+      nameEn: r.name_en as string,
+      users: (r.user_count as number) ?? 0,
+      permissions: Array.isArray(r.permissions) ? (r.permissions as string[]) : [],
+    }));
+  } catch {
+    return [...defaultRoles];
+  }
+}
+
+export async function fetchCompliance(): Promise<ComplianceItem[]> {
+  try {
+    const supabase = await createServerClient();
+    const { data, error } = await supabase
+      .from("compliance_items")
+      .select("*")
+      .order("id", { ascending: true });
+    if (error || !data) return [...defaultCompliance];
+    return data.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      titleAr: r.title_ar as string,
+      titleEn: r.title_en as string,
+      descAr: (r.desc_ar as string) || "",
+      descEn: (r.desc_en as string) || "",
+      compliant: (r.compliant as boolean) ?? false,
+      reviewedAt: (r.reviewed_at as string) || undefined,
+    }));
+  } catch {
+    return [...defaultCompliance];
+  }
+}
+
 export interface SettingsSlice {
   employees: Employee[];
   pendingInvitations: PendingInvitation[];
+  branches: Branch[];
+  roles: Role[];
+  compliance: ComplianceItem[];
 }
 
 export async function fetchSettingsSlice(): Promise<SettingsSlice> {
-  const [employees, pendingInvitations] = await Promise.all([
+  const [employees, pendingInvitations, branches, roles, compliance] = await Promise.all([
     fetchEmployees(),
     fetchPendingInvitations(),
+    fetchBranches(),
+    fetchRoles(),
+    fetchCompliance(),
   ]);
-  return { employees, pendingInvitations };
+  return { employees, pendingInvitations, branches, roles, compliance };
 }
 
 export interface DailyReportRow {
