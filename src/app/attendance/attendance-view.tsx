@@ -526,23 +526,36 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
           <div className="lg:col-span-2 space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {[
-                { iconName: "person_off", label: isAr ? "غياب" : "Absence", count: absentCount, sub: isAr ? "إجمالي" : "overall", color: "text-md-error", bg: "bg-error-container/20" },
-                { iconName: "schedule", label: isAr ? "تأخّر" : "Late", count: lateCount, sub: isAr ? "إجمالي" : "overall", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/15" },
-                { iconName: "pending", label: isAr ? "سجلات ناقصة" : "Incomplete records", count: incompleteCount, sub: isAr ? "إجمالي" : "overall", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/15" },
-                { iconName: "event_busy", label: isAr ? "غير مجدول" : "Unscheduled", count: unscheduledCount, sub: isAr ? "إجمالي" : "overall", color: "text-on-surface-variant", bg: "bg-surface-container-high" },
+                { iconName: "person_off", label: isAr ? "غياب" : "Absence", count: absentCount, sub: isAr ? "موظف" : "employees", color: "text-md-error", bg: "bg-error-container/20" },
+                { iconName: "schedule", label: isAr ? "تأخّر" : "Late", count: lateCount, sub: isAr ? "موظف" : "employees", color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/15" },
+                { iconName: "pending", label: isAr ? "سجلات ناقصة" : "Incomplete", count: incompleteCount, sub: isAr ? "سجل" : "records", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/15" },
+                { iconName: "event_busy", label: isAr ? "غير مجدول" : "Unscheduled", count: unscheduledCount, sub: isAr ? "موظف" : "employees", color: "text-on-surface-variant", bg: "bg-surface-container-high" },
               ].map((c, i) => (
-                <div key={i} className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm">
-                  <div className="flex items-start gap-3">
-                    <div className={cn("w-11 h-11 rounded-2xl flex items-center justify-center shrink-0", c.bg, c.color)}>
-                      <Icon name={c.iconName} size={22} fill />
+                <div
+                  key={i}
+                  className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm border border-outline-variant/40 flex flex-col gap-4"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-on-surface-variant whitespace-nowrap">
+                      {c.label}
+                    </span>
+                    <div
+                      className={cn(
+                        "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
+                        c.bg,
+                        c.color
+                      )}
+                    >
+                      <Icon name={c.iconName} size={20} fill />
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-sm text-on-surface-variant font-medium leading-tight">{c.label}</p>
-                      <p className="font-headline text-3xl font-black text-on-surface tabular-nums mt-1">
-                        {c.count}
-                      </p>
-                      <p className="text-[11px] text-on-surface-variant/70 mt-0.5">{c.sub}</p>
-                    </div>
+                  </div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="font-headline text-4xl font-black text-on-surface tabular-nums leading-none">
+                      {c.count}
+                    </span>
+                    <span className="text-xs text-on-surface-variant/70 font-medium">
+                      {c.sub}
+                    </span>
                   </div>
                 </div>
               ))}
