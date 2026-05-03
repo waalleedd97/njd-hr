@@ -42,22 +42,24 @@
   --md-on-tertiary-fixed: #39000e;
   --md-on-tertiary-fixed-variant: #711229;
 
-  /* Surface hierarchy */
-  --md-surface: #f5f6fc;
-  --md-surface-dim: #d1d4dd;
-  --md-surface-bright: #f5f6fc;
-  --md-surface-variant: #dadde5;
+  /* Surface hierarchy — bright white aesthetic
+     Page background is pure white; container tones step down very gently so
+     cards still float via shadow without the whole UI reading as grey. */
+  --md-surface: #ffffff;
+  --md-surface-dim: #e8eaee;
+  --md-surface-bright: #ffffff;
+  --md-surface-variant: #eef0f3;
   --md-surface-tint: #811cd9;
-  --md-surface-container: #e6e8ef;
-  --md-surface-container-low: #eff0f7;
+  --md-surface-container: #f5f6f8;
+  --md-surface-container-low: #fafbfc;
   --md-surface-container-lowest: #ffffff;
-  --md-surface-container-high: #e0e2ea;
-  --md-surface-container-highest: #dadde5;
-  --md-on-surface: #2c2f33;
-  --md-on-surface-variant: #595b61;
+  --md-surface-container-high: #eef0f3;
+  --md-surface-container-highest: #e6e8ec;
+  --md-on-surface: #1a1c20;
+  --md-on-surface-variant: #4a4c52;
   --md-inverse-surface: #0b0e12;
   --md-inverse-on-surface: #9b9da2;
-  --md-on-background: #2c2f33;
+  --md-on-background: #1a1c20;
 
   /* Error */
   --md-error: #b41340;
@@ -66,9 +68,9 @@
   --md-on-error: #ffefef;
   --md-on-error-container: #510017;
 
-  /* Outline */
+  /* Outline — softened so borders read against pure white without harsh grey lines */
   --md-outline: #74777c;
-  --md-outline-variant: #abadb3;
+  --md-outline-variant: #d8dadf;
 
   /* Legacy shadcn tokens mapped to M3 */
   --background: var(--md-surface);
@@ -356,7 +358,7 @@ html:not(.fonts-loaded) .material-symbols-outlined {
     background: rgba(20, 19, 25, 0.85);
   }
   .tonal-transition {
-    background: linear-gradient(to bottom, transparent, rgba(230, 232, 239, 0.5));
+    background: linear-gradient(to bottom, transparent, rgba(245, 246, 248, 0.5));
   }
   .dark .tonal-transition {
     background: linear-gradient(to bottom, transparent, rgba(33, 31, 38, 0.5));
