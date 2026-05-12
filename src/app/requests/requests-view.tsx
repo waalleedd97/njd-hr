@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
@@ -66,7 +67,11 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
     () => searchParams?.get("status") || "all"
   );
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newReqType, setNewReqType] = useState<string>("leaveRequest");
+  // Default to "permission" because "leaveRequest" no longer accepts free-text
+  // submissions here — picking it now shows a redirect card pointing the
+  // employee to the formal /leaves form, which collects proper type/dates/days
+  // and decrements the leave balance correctly.
+  const [newReqType, setNewReqType] = useState<string>("permission");
   const [newReqDesc, setNewReqDesc] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -175,7 +180,7 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
   const showRejected = statusFilter === "all" || statusFilter === "rejected";
 
   const resetForm = () => {
-    setNewReqType("leaveRequest");
+    setNewReqType("permission");
     setNewReqDesc("");
     setAdjDate(""); setAdjOriginalIn(""); setAdjRequestedIn(""); setAdjOriginalOut(""); setAdjRequestedOut("");
     setAdvAmount(0); setAdvRepaymentMonths(3);
@@ -183,6 +188,10 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
 
   const handleSubmit = async () => {
     if (submitting) return;
+    // Safety net: leaveRequest no longer accepts submissions from this form.
+    // The UI hides the submit button for this type, but if someone wires up
+    // the action programmatically we still bail out and steer them to /leaves.
+    if (newReqType === "leaveRequest") return;
     setSubmitError("");
     setSubmitting(true);
     const today = new Date().toISOString().split("T")[0];
@@ -622,7 +631,40 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
               </>
             )}
 
-            {newReqType !== "attendanceAdjust" && newReqType !== "salaryAdvance" && (
+            {/* leaveRequest is intentionally NOT submittable from this form.
+                It used to accept free-text "I want time off" notes that landed
+                in employee_requests and never decremented the leave balance.
+                Now picking it shows a redirect card pointing to /leaves where
+                the proper form collects type/dates/days. */}
+            {newReqType === "leaveRequest" && (
+              <div className="rounded-2xl border border-primary/30 bg-primary/5 p-5 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+                    <Icon name="event_available" size={20} className="text-primary" />
+                  </div>
+                  <div className="space-y-1 min-w-0">
+                    <p className="font-bold text-sm">
+                      {isAr ? "طلبات الإجازة تُقدَّم من صفحة الإجازات" : "Leave requests are filed from the Leaves page"}
+                    </p>
+                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                      {isAr
+                        ? "صفحة الإجازات تجمع نوع الإجازة (سنوية / مرضية / ...) وتاريخَي البداية والنهاية، وتخصم تلقائياً من رصيدك بعد الموافقة."
+                        : "The Leaves page captures leave type (annual / sick / ...) plus start and end dates, and decrements your balance automatically once approved."}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href="/leaves"
+                  onClick={() => setDialogOpen(false)}
+                  className="gradient-btn shadow-primary-glow h-11 w-full rounded-xl inline-flex items-center justify-center gap-2 text-sm font-bold transition-all"
+                >
+                  <Icon name="arrow_forward" size={18} />
+                  {isAr ? "الذهاب إلى صفحة الإجازات" : "Go to Leaves page"}
+                </Link>
+              </div>
+            )}
+
+            {newReqType !== "attendanceAdjust" && newReqType !== "salaryAdvance" && newReqType !== "leaveRequest" && (
               <div className="space-y-1.5">
                 <label className="text-sm font-bold">{t.req.description}</label>
                 <textarea
@@ -645,10 +687,14 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
             <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
               {t.common.cancel}
             </Button>
-            <Button onClick={handleSubmit} disabled={submitting}>
-              {submitting && <Icon name="progress_activity" size={18} className="animate-spin" />}
-              {submitting ? (isAr ? "جاري الإرسال..." : "Submitting...") : t.req.submitRequest}
-            </Button>
+            {/* Submit is hidden for leaveRequest — the Link inside the
+                redirect card is the only call-to-action for that path. */}
+            {newReqType !== "leaveRequest" && (
+              <Button onClick={handleSubmit} disabled={submitting}>
+                {submitting && <Icon name="progress_activity" size={18} className="animate-spin" />}
+                {submitting ? (isAr ? "جاري الإرسال..." : "Submitting...") : t.req.submitRequest}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
