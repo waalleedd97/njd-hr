@@ -643,10 +643,12 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
 
             {/* Attendance Roster — admin can browse any past day via the date picker */}
             <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
-              {/* Top row: icon + title + present/total tally */}
+              {/* Top row: section icon + title + present/total tally.
+                  Header icon intentionally non-calendar (groups) so it does
+                  not visually compete with the date picker's calendar icon. */}
               <div className="flex items-center justify-between px-5 py-4">
                 <div className="flex items-center gap-2">
-                  <Icon name="event_available" size={18} className="text-primary" />
+                  <Icon name="groups" size={18} className="text-primary" />
                   <h3 className="font-headline font-bold text-base">
                     {isAr ? "سجلّ الحضور" : "Attendance Roster"}
                   </h3>
@@ -655,22 +657,30 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                   {visiblePresentCount}/{employees.length} {isAr ? "حاضر" : "present"}
                 </span>
               </div>
-              {/* Toolbar row: date picker + readable label + "Today" reset */}
+              {/* Toolbar row: single clean date-picker pill on the start,
+                  human-readable day on the end. Native browser indicator is
+                  suppressed via the .njd-date-input CSS class so only ONE
+                  calendar icon is visible. Clicking anywhere on the <label>
+                  pill opens the native picker. */}
               <div className="flex items-center justify-between gap-3 px-5 pb-3 border-b border-outline-variant/10 flex-wrap">
-                <div className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2">
-                  <Icon name="calendar_month" size={16} className="text-primary" />
-                  <input
-                    type="date"
-                    value={rosterDate}
-                    max={todayDateStr}
-                    onChange={(e) => setRosterDate(e.target.value || todayDateStr)}
-                    className="bg-transparent text-sm font-medium outline-none"
-                  />
+                <div className="flex items-center gap-2">
+                  <label
+                    className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2 cursor-pointer hover:bg-surface-container-highest transition-colors"
+                  >
+                    <Icon name="calendar_today" size={16} className="text-primary" />
+                    <input
+                      type="date"
+                      value={rosterDate}
+                      max={todayDateStr}
+                      onChange={(e) => setRosterDate(e.target.value || todayDateStr)}
+                      className="njd-date-input bg-transparent text-sm font-medium outline-none cursor-pointer tabular-nums"
+                    />
+                  </label>
                   {!isTodayRoster && (
                     <button
                       type="button"
                       onClick={() => setRosterDate(todayDateStr)}
-                      className="text-xs font-bold text-primary hover:underline ms-2"
+                      className="text-xs font-bold text-primary hover:underline"
                     >
                       {isAr ? "اليوم" : "Today"}
                     </button>

@@ -275,6 +275,24 @@ html:not(.fonts-loaded) .material-symbols-outlined {
     background: var(--md-primary-dim);
   }
 
+  /* Borderless date input — pairs with an external single calendar icon so
+     the browser's built-in picker indicator does not double up. Clicking
+     anywhere on the parent <label> still opens the native date picker. */
+  .njd-date-input::-webkit-calendar-picker-indicator {
+    display: none;
+    -webkit-appearance: none;
+    appearance: none;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .njd-date-input::-webkit-inner-spin-button,
+  .njd-date-input::-webkit-clear-button {
+    display: none;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
   /* Glassmorphism — for nav bars, floating modals */
   .glass-surface {
     background: color-mix(in srgb, var(--md-surface-container-lowest) 70%, transparent);
