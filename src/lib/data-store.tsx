@@ -494,13 +494,22 @@ export function DataProvider({
 
   const refreshLeaveBalances = useCallback(async () => {
     try {
+      const userId = await getSessionUserId();
+      if (!userId) {
+        setState((prev) => ({ ...prev, leaveBalances: DEFAULT_BALANCES }));
+        return;
+      }
       const currentYear = new Date().getFullYear();
+      // Filter to the signed-in user. Without this, admin queries return
+      // rows for every employee in the system (RLS allows it for admins)
+      // and the .map() below collapses by type_key — last write wins,
+      // showing essentially random balance numbers to the admin.
       const { data } = await supabase
         .from("leave_balances")
         .select("*")
+        .eq("employee_id", userId)
         .eq("year", currentYear);
       if (!data || data.length === 0) {
-        // No records in Supabase — use defaults
         setState((prev) => ({ ...prev, leaveBalances: DEFAULT_BALANCES }));
         return;
       }
@@ -512,7 +521,6 @@ export function DataProvider({
       }));
       setState((prev) => ({ ...prev, leaveBalances: mapped }));
     } catch {
-      // Supabase unavailable — use defaults
       setState((prev) => prev.leaveBalances.length === 0 ? { ...prev, leaveBalances: DEFAULT_BALANCES } : prev);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -831,12 +839,64 @@ export function DataProvider({
   const approveLeaveRequest = useCallback(async (id: string) => {
     const userId = await getSessionUserId();
 
+    // Look up the request first so we have the data needed to decrement the
+    // employee's leave_balances. Bail out if the request is already approved
+    // so a double-click can't double-count the days.
+    const { data: req, error: fetchErr } = await supabase
+      .from("leave_requests")
+      .select("employee_id, type, days, start_date, status")
+      .eq("id", id)
+      .single();
+    if (fetchErr || !req) throw fetchErr || new Error("Leave request not found");
+    if ((req.status as string) === "approved") return;
+
     const { error } = await supabase.from("leave_requests").update({
       status: "approved",
       reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
     }).eq("id", id);
     if (error) throw error;
+
+    // Decrement the matching leave_balances row (creates it if it doesn't
+    // exist yet). Unpaid leaves are exempt — they don't draw from a quota.
+    const leaveType = req.type as string;
+    if (leaveType !== "unpaid") {
+      const balanceYear = new Date(req.start_date as string).getFullYear();
+      const defaultsByType: Record<string, number> = {
+        annual: 21,
+        sick: 10,
+        marriage: 7,
+        paternity: 3,
+      };
+      const defaultTotal = defaultsByType[leaveType] ?? 0;
+      const days = req.days as number;
+
+      const { data: existing } = await supabase
+        .from("leave_balances")
+        .select("id, used")
+        .eq("employee_id", req.employee_id as string)
+        .eq("type_key", leaveType)
+        .eq("year", balanceYear)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase
+          .from("leave_balances")
+          .update({ used: (existing.used as number) + days })
+          .eq("id", existing.id as string);
+      } else {
+        await supabase.from("leave_balances").insert({
+          employee_id: req.employee_id as string,
+          type_key: leaveType,
+          total: defaultTotal,
+          used: days,
+          year: balanceYear,
+        });
+      }
+      // Refresh local store so the admin sees the new used number on the
+      // current page (Balance tab cards) without a hard refresh.
+      await refreshLeaveBalances();
+    }
 
     let notifyTargetId: string | undefined;
     setState((p) => {
@@ -861,7 +921,7 @@ export function DataProvider({
         href: "/leaves",
       });
     }
-  }, []);
+  }, [refreshLeaveBalances]);
 
   const rejectLeaveRequest = useCallback(async (id: string, reason?: string) => {
     const userId = await getSessionUserId();
