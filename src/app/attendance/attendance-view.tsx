@@ -342,6 +342,27 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [reportUploading, setReportUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const rosterDateInputRef = useRef<HTMLInputElement>(null);
+
+  // Programmatically open the native date picker. The browser's own
+  // calendar-picker-indicator is hidden via CSS so we need to trigger
+  // showPicker() ourselves on any click within the pill. Wrapped in a
+  // try/catch because showPicker() throws InvalidStateError if invoked
+  // without user activation, and is undefined on older browsers — in
+  // both cases we degrade gracefully to focus().
+  const openRosterDatePicker = () => {
+    const input = rosterDateInputRef.current;
+    if (!input) return;
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        /* fall through to focus() */
+      }
+    }
+    input.focus();
+  };
 
   // Fetch attendance for a non-today date when the admin browses backwards.
   // On today: the effect early-returns (no fetch, no state mutation) and the
@@ -664,18 +685,29 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                   pill opens the native picker. */}
               <div className="flex items-center justify-between gap-3 px-5 pb-3 border-b border-outline-variant/10 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <label
-                    className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2 cursor-pointer hover:bg-surface-container-highest transition-colors"
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={openRosterDatePicker}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openRosterDatePicker();
+                      }
+                    }}
+                    className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2 cursor-pointer hover:bg-surface-container-highest transition-colors focus:outline-none focus:ring-2 focus:ring-primary/40"
                   >
                     <Icon name="calendar_today" size={16} className="text-primary" />
                     <input
+                      ref={rosterDateInputRef}
                       type="date"
                       value={rosterDate}
                       max={todayDateStr}
                       onChange={(e) => setRosterDate(e.target.value || todayDateStr)}
+                      onClick={(e) => e.stopPropagation()}
                       className="njd-date-input bg-transparent text-sm font-medium outline-none cursor-pointer tabular-nums"
                     />
-                  </label>
+                  </div>
                   {!isTodayRoster && (
                     <button
                       type="button"
