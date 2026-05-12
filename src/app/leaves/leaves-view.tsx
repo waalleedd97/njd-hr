@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { saudiHolidays, type Employee } from "@/lib/mock-data";
 import { formatDate } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,9 +20,17 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
-import type { LeavesSlice } from "@/lib/data/server";
+import type { LeavesSlice, LeaveBalance } from "@/lib/data/server";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+
+// Fallback shown when a chosen employee has no leave_balances rows yet.
+// Same shape as DEFAULT_BALANCES in data-store.tsx — kept in sync manually.
+const FALLBACK_LEAVE_BALANCES: LeaveBalance[] = [
+  { typeKey: "annual", total: 21, used: 0, remaining: 21 },
+  { typeKey: "sick", total: 10, used: 0, remaining: 10 },
+  { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
+];
 
 // ---------- constants ----------
 
@@ -176,6 +185,88 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
   const leaveRequests = isAdmin
     ? allLeaveRequests
     : allLeaveRequests.filter((lr) => lr.employeeId === user.id || lr.employeeId === user.email);
+
+  // ── Admin "view leaves for…" filter ─────────────────────────────────
+  // null  = all employees (default — preserves the admin approval feed)
+  // user.id = the admin's own data
+  // any other UUID = browsing a specific employee's balance + requests
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeePickerOpen, setEmployeePickerOpen] = useState(false);
+  const [fetchedBalances, setFetchedBalances] = useState<LeaveBalance[]>([]);
+  const [balancesLoading, setBalancesLoading] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside to close the picker
+  useEffect(() => {
+    if (!employeePickerOpen) return;
+    const handle = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setEmployeePickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [employeePickerOpen]);
+
+  // Fetch the chosen employee's balances from Supabase. RLS already restricts
+  // this query to admins, so non-admins never reach this effect. On the "Me"
+  // path (selectedEmployeeId === user.id) we skip the fetch and reuse the
+  // store, which is already keyed to the current user.
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (selectedEmployeeId === null) return; // "All" mode — nothing to fetch
+    if (selectedEmployeeId === user.id) return; // self — use store
+    let cancelled = false;
+    (async () => {
+      setBalancesLoading(true);
+      const { data } = await supabase
+        .from("leave_balances")
+        .select("*")
+        .eq("employee_id", selectedEmployeeId)
+        .eq("year", new Date().getFullYear());
+      if (cancelled) return;
+      setBalancesLoading(false);
+      const mapped: LeaveBalance[] = (data ?? []).map((r: Record<string, unknown>) => ({
+        typeKey: r.type_key as string,
+        total: r.total as number,
+        used: r.used as number,
+        remaining: (r.total as number) - (r.used as number),
+      }));
+      setFetchedBalances(mapped.length > 0 ? mapped : FALLBACK_LEAVE_BALANCES);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedEmployeeId, isAdmin, user.id]);
+
+  const isViewingAll = isAdmin && selectedEmployeeId === null;
+  const isViewingSelf = !isAdmin || selectedEmployeeId === user.id;
+  const isViewingOther = isAdmin && selectedEmployeeId !== null && selectedEmployeeId !== user.id;
+
+  // Balance cards data source
+  const displayedBalances: LeaveBalance[] = isViewingOther
+    ? fetchedBalances
+    : isViewingSelf
+      ? leaveBalances
+      : []; // "All employees" — Balance tab shows an empty-state prompt
+
+  // Requests table data source
+  const displayedRequests = selectedEmployeeId
+    ? allLeaveRequests.filter((lr) => lr.employeeId === selectedEmployeeId)
+    : leaveRequests;
+
+  const selectedEmployee = selectedEmployeeId ? resolveEmployee(selectedEmployeeId) : null;
+  const filteredEmployees = useMemo(() => {
+    const q = employeeSearch.trim().toLowerCase();
+    if (!q) return employees;
+    return employees.filter(
+      (emp) =>
+        emp.nameAr.toLowerCase().includes(q) ||
+        emp.nameEn.toLowerCase().includes(q) ||
+        emp.email.toLowerCase().includes(q)
+    );
+  }, [employees, employeeSearch]);
 
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTab === "requests" || initialTab === "calendar" ? initialTab : "balance"
@@ -334,11 +425,176 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
         <h1 className="font-headline text-3xl md:text-4xl font-extrabold text-on-surface tracking-tight">
           {t.lev.title}
         </h1>
-        <Button size="lg" onClick={() => setDialogOpen(true)}>
-          <Icon name="add" size={20} />
-          {t.lev.applyLeave}
-        </Button>
+        {/* Apply Leave button — hide when admin is browsing another employee's data
+            (admin shouldn't accidentally file a request under their own name while
+            viewing someone else's balance). Always visible for employees. */}
+        {!isViewingOther && (
+          <Button size="lg" onClick={() => setDialogOpen(true)}>
+            <Icon name="add" size={20} />
+            {t.lev.applyLeave}
+          </Button>
+        )}
       </div>
+
+      {/* Admin — "Viewing leaves for…" filter bar */}
+      {isAdmin && (
+        <div className="bg-surface-container-lowest rounded-2xl p-4 shadow-sm border border-outline-variant/40 flex items-center gap-3 flex-wrap">
+          <Icon name="manage_accounts" size={20} className="text-primary shrink-0" />
+          <span className="text-sm font-bold whitespace-nowrap">
+            {isAr ? "عرض إجازات:" : "Showing leaves for:"}
+          </span>
+
+          {/* Current selection chip */}
+          {isViewingAll ? (
+            <Badge variant="secondary" className="gap-1.5">
+              <Icon name="groups" size={14} />
+              {isAr ? "جميع الموظفين" : "All Employees"}
+            </Badge>
+          ) : selectedEmployee ? (
+            <div className="flex items-center gap-2 bg-surface-container-high rounded-full ps-1 pe-3 py-1">
+              <Avatar className="w-6 h-6">
+                <AvatarFallback
+                  className={cn("text-white text-[10px] font-bold", selectedEmployee.color)}
+                >
+                  {selectedEmployee.initials}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-sm font-bold">
+                {isAr ? selectedEmployee.nameAr : selectedEmployee.nameEn}
+              </span>
+              {selectedEmployeeId === user.id && (
+                <span className="text-xs text-primary font-bold">
+                  ({isAr ? "أنا" : "Me"})
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedEmployeeId(null)}
+                className="text-on-surface-variant hover:text-md-error transition-colors ms-1"
+                aria-label={isAr ? "إزالة الفلتر" : "Clear filter"}
+              >
+                <Icon name="close" size={14} />
+              </button>
+            </div>
+          ) : null}
+
+          {/* Picker dropdown */}
+          <div className="relative ms-auto" ref={pickerRef}>
+            <button
+              type="button"
+              onClick={() => setEmployeePickerOpen((o) => !o)}
+              className="h-9 px-3 rounded-lg bg-surface-container-high text-sm font-medium flex items-center gap-1.5 hover:bg-surface-container-highest transition-colors"
+            >
+              <Icon name="person_search" size={16} />
+              {isAr ? "تغيير" : "Change"}
+              <Icon name="expand_more" size={16} />
+            </button>
+            {employeePickerOpen && (
+              <div className="absolute end-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-surface-container-lowest border border-outline-variant/40 rounded-xl shadow-lg z-30 overflow-hidden">
+                <div className="p-2 border-b border-outline-variant/20">
+                  <div className="relative">
+                    <div className="absolute start-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">
+                      <Icon name="search" size={16} />
+                    </div>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder={isAr ? "ابحث بالاسم أو البريد..." : "Search by name or email..."}
+                      value={employeeSearch}
+                      onChange={(e) => setEmployeeSearch(e.target.value)}
+                      className="w-full h-9 rounded-lg bg-surface-container-high ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                    />
+                  </div>
+                </div>
+                <ul className="max-h-72 overflow-y-auto py-1">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmployeeId(null);
+                        setEmployeePickerOpen(false);
+                        setEmployeeSearch("");
+                      }}
+                      className={cn(
+                        "w-full text-start px-3 py-2 text-sm font-medium hover:bg-surface-container-low flex items-center gap-2",
+                        isViewingAll && "bg-primary/10"
+                      )}
+                    >
+                      <div className="w-6 h-6 rounded-full bg-surface-container-high flex items-center justify-center">
+                        <Icon name="groups" size={14} className="text-on-surface-variant" />
+                      </div>
+                      {isAr ? "جميع الموظفين" : "All Employees"}
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmployeeId(user.id);
+                        setEmployeePickerOpen(false);
+                        setEmployeeSearch("");
+                      }}
+                      className={cn(
+                        "w-full text-start px-3 py-2 text-sm font-medium hover:bg-surface-container-low flex items-center gap-2",
+                        selectedEmployeeId === user.id && "bg-primary/10"
+                      )}
+                    >
+                      <div className="w-6 h-6 rounded-full bg-primary/15 flex items-center justify-center">
+                        <Icon name="person" size={14} className="text-primary" />
+                      </div>
+                      {isAr ? "أنا" : "Me"}
+                    </button>
+                  </li>
+                  <li className="border-t border-outline-variant/20 my-1" />
+                  {filteredEmployees.length === 0 ? (
+                    <li className="px-3 py-6 text-center text-sm text-on-surface-variant">
+                      {isAr ? "لا يوجد موظفون مطابقون" : "No matching employees"}
+                    </li>
+                  ) : (
+                    filteredEmployees.map((emp) => (
+                      <li key={emp.id}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEmployeeId(emp.id);
+                            setEmployeePickerOpen(false);
+                            setEmployeeSearch("");
+                          }}
+                          className={cn(
+                            "w-full text-start px-3 py-2 text-sm hover:bg-surface-container-low flex items-center gap-2",
+                            selectedEmployeeId === emp.id && "bg-primary/10"
+                          )}
+                        >
+                          <Avatar className="w-6 h-6">
+                            <AvatarFallback
+                              className={cn("text-white text-[10px] font-bold", emp.color)}
+                            >
+                              {emp.initials}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-sm truncate">
+                              {isAr ? emp.nameAr : emp.nameEn}
+                            </p>
+                            <p className="text-[11px] text-on-surface-variant truncate">
+                              {isAr ? emp.positionAr : emp.positionEn}
+                            </p>
+                          </div>
+                          {emp.id === user.id && (
+                            <span className="text-[10px] text-primary font-bold shrink-0">
+                              {isAr ? "أنا" : "Me"}
+                            </span>
+                          )}
+                        </button>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tabs (pill style) */}
       <div className="inline-flex items-center bg-surface-container rounded-full p-1">
@@ -361,9 +617,39 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
       {/* ── BALANCE TAB ───────────────────────────────── */}
       {activeTab === "balance" && (
         <div className="space-y-6">
+          {/* Admin-only — empty state when no specific employee is chosen.
+              The Balance view is per-employee by nature; "All Employees" has
+              no meaningful aggregate here, so prompt the admin to pick one. */}
+          {isViewingAll && (
+            <div className="bg-surface-container-lowest rounded-2xl p-10 shadow-sm border border-outline-variant/40 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <Icon name="person_search" size={28} className="text-primary" />
+              </div>
+              <h3 className="font-headline font-bold text-lg mb-2">
+                {isAr ? "اختر موظفاً لعرض رصيده" : "Pick an employee to view their balance"}
+              </h3>
+              <p className="text-sm text-on-surface-variant max-w-md mx-auto">
+                {isAr
+                  ? "استخدم زر «تغيير» في الأعلى لاختيار موظف من القائمة، أو اختر «أنا» لعرض رصيدك الشخصي."
+                  : "Use the \"Change\" button above to pick an employee, or choose \"Me\" to see your own balance."}
+              </p>
+            </div>
+          )}
+
           {/* Leave Balance Cards */}
+          {!isViewingAll && (
+          <>
+          {balancesLoading && (
+            <div className="bg-surface-container-lowest rounded-2xl p-10 shadow-sm text-center">
+              <Icon name="hourglass_empty" size={28} className="opacity-50 mb-2 inline-block animate-pulse text-on-surface-variant" />
+              <p className="text-sm font-medium text-on-surface-variant">
+                {isAr ? "جارٍ التحميل…" : "Loading…"}
+              </p>
+            </div>
+          )}
+          {!balancesLoading && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {leaveBalances.map((lb) => {
+            {displayedBalances.map((lb) => {
               const config = typeConfig[lb.typeKey] ?? typeConfig.annual;
               const pct = lb.total > 0 ? (lb.remaining / lb.total) * 100 : 0;
               const levKey = lb.typeKey as keyof typeof t.lev;
@@ -401,6 +687,9 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
               );
             })}
           </div>
+          )}
+          </>
+          )}
 
           {/* Saudi Public Holidays */}
           <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
@@ -455,6 +744,19 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
       {/* ── REQUESTS TAB ──────────────────────────────── */}
       {activeTab === "requests" && (
         <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
+          {/* Admin context strip — clarifies what the table is filtered to */}
+          {isAdmin && (
+            <div className="px-6 py-3 border-b border-outline-variant/20 bg-surface-container/40 flex items-center gap-2 text-xs font-medium text-on-surface-variant">
+              <Icon name="filter_list" size={14} />
+              {isViewingAll
+                ? isAr
+                  ? `عرض كل الطلبات (${displayedRequests.length})`
+                  : `Showing all requests (${displayedRequests.length})`
+                : isAr
+                  ? `طلبات ${selectedEmployee ? (isAr ? selectedEmployee.nameAr : selectedEmployee.nameEn) : ""} (${displayedRequests.length})`
+                  : `Requests for ${selectedEmployee ? (isAr ? selectedEmployee.nameAr : selectedEmployee.nameEn) : ""} (${displayedRequests.length})`}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px]">
               <thead>
@@ -469,7 +771,7 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
                 </tr>
               </thead>
               <tbody>
-                {leaveRequests.length === 0 && (
+                {displayedRequests.length === 0 && (
                   <tr>
                     <td colSpan={isAdmin ? 7 : 6} className="text-center py-14 text-on-surface-variant">
                       <Icon name="event_busy" size={44} className="mb-3 opacity-40" />
@@ -477,7 +779,7 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
                     </td>
                   </tr>
                 )}
-                {leaveRequests.map((lr) => {
+                {displayedRequests.map((lr) => {
                   const emp = resolveEmployee(lr.employeeId);
                   const levKey = lr.typeKey as keyof typeof t.lev;
                   const statusKey = lr.status as keyof typeof t.statuses;
