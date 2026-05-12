@@ -509,17 +509,17 @@ export function DataProvider({
         .select("*")
         .eq("employee_id", userId)
         .eq("year", currentYear);
-      if (!data || data.length === 0) {
-        setState((prev) => ({ ...prev, leaveBalances: DEFAULT_BALANCES }));
-        return;
-      }
-      const mapped: LeaveBalance[] = data.map((r: Record<string, unknown>) => ({
+      const mapped: LeaveBalance[] = (data ?? []).map((r: Record<string, unknown>) => ({
         typeKey: r.type_key as string,
         total: r.total as number,
         used: r.used as number,
         remaining: (r.total as number) - (r.used as number),
       }));
-      setState((prev) => ({ ...prev, leaveBalances: mapped }));
+      // Merge with defaults so every type (annual / sick / unpaid) still
+      // renders a card even when the employee only has rows for a subset.
+      const byType = new Map(mapped.map((b) => [b.typeKey, b]));
+      const merged: LeaveBalance[] = DEFAULT_BALANCES.map((def) => byType.get(def.typeKey) ?? def);
+      setState((prev) => ({ ...prev, leaveBalances: merged }));
     } catch {
       setState((prev) => prev.leaveBalances.length === 0 ? { ...prev, leaveBalances: DEFAULT_BALANCES } : prev);
     }

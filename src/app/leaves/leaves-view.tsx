@@ -24,13 +24,27 @@ import type { LeavesSlice, LeaveBalance } from "@/lib/data/server";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 
-// Fallback shown when a chosen employee has no leave_balances rows yet.
-// Same shape as DEFAULT_BALANCES in data-store.tsx — kept in sync manually.
+// Baseline leave types every employee gets a card for, even before any
+// leave_balances rows have been written. Kept in sync with the
+// DEFAULT_BALANCES table in data-store.tsx and the approval-time defaults
+// in approveLeaveRequest().
 const FALLBACK_LEAVE_BALANCES: LeaveBalance[] = [
   { typeKey: "annual", total: 21, used: 0, remaining: 21 },
   { typeKey: "sick", total: 10, used: 0, remaining: 10 },
   { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
 ];
+
+/**
+ * Merge any rows we fetched from Supabase for a given employee with the
+ * baseline list above. Fetched rows override the matching default by
+ * typeKey; missing types stay at their default. This way an employee who
+ * has only ever taken a sick day still shows a 21-day annual card and a
+ * 30-day unpaid card instead of disappearing them.
+ */
+function mergeBalancesWithFallback(fetched: LeaveBalance[]): LeaveBalance[] {
+  const byType = new Map(fetched.map((b) => [b.typeKey, b]));
+  return FALLBACK_LEAVE_BALANCES.map((def) => byType.get(def.typeKey) ?? def);
+}
 
 // ---------- constants ----------
 
@@ -233,7 +247,9 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
         used: r.used as number,
         remaining: (r.total as number) - (r.used as number),
       }));
-      setFetchedBalances(mapped.length > 0 ? mapped : FALLBACK_LEAVE_BALANCES);
+      // Always merge with the fallback list so every type renders a card
+      // even if the employee only has rows for a subset of types.
+      setFetchedBalances(mergeBalancesWithFallback(mapped));
     })();
     return () => {
       cancelled = true;
