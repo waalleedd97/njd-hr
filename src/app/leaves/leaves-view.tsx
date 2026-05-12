@@ -211,6 +211,13 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
   const [balancesLoading, setBalancesLoading] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
+  // Edit-balance dialog state — admin can override total/used for any
+  // (employee, type, year) row.
+  const [editingBalance, setEditingBalance] = useState<LeaveBalance | null>(null);
+  const [editTotal, setEditTotal] = useState<number>(0);
+  const [editUsed, setEditUsed] = useState<number>(0);
+  const [savingBalance, setSavingBalance] = useState(false);
+
   // Click-outside to close the picker
   useEffect(() => {
     if (!employeePickerOpen) return;
@@ -283,6 +290,70 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
         emp.email.toLowerCase().includes(q)
     );
   }, [employees, employeeSearch]);
+
+  // ── Balance editing (admin only) ────────────────────────────────────
+  // The current employee whose balance we'd be editing. Edits target the
+  // current year's row; missing rows get created via UPSERT.
+  const balanceTargetId = isViewingSelf ? user.id : selectedEmployeeId;
+  const canEditBalances = isAdmin && !isViewingAll && balanceTargetId !== null;
+
+  const openEditBalance = (lb: LeaveBalance) => {
+    setEditingBalance(lb);
+    setEditTotal(lb.total);
+    setEditUsed(lb.used);
+  };
+
+  const closeEditBalance = () => {
+    if (savingBalance) return;
+    setEditingBalance(null);
+  };
+
+  const saveBalance = async () => {
+    if (!editingBalance || !balanceTargetId || savingBalance) return;
+    if (editTotal < 0 || editUsed < 0) {
+      toast.error(isAr ? "القيم لا يمكن أن تكون سالبة" : "Values can't be negative");
+      return;
+    }
+    setSavingBalance(true);
+    try {
+      const currentYear = new Date().getFullYear();
+      const { error } = await supabase
+        .from("leave_balances")
+        .upsert(
+          {
+            employee_id: balanceTargetId,
+            type_key: editingBalance.typeKey,
+            total: editTotal,
+            used: editUsed,
+            year: currentYear,
+          },
+          { onConflict: "employee_id,type_key,year" }
+        );
+      if (error) throw error;
+
+      // Update displayed balances locally — refresh the store if we're
+      // viewing self (so the dashboard/header reflects the change), and
+      // patch fetchedBalances directly when viewing another employee.
+      if (isViewingSelf) {
+        await store.refreshLeaveBalances();
+      } else {
+        setFetchedBalances((prev) =>
+          prev.map((b) =>
+            b.typeKey === editingBalance.typeKey
+              ? { ...b, total: editTotal, used: editUsed, remaining: editTotal - editUsed }
+              : b
+          )
+        );
+      }
+      toast.success(isAr ? "تم تحديث الرصيد بنجاح" : "Balance updated");
+      setEditingBalance(null);
+    } catch (error) {
+      console.error("[HR] Balance update failed:", error);
+      toast.error(isAr ? "فشل تحديث الرصيد. حاول مرة أخرى." : "Failed to update balance");
+    } finally {
+      setSavingBalance(false);
+    }
+  };
 
   const [activeTab, setActiveTab] = useState<TabKey>(
     initialTab === "requests" || initialTab === "calendar" ? initialTab : "balance"
@@ -507,18 +578,21 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
             </button>
             {employeePickerOpen && (
               <div className="absolute end-0 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-surface-container-lowest border border-outline-variant/40 rounded-xl shadow-lg z-30 overflow-hidden">
-                <div className="p-2 border-b border-outline-variant/20">
+                <div className="p-3 border-b border-outline-variant/20">
                   <div className="relative">
                     <div className="absolute start-3 top-1/2 -translate-y-1/2 text-on-surface-variant pointer-events-none">
                       <Icon name="search" size={16} />
                     </div>
+                    {/* ring-inset keeps the focus halo painted inside the input
+                        so it doesn't get clipped by the dropdown's overflow-hidden,
+                        which was making the corners of the search bar look chewed. */}
                     <input
                       type="text"
                       autoFocus
                       placeholder={isAr ? "ابحث بالاسم أو البريد..." : "Search by name or email..."}
                       value={employeeSearch}
                       onChange={(e) => setEmployeeSearch(e.target.value)}
-                      className="w-full h-9 rounded-lg bg-surface-container-high ps-9 pe-3 text-sm outline-none focus:ring-2 focus:ring-primary/40"
+                      className="w-full h-10 rounded-xl bg-surface-container-high ps-10 pe-3 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40"
                     />
                   </div>
                 </div>
@@ -673,13 +747,26 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
               return (
                 <div
                   key={lb.typeKey}
-                  className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm hover:shadow-primary-glow-lg transition-all group"
+                  className="bg-surface-container-lowest p-5 rounded-2xl shadow-sm hover:shadow-primary-glow-lg transition-all group relative"
                 >
                   <div className="flex items-center gap-3 mb-4">
                     <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform", config.bg, config.icon)}>
                       <Icon name={config.iconName} size={26} fill />
                     </div>
                     <h3 className="font-headline font-bold text-base">{t.lev[levKey]}</h3>
+                    {/* Admin edit-balance pencil — anchored to the card's end side
+                        so it doesn't compete with the type icon. */}
+                    {canEditBalances && (
+                      <button
+                        type="button"
+                        onClick={() => openEditBalance(lb)}
+                        className="ms-auto w-8 h-8 rounded-lg flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"
+                        aria-label={isAr ? "تعديل الرصيد" : "Edit balance"}
+                        title={isAr ? "تعديل الرصيد" : "Edit balance"}
+                      >
+                        <Icon name="edit" size={18} />
+                      </button>
+                    )}
                   </div>
 
                   <div className="flex items-end justify-between mb-3">
@@ -1234,6 +1321,106 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
               </form>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Balance Dialog (admin only) — overrides total/used for the
+          (employee, type, current year) row. UPSERT behaviour means a row
+          is created on the fly if one didn't exist. */}
+      <Dialog open={editingBalance !== null} onOpenChange={(v) => { if (!v) closeEditBalance(); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {isAr ? "تعديل رصيد الإجازة" : "Edit Leave Balance"}
+            </DialogTitle>
+            <DialogDescription>
+              {editingBalance && (
+                <>
+                  {isAr
+                    ? `${t.lev[editingBalance.typeKey as keyof typeof t.lev] || editingBalance.typeKey} • سنة ${new Date().getFullYear()}`
+                    : `${t.lev[editingBalance.typeKey as keyof typeof t.lev] || editingBalance.typeKey} • ${new Date().getFullYear()}`}
+                  {selectedEmployee && (
+                    <span className="block mt-1 text-xs">
+                      {isAr ? "للموظف: " : "Employee: "}
+                      <span className="font-bold">
+                        {isAr ? selectedEmployee.nameAr : selectedEmployee.nameEn}
+                      </span>
+                    </span>
+                  )}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {editingBalance && (
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">
+                    {isAr ? "إجمالي السماح (أيام)" : "Total Allowance (days)"}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editTotal}
+                    onChange={(e) => setEditTotal(Math.max(0, Number(e.target.value) || 0))}
+                    className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40 tabular-nums"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold">
+                    {isAr ? "المستخدم (أيام)" : "Used (days)"}
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editUsed}
+                    onChange={(e) => setEditUsed(Math.max(0, Number(e.target.value) || 0))}
+                    className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40 tabular-nums"
+                  />
+                </div>
+              </div>
+
+              {/* Live preview of the resulting remaining balance + warnings */}
+              <div className="rounded-2xl bg-surface-container/40 p-4 space-y-2 border border-outline-variant/30">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-on-surface-variant font-medium">
+                    {isAr ? "المتبقي بعد الحفظ" : "Remaining after save"}
+                  </span>
+                  <span
+                    className={cn(
+                      "font-headline text-lg font-black tabular-nums",
+                      editTotal - editUsed < 0 && "text-md-error"
+                    )}
+                  >
+                    {editTotal - editUsed} {isAr ? "يوم" : "days"}
+                  </span>
+                </div>
+                {editUsed > editTotal && (
+                  <p className="text-xs text-md-error font-medium flex items-center gap-1.5">
+                    <Icon name="warning" size={14} />
+                    {isAr
+                      ? "المستخدم أكبر من الإجمالي — رصيد سالب"
+                      : "Used exceeds total — balance will be negative"}
+                  </p>
+                )}
+              </div>
+
+              <p className="text-xs text-on-surface-variant leading-relaxed">
+                {isAr
+                  ? "تعديل القيم هنا يكتب مباشرة على رصيد الموظف للسنة الحالية ولا يُنشئ طلب إجازة. استخدم هذا للتسويات الإدارية فقط."
+                  : "Editing here writes directly to the employee's balance for the current year and does not create a leave request. Use this for administrative adjustments only."}
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEditBalance} disabled={savingBalance}>
+              {t.common.cancel}
+            </Button>
+            <Button onClick={saveBalance} disabled={savingBalance}>
+              {savingBalance && <Icon name="progress_activity" size={18} className="animate-spin" />}
+              {savingBalance ? (isAr ? "جاري الحفظ..." : "Saving...") : t.common.save}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
