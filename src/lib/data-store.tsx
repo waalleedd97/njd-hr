@@ -27,6 +27,7 @@ import {
 } from "./mock-data";
 import { createNotification, notifyAdmins } from "./notifications";
 import { supabase } from "./supabase";
+import { LATE_REFERENCE_HOUR } from "./constants";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -671,11 +672,21 @@ export function DataProvider({
     const userId = await getSessionUserId();
     const today = new Date().toISOString().split("T")[0];
 
+    // Derive status from check-in time. Anything after 10:00 KSA is "late" —
+    // payroll then reads the time itself and applies the right penalty band
+    // (grace / warning / 5% / 10%) via calcPenalty(). The grace period only
+    // suppresses the *deduction*; the badge still flags lateness so the admin
+    // and the employee see the truth on the roster.
+    const [h, m] = time.split(":").map(Number);
+    const checkInMinutes = (h ?? 0) * 60 + (m ?? 0);
+    const status: AttRecord["status"] =
+      checkInMinutes > LATE_REFERENCE_HOUR * 60 ? "late" : "present";
+
     await supabase.from("attendance").upsert({
       employee_id: userId,
       date: today,
       check_in: time,
-      status: "present",
+      status,
       method: "geofence",
     }, { onConflict: "employee_id,date" });
 
