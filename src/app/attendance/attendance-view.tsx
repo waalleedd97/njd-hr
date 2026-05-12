@@ -21,10 +21,10 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, getKSADateString, formatDate } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
-import type { AttendanceSlice } from "@/lib/data/server";
+import type { AttendanceSlice, AttRecord } from "@/lib/data/server";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -234,6 +234,16 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   // Overview vs Tracking — admin-only toggle. Default Overview for KPI bird's-eye.
   const [adminTab, setAdminTab] = useState<"overview" | "tracking">("overview");
 
+  // Roster date picker — admin can browse attendance for any past day.
+  // When rosterDate === today, the roster panel reuses store.todayAttendance
+  // (already kept fresh by DataProvider). For any other date, fetch directly
+  // from Supabase into rosterRecords. KPI tiles deliberately stay bound to
+  // store.todayAttendance so they always reflect the actual current day.
+  const todayDateStr = getKSADateString();
+  const [rosterDate, setRosterDate] = useState<string>(todayDateStr);
+  const [rosterRecords, setRosterRecords] = useState<AttRecord[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+
   const currentUserId = isAdmin ? null : user.id;
   const existingRecord = currentUserId
     ? store.todayAttendance.find((a) => a.employeeId === currentUserId)
@@ -332,6 +342,42 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [reportUploading, setReportUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch attendance for a non-today date when the admin browses backwards.
+  // On today: the effect early-returns (no fetch, no state mutation) and the
+  // UI falls back to store.todayAttendance via the `visibleRoster` derivation.
+  // Stale rosterRecords from a previous date are simply ignored while on today.
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (rosterDate === todayDateStr) return;
+    let cancelled = false;
+    (async () => {
+      setRosterLoading(true);
+      const { data } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("date", rosterDate)
+        .order("created_at", { ascending: false });
+      if (cancelled) return;
+      setRosterLoading(false);
+      if (!data) {
+        setRosterRecords([]);
+        return;
+      }
+      const mapped: AttRecord[] = data.map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        employeeId: r.employee_id as string,
+        date: r.date as string,
+        checkIn: r.check_in ? String(r.check_in).slice(0, 5) : null,
+        checkOut: r.check_out ? String(r.check_out).slice(0, 5) : null,
+        status: ((r.status as string) || "present") as AttRecord["status"],
+      }));
+      setRosterRecords(mapped);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [rosterDate, isAdmin, todayDateStr]);
 
   const handleClockIn = async () => {
     if (tooEarly) return;
@@ -467,6 +513,15 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     0,
     totalEmployees - store.todayAttendance.length - onLeaveCount
   );
+
+  // ── Roster panel data source (admin only) ──
+  // On today: reuse the live store. On any other day: use the fetched snapshot.
+  const isTodayRoster = rosterDate === todayDateStr;
+  const visibleRoster: AttRecord[] = isTodayRoster ? store.todayAttendance : rosterRecords;
+  const visiblePresentCount = visibleRoster.filter((r) => r.checkIn).length;
+  // Mask a stale `rosterLoading=true` flag that may linger when the user
+  // switches back to today before a prior fetch resolves.
+  const showRosterLoading = !isTodayRoster && rosterLoading;
   // Cross-feature pending counters
   const pendingAdjustments = store.attendanceAdjustments.filter((a) => a.status === "pending").length;
   const pendingLeaveRequests = store.leaveRequests.filter((r) => r.status === "pending").length;
@@ -586,94 +641,134 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
               </div>
             </div>
 
-            {/* Today's Attendance — full list of who came/who didn't */}
+            {/* Attendance Roster — admin can browse any past day via the date picker */}
             <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-outline-variant/10">
+              {/* Top row: icon + title + present/total tally */}
+              <div className="flex items-center justify-between px-5 py-4">
                 <div className="flex items-center gap-2">
                   <Icon name="event_available" size={18} className="text-primary" />
                   <h3 className="font-headline font-bold text-base">
-                    {isAr ? "حضور اليوم" : "Today's Attendance"}
+                    {isAr ? "سجلّ الحضور" : "Attendance Roster"}
                   </h3>
                 </div>
                 <span className="text-xs text-on-surface-variant tabular-nums">
-                  {presentCount}/{employees.length} {isAr ? "حاضر" : "present"}
+                  {visiblePresentCount}/{employees.length} {isAr ? "حاضر" : "present"}
                 </span>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[520px]">
-                  <thead>
-                    <tr className="bg-surface-container/30">
-                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                        {t.att.employee}
-                      </th>
-                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                        {t.att.checkIn}
-                      </th>
-                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                        {t.att.checkOut}
-                      </th>
-                      <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
-                        {t.common.status}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {employees.map((emp) => {
-                      const record = store.todayAttendance.find((a) => a.employeeId === emp.id);
-                      const status = record?.status ?? "absent";
-                      const dept = departments[emp.department];
-                      return (
-                        <tr key={emp.id} className="hover:bg-surface-container-low transition-colors">
-                          <td className="px-5 py-3">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="w-8 h-8">
-                                <AvatarFallback className={cn("text-white text-[10px] font-bold", emp.color)}>
-                                  {emp.initials}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div className="min-w-0">
-                                <p className="text-sm font-bold truncate">
-                                  {isAr ? emp.nameAr : emp.nameEn}
-                                </p>
-                                {dept && (
-                                  <p className="text-[10px] text-on-surface-variant truncate">
-                                    {isAr ? dept.ar : dept.en}
+              {/* Toolbar row: date picker + readable label + "Today" reset */}
+              <div className="flex items-center justify-between gap-3 px-5 pb-3 border-b border-outline-variant/10 flex-wrap">
+                <div className="flex items-center gap-2 bg-surface-container-high rounded-xl px-3 py-2">
+                  <Icon name="calendar_month" size={16} className="text-primary" />
+                  <input
+                    type="date"
+                    value={rosterDate}
+                    max={todayDateStr}
+                    onChange={(e) => setRosterDate(e.target.value || todayDateStr)}
+                    className="bg-transparent text-sm font-medium outline-none"
+                  />
+                  {!isTodayRoster && (
+                    <button
+                      type="button"
+                      onClick={() => setRosterDate(todayDateStr)}
+                      className="text-xs font-bold text-primary hover:underline ms-2"
+                    >
+                      {isAr ? "اليوم" : "Today"}
+                    </button>
+                  )}
+                </div>
+                <span className="text-xs text-on-surface-variant">
+                  {isTodayRoster
+                    ? isAr ? "تعرض بيانات اليوم" : "Showing today"
+                    : formatDate(rosterDate, lang, {
+                        weekday: "long",
+                        year: "numeric",
+                        month: "long",
+                        day: "numeric",
+                      })}
+                </span>
+              </div>
+              {showRosterLoading ? (
+                <div className="py-12 text-center text-sm text-on-surface-variant">
+                  <Icon name="hourglass_empty" size={28} className="opacity-50 mb-2 inline-block animate-pulse" />
+                  <p className="font-medium">{isAr ? "جارٍ التحميل…" : "Loading…"}</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px]">
+                    <thead>
+                      <tr className="bg-surface-container/30">
+                        <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          {t.att.employee}
+                        </th>
+                        <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          {t.att.checkIn}
+                        </th>
+                        <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          {t.att.checkOut}
+                        </th>
+                        <th className="text-start px-5 py-3 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">
+                          {t.common.status}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {employees.map((emp) => {
+                        const record = visibleRoster.find((a) => a.employeeId === emp.id);
+                        const status = record?.status ?? "absent";
+                        const dept = departments[emp.department];
+                        return (
+                          <tr key={emp.id} className="hover:bg-surface-container-low transition-colors">
+                            <td className="px-5 py-3">
+                              <div className="flex items-center gap-3">
+                                <Avatar className="w-8 h-8">
+                                  <AvatarFallback className={cn("text-white text-[10px] font-bold", emp.color)}>
+                                    {emp.initials}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-bold truncate">
+                                    {isAr ? emp.nameAr : emp.nameEn}
                                   </p>
-                                )}
+                                  {dept && (
+                                    <p className="text-[10px] text-on-surface-variant truncate">
+                                      {isAr ? dept.ar : dept.en}
+                                    </p>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="px-5 py-3 text-sm text-on-surface-variant tabular-nums font-medium">
-                            {record?.checkIn ?? "—"}
-                          </td>
-                          <td className="px-5 py-3 text-sm text-on-surface-variant tabular-nums font-medium">
-                            {record?.checkOut ?? "—"}
-                          </td>
-                          <td className="px-5 py-3">
-                            {record ? (
-                              <Badge variant={statusBadgeVariant[status] ?? "secondary"}>
-                                {statusLabelFn[status]?.(t) ?? status}
-                              </Badge>
-                            ) : (
-                              <Badge variant="warning">
-                                {isAr ? "لم يسجّل" : "Not checked in"}
-                              </Badge>
-                            )}
+                            </td>
+                            <td className="px-5 py-3 text-sm text-on-surface-variant tabular-nums font-medium">
+                              {record?.checkIn ?? "—"}
+                            </td>
+                            <td className="px-5 py-3 text-sm text-on-surface-variant tabular-nums font-medium">
+                              {record?.checkOut ?? "—"}
+                            </td>
+                            <td className="px-5 py-3">
+                              {record ? (
+                                <Badge variant={statusBadgeVariant[status] ?? "secondary"}>
+                                  {statusLabelFn[status]?.(t) ?? status}
+                                </Badge>
+                              ) : (
+                                <Badge variant="warning">
+                                  {isAr ? "لم يسجّل" : "Not checked in"}
+                                </Badge>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {employees.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-12 text-center text-on-surface-variant">
+                            <Icon name="event_busy" size={36} className="opacity-40 mb-2" />
+                            <p className="text-sm font-medium">{t.common.noData}</p>
                           </td>
                         </tr>
-                      );
-                    })}
-                    {employees.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="py-12 text-center text-on-surface-variant">
-                          <Icon name="event_busy" size={36} className="opacity-40 mb-2" />
-                          <p className="text-sm font-medium">{t.common.noData}</p>
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>{/* /lg:col-span-2 */}
 
