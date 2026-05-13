@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
-import { supabase } from "@/lib/supabase";
-import { GOSI_RATE, ASSET_TYPES, type AssetType, type EmployeeAsset } from "@/lib/mock-data";
+import { ASSET_TYPES, type AssetType, type EmployeeAsset } from "@/lib/mock-data";
 import type { Employee } from "@/lib/mock-data";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
@@ -111,8 +112,6 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteName, setInviteName] = useState("");
@@ -121,48 +120,13 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
   const [invitePosition, setInvitePosition] = useState("");
   const [inviteSent, setInviteSent] = useState(false);
 
-  const [userIdMap, setUserIdMap] = useState<Record<string, string>>({});
-  const [empLocationRequired, setEmpLocationRequired] = useState(true);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    async function fetchUserIds() {
-      try {
-        const { data: users } = await supabase.rpc("admin_list_users");
-        if (!users) return;
-        const map: Record<string, string> = {};
-        for (const u of users as Array<{ user_id: string; email: string }>) {
-          if (u.email) map[u.email.toLowerCase()] = u.user_id;
-        }
-        setUserIdMap(map);
-      } catch { /* RPC may not be available */ }
-    }
-    fetchUserIds();
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!dialogOpen || !selectedEmployee) return;
-    setEmpLocationRequired(true);
-    const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
-    if (!supabaseId) return;
-    supabase
-      .from("profiles")
-      .select("location_required")
-      .eq("id", supabaseId)
-      .single()
-      .then(({ data }: { data: { location_required?: boolean } | null }) => {
-        if (data) setEmpLocationRequired(data.location_required ?? true);
-      });
-  }, [dialogOpen, selectedEmployee, userIdMap]);
-
-  const handleLocationToggle = async () => {
-    if (!selectedEmployee) return;
-    const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()];
-    if (!supabaseId) return;
-    const newValue = !empLocationRequired;
-    setEmpLocationRequired(newValue);
-    await supabase.from("profiles").update({ location_required: newValue }).eq("id", supabaseId);
-  };
+  // Profile editing (location_required toggle, manager picker, salary view)
+  // moved to the dedicated /employees/[id] page so the admin gets a real URL
+  // they can bookmark and share. The previous in-list dialog and its
+  // supporting state (selectedEmployee, dialogOpen, userIdMap, empLocationRequired,
+  // handleLocationToggle, handleManagerChange, plus their two useEffects)
+  // were removed as dead code. openProfile() below now just navigates.
+  const router = useRouter();
 
   const employees = store.employees;
   const invites = store.pendingInvitations;
@@ -328,22 +292,6 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
     }
   };
 
-  // Manager picker state for the profile dialog
-  const [managerSaving, setManagerSaving] = useState(false);
-  const handleManagerChange = async (newManagerId: string) => {
-    if (!selectedEmployee || managerSaving) return;
-    const supabaseId = userIdMap[selectedEmployee.email.toLowerCase()] || selectedEmployee.id;
-    setManagerSaving(true);
-    try {
-      await store.updateEmployeeManager(supabaseId, newManagerId || null);
-      toast.success(isAr ? "تم تحديث المدير المباشر" : "Direct manager updated");
-    } catch {
-      toast.error(isAr ? "فشل التحديث" : "Failed to update");
-    } finally {
-      setManagerSaving(false);
-    }
-  };
-
   const filteredEmployees = employees.filter((emp) => {
     const name = isAr ? emp.nameAr : emp.nameEn;
     const matchesSearch = !searchQuery ||
@@ -373,11 +321,12 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
     return t.emp.inactive;
   };
 
-  const formatSalary = (amount: number) => amount.toLocaleString(isAr ? "ar-SA-u-nu-latn" : "en-US");
-
+  // Navigate to the dedicated employee detail page. Kept as a function
+  // (rather than inlined router.push at every call site) so the eye-icon
+  // button, the onboarding row click, the org-chart node click, and the
+  // recently-hired row click all stay one-line and consistent.
   const openProfile = (emp: Employee) => {
-    setSelectedEmployee(emp);
-    setDialogOpen(true);
+    router.push(`/employees/${emp.id}`);
   };
 
   const [inviteSending, setInviteSending] = useState(false);
@@ -674,13 +623,16 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
                       )}
                     </td>
                     <td className="px-6 py-4">
-                      <button
-                        onClick={() => openProfile(emp)}
-                        className="p-2 rounded-full text-primary hover:bg-primary-container/30 transition-colors"
+                      {/* Link instead of button so the admin can middle-click
+                          or Cmd/Ctrl-click to open the profile in a new tab. */}
+                      <Link
+                        href={`/employees/${emp.id}`}
+                        className="inline-flex p-2 rounded-full text-primary hover:bg-primary-container/30 transition-colors"
                         title={t.emp.employeeProfile}
+                        aria-label={t.emp.employeeProfile}
                       >
                         <Icon name="visibility" size={18} />
-                      </button>
+                      </Link>
                     </td>
                   </tr>
                 );
@@ -1048,216 +1000,6 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
           </div>
         </div>
       )}
-
-      {/* Profile Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
-          {selectedEmployee && (
-            <>
-              <DialogHeader>
-                <DialogTitle>{t.emp.employeeProfile}</DialogTitle>
-                <DialogDescription className="sr-only">{t.emp.personalInfo}</DialogDescription>
-              </DialogHeader>
-
-              <div className="flex items-center gap-4 pb-5">
-                <Avatar size="lg" className="w-16 h-16">
-                  <AvatarFallback className={cn("text-white text-lg font-bold", selectedEmployee.color)}>
-                    {selectedEmployee.initials}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="min-w-0 flex-1">
-                  <h3 className="font-headline font-bold text-lg truncate">
-                    {isAr ? selectedEmployee.nameAr : selectedEmployee.nameEn}
-                  </h3>
-                  <p className="text-sm text-on-surface-variant truncate">
-                    {isAr ? selectedEmployee.positionAr : selectedEmployee.positionEn}
-                  </p>
-                  <Badge variant={statusBadgeVariant[selectedEmployee.status]} className="mt-1">
-                    {statusLabel(selectedEmployee.status)}
-                  </Badge>
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-3">
-                  {t.emp.personalInfo}
-                </h4>
-                <div className="space-y-2.5">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface-variant font-medium">{t.emp.empId}</span>
-                    <span className="font-bold tabular-nums">{selectedEmployee.id}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface-variant font-medium">{t.emp.email}</span>
-                    <span className="font-bold">{selectedEmployee.email}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface-variant font-medium">{t.emp.phone}</span>
-                    <span className="font-bold tabular-nums" dir="ltr">{selectedEmployee.phone}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface-variant font-medium">{t.common.department}</span>
-                    <span className="font-bold">
-                      {departments[selectedEmployee.department]
-                        ? (isAr ? departments[selectedEmployee.department].ar : departments[selectedEmployee.department].en)
-                        : selectedEmployee.department}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-on-surface-variant font-medium">{t.emp.joinDate}</span>
-                    <span className="font-bold tabular-nums">
-                      {new Date(selectedEmployee.joinDate).toLocaleDateString(isAr ? "ar-SA-u-nu-latn" : "en-US", {
-                        year: "numeric", month: "long", day: "numeric",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-outline-variant/20">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-bold">{t.emp.locationRequired}</span>
-                  <button
-                    onClick={handleLocationToggle}
-                    disabled={!userIdMap[selectedEmployee.email.toLowerCase()]}
-                    className={cn(
-                      "relative w-12 h-7 rounded-full transition-colors",
-                      !userIdMap[selectedEmployee.email.toLowerCase()] && "opacity-50 cursor-not-allowed",
-                      empLocationRequired ? "gradient-btn shadow-primary-glow" : "bg-surface-container-highest"
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "absolute top-0.5 w-6 h-6 rounded-full bg-surface-container-lowest shadow transition-all",
-                        empLocationRequired ? "start-[22px]" : "start-0.5"
-                      )}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {/* Direct manager picker */}
-              <div className="pt-4 border-t border-outline-variant/20 space-y-2">
-                <label className="text-sm font-bold flex items-center gap-2">
-                  <Icon name="account_tree" size={16} className="text-primary" />
-                  {isAr ? "المدير المباشر" : "Direct Manager"}
-                </label>
-                <select
-                  value={selectedEmployee.managerId ?? ""}
-                  onChange={(e) => handleManagerChange(e.target.value)}
-                  disabled={managerSaving}
-                  className="h-10 w-full rounded-xl bg-surface-container-high px-3 text-sm outline-none focus:ring-2 focus:ring-primary/40 disabled:opacity-60"
-                >
-                  <option value="">{isAr ? "بدون مدير مباشر" : "No direct manager"}</option>
-                  {employees
-                    .filter((e) => e.id !== selectedEmployee.id)
-                    .map((e) => (
-                      <option key={e.id} value={e.id}>
-                        {isAr ? e.nameAr : e.nameEn}
-                        {e.positionAr || e.positionEn ? ` — ${isAr ? e.positionAr : e.positionEn}` : ""}
-                      </option>
-                    ))}
-                </select>
-                {selectedEmployee.managerId && (() => {
-                  const mgr = employees.find((e) => e.id === selectedEmployee.managerId);
-                  if (!mgr) return null;
-                  return (
-                    <div className="flex items-center gap-2 text-xs text-on-surface-variant">
-                      <Avatar className="w-6 h-6">
-                        <AvatarFallback className={cn("text-white text-[9px] font-bold", mgr.color)}>
-                          {mgr.initials}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span>{isAr ? "حالياً يتبع" : "Currently reports to"}: <strong>{isAr ? mgr.nameAr : mgr.nameEn}</strong></span>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {/* Issued assets summary */}
-              {(() => {
-                const empAssets = assets.filter((a) => a.employeeId === selectedEmployee.id);
-                if (empAssets.length === 0) return null;
-                return (
-                  <div className="pt-4 border-t border-outline-variant/20">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-3 flex items-center gap-2">
-                      <Icon name="inventory_2" size={14} />
-                      {isAr ? "العهد المُسلَّمة" : "Issued Assets"}
-                      <Badge variant="default">{empAssets.length}</Badge>
-                    </h4>
-                    <ul className="space-y-2">
-                      {empAssets.map((a) => {
-                        const meta = ASSET_TYPES[a.assetType] ?? ASSET_TYPES.other;
-                        return (
-                          <li key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-container-low">
-                            <div className={cn("w-7 h-7 rounded-lg flex items-center justify-center bg-surface-container", meta.tone)}>
-                              <Icon name={meta.iconName} size={14} fill />
-                            </div>
-                            <span className="text-sm font-medium flex-1 min-w-0 truncate">
-                              {isAr ? a.nameAr : a.nameEn}
-                            </span>
-                            <Badge variant={a.status === "issued" ? "success" : a.status === "returned" ? "secondary" : "destructive"}>
-                              {a.status === "issued" ? (isAr ? "مُسلَّم" : "Issued")
-                                : a.status === "returned" ? (isAr ? "مُسترَد" : "Returned")
-                                : a.status === "lost" ? (isAr ? "مفقود" : "Lost")
-                                : (isAr ? "تالف" : "Damaged")}
-                            </Badge>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                );
-              })()}
-
-              <div className="pt-4 border-t border-outline-variant/20">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant mb-3">
-                  {t.emp.salaryInfo}
-                </h4>
-                {(() => {
-                  const sal = selectedEmployee.salary;
-                  const gosi = Math.round(sal.basic * GOSI_RATE);
-                  const net = sal.basic + sal.housing + sal.transport + sal.other - gosi;
-                  return (
-                    <div className="space-y-2.5">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-on-surface-variant font-medium">{t.emp.basic}</span>
-                        <span className="font-bold tabular-nums">{formatSalary(sal.basic)} {t.common.sar}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-on-surface-variant font-medium">{t.emp.housing}</span>
-                        <span className="font-bold tabular-nums">{formatSalary(sal.housing)} {t.common.sar}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-on-surface-variant font-medium">{t.emp.transport}</span>
-                        <span className="font-bold tabular-nums">{formatSalary(sal.transport)} {t.common.sar}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-on-surface-variant font-medium">{t.emp.other}</span>
-                        <span className="font-bold tabular-nums">{formatSalary(sal.other)} {t.common.sar}</span>
-                      </div>
-                      <div className="flex justify-between text-sm text-md-error">
-                        <span className="font-medium">{t.pay.gosiDeduction}</span>
-                        <span className="font-bold tabular-nums">-{formatSalary(gosi)} {t.common.sar}</span>
-                      </div>
-                      <div className="flex justify-between text-sm pt-3 bg-primary-container/20 -mx-6 px-6 py-3 rounded-2xl font-headline font-black text-primary">
-                        <span>{t.emp.netSalary}</span>
-                        <span className="tabular-nums">{formatSalary(net)} {t.common.sar}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                  {t.common.close}
-                </Button>
-              </DialogFooter>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
 
       {/* Invite Dialog */}
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
