@@ -11,6 +11,14 @@ import { GOSI_RATE, ASSET_TYPES } from "@/lib/mock-data";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
@@ -71,6 +79,39 @@ export function EmployeeDetailView({
     startDate: string | null;
   };
   const [profileExtras, setProfileExtras] = useState<ProfileExtras | null>(null);
+
+  // ── Edit profile dialog state ──────────────────────────────────────
+  // One unified form covering every editable column. Opened from a
+  // single "Edit" button at the top of the page; saved with one UPSERT
+  // to profiles. Email is intentionally excluded — it lives in
+  // auth.users and changing it requires the admin API path which we
+  // don't expose from this client.
+  type EditForm = {
+    employeeNumber: string;
+    fullNameAr: string;
+    fullNameEn: string;
+    phone: string;
+    nationalId: string;
+    department: string;
+    jobTitleAr: string;
+    jobTitleEn: string;
+    startDate: string;
+    dateOfBirth: string;
+    nationality: string;
+    gender: string;
+    maritalStatus: string;
+    passportNumber: string;
+    emergencyPhone: string;
+    iban: string;
+    universityMajorAr: string;
+    universityMajorEn: string;
+    baseSalary: string;
+    allowances: string;
+  };
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -156,6 +197,157 @@ export function EmployeeDetailView({
     }
   };
 
+  // Open the edit dialog. Snapshots the current values into the form so
+  // the inputs are pre-filled. Numeric fields are converted to strings
+  // since <input type="number"> binds to a string anyway.
+  const openEdit = () => {
+    if (!employee) return;
+    setEditError("");
+    setEditForm({
+      employeeNumber: employee.employeeNumber ?? "",
+      fullNameAr: employee.nameAr ?? "",
+      fullNameEn: employee.nameEn ?? "",
+      phone: employee.phone ?? "",
+      nationalId: employee.nationalId ?? "",
+      department: employee.department ?? "",
+      jobTitleAr: employee.positionAr ?? "",
+      jobTitleEn: profileExtras?.jobTitleEn ?? employee.positionEn ?? "",
+      startDate: profileExtras?.startDate ?? "",
+      dateOfBirth: profileExtras?.dateOfBirth ?? "",
+      nationality: profileExtras?.nationality ?? "",
+      gender: profileExtras?.gender ?? "",
+      maritalStatus: profileExtras?.maritalStatus ?? "",
+      passportNumber: profileExtras?.passportNumber ?? "",
+      emergencyPhone: profileExtras?.emergencyPhone ?? "",
+      iban: profileExtras?.iban ?? "",
+      universityMajorAr: profileExtras?.universityMajorAr ?? "",
+      universityMajorEn: profileExtras?.universityMajorEn ?? "",
+      baseSalary: profileExtras?.baseSalary != null ? String(profileExtras.baseSalary) : "",
+      allowances: profileExtras?.allowances != null ? String(profileExtras.allowances) : "",
+    });
+    setEditOpen(true);
+  };
+
+  const closeEdit = () => {
+    if (editSaving) return;
+    setEditOpen(false);
+    setEditError("");
+  };
+
+  const saveEdit = async () => {
+    if (!employee || !editForm || editSaving) return;
+    setEditError("");
+
+    // Validate employee_number format. CHECK constraint on the DB will
+    // also catch this, but a clear message here is friendlier.
+    const empNum = editForm.employeeNumber.trim();
+    if (empNum && !/^\d{3}$/.test(empNum)) {
+      setEditError(
+        isAr
+          ? "الرقم الوظيفي يجب أن يكون 3 أرقام بالضبط (مثل 001)"
+          : "Employee number must be exactly 3 digits (e.g. 001)"
+      );
+      return;
+    }
+
+    // Validate numeric salary fields.
+    const baseNum = editForm.baseSalary.trim() === "" ? null : Number(editForm.baseSalary);
+    const allowNum = editForm.allowances.trim() === "" ? null : Number(editForm.allowances);
+    if (
+      (baseNum !== null && (Number.isNaN(baseNum) || baseNum < 0)) ||
+      (allowNum !== null && (Number.isNaN(allowNum) || allowNum < 0))
+    ) {
+      setEditError(
+        isAr ? "قيم الراتب يجب أن تكون أرقاماً موجبة" : "Salary fields must be non-negative numbers"
+      );
+      return;
+    }
+
+    setEditSaving(true);
+    try {
+      const supabaseId = userIdMap[employee.email.toLowerCase()] || employee.id;
+      // Empty strings → NULL so we don't store "" for fields the admin
+      // intentionally cleared. Trim everything to avoid stray whitespace.
+      const trimOrNull = (s: string) => {
+        const v = s.trim();
+        return v === "" ? null : v;
+      };
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          employee_number: trimOrNull(empNum),
+          full_name_ar: trimOrNull(editForm.fullNameAr),
+          full_name_en: trimOrNull(editForm.fullNameEn),
+          phone: trimOrNull(editForm.phone),
+          national_id: trimOrNull(editForm.nationalId),
+          department: trimOrNull(editForm.department),
+          job_title_ar: trimOrNull(editForm.jobTitleAr),
+          job_title_en: trimOrNull(editForm.jobTitleEn),
+          start_date: trimOrNull(editForm.startDate),
+          date_of_birth: trimOrNull(editForm.dateOfBirth),
+          nationality: trimOrNull(editForm.nationality),
+          gender: trimOrNull(editForm.gender),
+          marital_status: trimOrNull(editForm.maritalStatus),
+          passport_number: trimOrNull(editForm.passportNumber),
+          emergency_phone: trimOrNull(editForm.emergencyPhone),
+          iban: trimOrNull(editForm.iban),
+          university_major_ar: trimOrNull(editForm.universityMajorAr),
+          university_major_en: trimOrNull(editForm.universityMajorEn),
+          base_salary: baseNum,
+          allowances: allowNum,
+        })
+        .eq("id", supabaseId);
+      if (error) throw error;
+
+      // Patch local state so the displayed values update immediately
+      // without needing to navigate away and back.
+      setProfileExtras((prev) => ({
+        ...(prev ?? {} as ProfileExtras),
+        dateOfBirth: trimOrNull(editForm.dateOfBirth),
+        nationality: trimOrNull(editForm.nationality),
+        gender: trimOrNull(editForm.gender),
+        maritalStatus: trimOrNull(editForm.maritalStatus),
+        passportNumber: trimOrNull(editForm.passportNumber),
+        emergencyPhone: trimOrNull(editForm.emergencyPhone),
+        iban: trimOrNull(editForm.iban),
+        baseSalary: baseNum,
+        allowances: allowNum,
+        universityMajorAr: trimOrNull(editForm.universityMajorAr),
+        universityMajorEn: trimOrNull(editForm.universityMajorEn),
+        jobTitleEn: trimOrNull(editForm.jobTitleEn),
+        startDate: trimOrNull(editForm.startDate),
+      }));
+      // Re-run the SSR fetcher so the hero card on this same page (which
+      // reads from the seeded employees list) reflects name / department /
+      // employee_number changes immediately. The list page uses the same
+      // slice on its next visit.
+      router.refresh();
+      toast.success(isAr ? "تم حفظ التعديلات" : "Profile updated");
+      setEditOpen(false);
+    } catch (err) {
+      console.error("[employee-detail] save failed:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      // Surface UNIQUE/CHECK constraint hits in human-readable form.
+      if (msg.includes("profiles_employee_number_format")) {
+        setEditError(
+          isAr
+            ? "الرقم الوظيفي يجب أن يكون 3 أرقام (مثل 001)"
+            : "Employee number must be exactly 3 digits (e.g. 001)"
+        );
+      } else if (msg.includes("profiles_employee_number_key")) {
+        setEditError(
+          isAr
+            ? "هذا الرقم الوظيفي مستخدم بالفعل لموظف آخر"
+            : "This employee number is already used by another employee"
+        );
+      } else {
+        setEditError(isAr ? "فشل حفظ التعديلات. حاول مرة أخرى." : "Failed to save. Please try again.");
+      }
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const formatSalary = (amount: number) =>
     amount.toLocaleString(isAr ? "ar-SA-u-nu-latn" : "en-US");
   const statusLabel = (status: string) => {
@@ -234,18 +426,24 @@ export function EmployeeDetailView({
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-8">
-      {/* Breadcrumb / back nav */}
-      <div className="flex items-center gap-2 text-sm">
+      {/* Breadcrumb / back nav + page-level Edit action */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link
           href="/employees"
-          className="inline-flex items-center gap-1.5 text-on-surface-variant hover:text-primary transition-colors font-medium"
+          className="inline-flex items-center gap-1.5 text-on-surface-variant hover:text-primary transition-colors font-medium text-sm"
         >
           <Icon name="arrow_back" size={16} />
           {isAr ? "العودة إلى الموظفين" : "Back to Employees"}
         </Link>
+        {isAdmin && (
+          <Button onClick={openEdit}>
+            <Icon name="edit" size={18} />
+            {isAr ? "تعديل البيانات" : "Edit Profile"}
+          </Button>
+        )}
       </div>
 
-      {/* Hero card — avatar + name + status */}
+      {/* Hero card — avatar + name + status + employee number badge */}
       <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
         <div className="flex items-start gap-5 flex-wrap">
           <Avatar size="lg" className="w-20 h-20 shrink-0">
@@ -259,9 +457,16 @@ export function EmployeeDetailView({
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0 flex-1">
-            <h1 className="font-headline font-extrabold text-2xl md:text-3xl mb-1">
-              {isAr ? employee.nameAr : employee.nameEn}
-            </h1>
+            <div className="flex items-center gap-3 flex-wrap mb-1">
+              <h1 className="font-headline font-extrabold text-2xl md:text-3xl">
+                {isAr ? employee.nameAr : employee.nameEn}
+              </h1>
+              {employee.employeeNumber && (
+                <span className="text-sm font-bold tabular-nums px-2.5 py-1 rounded-lg bg-primary/10 text-primary">
+                  #{employee.employeeNumber}
+                </span>
+              )}
+            </div>
             <p className="text-sm text-on-surface-variant mb-3">
               {isAr ? employee.positionAr : employee.positionEn}
               {dept && (
@@ -648,6 +853,272 @@ export function EmployeeDetailView({
           </ul>
         </div>
       )}
+
+      {/* Edit Profile Dialog — single unified form covering every editable
+          column on profiles. Email is excluded (lives in auth.users and
+          requires a privileged admin call we don't expose from the client). */}
+      <Dialog open={editOpen} onOpenChange={(v) => { if (!v) closeEdit(); }}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{isAr ? "تعديل بيانات الموظف" : "Edit Employee Profile"}</DialogTitle>
+            <DialogDescription>
+              {isAr ? employee.nameAr : employee.nameEn}
+            </DialogDescription>
+          </DialogHeader>
+          {editForm && (
+            <div className="space-y-6 py-2">
+              {/* ── Personal section ── */}
+              <section className="space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {isAr ? "البيانات الأساسية" : "Personal"}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField label={isAr ? "الاسم (عربي)" : "Name (Arabic)"}>
+                    <input
+                      value={editForm.fullNameAr}
+                      onChange={(e) => setEditForm({ ...editForm, fullNameAr: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "الاسم (إنجليزي)" : "Name (English)"}>
+                    <input
+                      value={editForm.fullNameEn}
+                      onChange={(e) => setEditForm({ ...editForm, fullNameEn: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "الرقم الوظيفي (3 أرقام)" : "Employee Number (3 digits)"}>
+                    <input
+                      value={editForm.employeeNumber}
+                      onChange={(e) => setEditForm({ ...editForm, employeeNumber: e.target.value })}
+                      placeholder="001"
+                      maxLength={3}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "الهاتف" : "Phone"}>
+                    <input
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "الهوية / الإقامة" : "National ID / Iqama"}>
+                    <input
+                      value={editForm.nationalId}
+                      onChange={(e) => setEditForm({ ...editForm, nationalId: e.target.value })}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "القسم" : "Department"}>
+                    <select
+                      value={editForm.department}
+                      onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                      className={inputCls}
+                    >
+                      <option value="">{isAr ? "بدون قسم" : "No department"}</option>
+                      {Object.entries(departments).map(([key, d]) => (
+                        <option key={key} value={key}>
+                          {isAr ? d.ar : d.en}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <FormField label={isAr ? "المسمى الوظيفي (عربي)" : "Job Title (Arabic)"}>
+                    <input
+                      value={editForm.jobTitleAr}
+                      onChange={(e) => setEditForm({ ...editForm, jobTitleAr: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "المسمى الوظيفي (إنجليزي)" : "Job Title (English)"}>
+                    <input
+                      value={editForm.jobTitleEn}
+                      onChange={(e) => setEditForm({ ...editForm, jobTitleEn: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "تاريخ المباشرة" : "Start Date"}>
+                    <input
+                      type="date"
+                      value={editForm.startDate}
+                      onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                </div>
+              </section>
+
+              {/* ── Identity section ── */}
+              <section className="space-y-3 pt-3 border-t border-outline-variant/20">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {isAr ? "البيانات الشخصية" : "Identity"}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField label={isAr ? "تاريخ الميلاد" : "Date of Birth"}>
+                    <input
+                      type="date"
+                      value={editForm.dateOfBirth}
+                      onChange={(e) => setEditForm({ ...editForm, dateOfBirth: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "الجنسية" : "Nationality"}>
+                    <input
+                      value={editForm.nationality}
+                      onChange={(e) => setEditForm({ ...editForm, nationality: e.target.value })}
+                      placeholder={isAr ? "مثل: سعودي، أردني" : "e.g. Saudi, Jordanian"}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "الجنس" : "Gender"}>
+                    <select
+                      value={editForm.gender}
+                      onChange={(e) => setEditForm({ ...editForm, gender: e.target.value })}
+                      className={inputCls}
+                    >
+                      <option value="">{isAr ? "غير محدد" : "Not specified"}</option>
+                      <option value="male">{isAr ? "ذكر" : "Male"}</option>
+                      <option value="female">{isAr ? "أنثى" : "Female"}</option>
+                    </select>
+                  </FormField>
+                  <FormField label={isAr ? "الحالة الاجتماعية" : "Marital Status"}>
+                    <select
+                      value={editForm.maritalStatus}
+                      onChange={(e) => setEditForm({ ...editForm, maritalStatus: e.target.value })}
+                      className={inputCls}
+                    >
+                      <option value="">{isAr ? "غير محدد" : "Not specified"}</option>
+                      <option value="single">{isAr ? "أعزب/عزباء" : "Single"}</option>
+                      <option value="married">{isAr ? "متزوج/ة" : "Married"}</option>
+                      <option value="divorced">{isAr ? "مطلّق/ة" : "Divorced"}</option>
+                      <option value="widowed">{isAr ? "أرمل/ة" : "Widowed"}</option>
+                    </select>
+                  </FormField>
+                  <FormField label={isAr ? "رقم الجواز" : "Passport Number"}>
+                    <input
+                      value={editForm.passportNumber}
+                      onChange={(e) => setEditForm({ ...editForm, passportNumber: e.target.value })}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "هاتف الطوارئ" : "Emergency Phone"}>
+                    <input
+                      value={editForm.emergencyPhone}
+                      onChange={(e) => setEditForm({ ...editForm, emergencyPhone: e.target.value })}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                </div>
+              </section>
+
+              {/* ── Banking section ── */}
+              <section className="space-y-3 pt-3 border-t border-outline-variant/20">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {isAr ? "البيانات البنكية" : "Banking"}
+                </h3>
+                <FormField label="IBAN">
+                  <input
+                    value={editForm.iban}
+                    onChange={(e) => setEditForm({ ...editForm, iban: e.target.value })}
+                    placeholder="SA00 0000 0000 0000 0000 0000"
+                    className={cn(inputCls, "font-mono tabular-nums")}
+                    dir="ltr"
+                  />
+                </FormField>
+              </section>
+
+              {/* ── Education section ── */}
+              <section className="space-y-3 pt-3 border-t border-outline-variant/20">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {isAr ? "التعليم" : "Education"}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField label={isAr ? "التخصص (عربي)" : "Major (Arabic)"}>
+                    <input
+                      value={editForm.universityMajorAr}
+                      onChange={(e) => setEditForm({ ...editForm, universityMajorAr: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "التخصص (إنجليزي)" : "Major (English)"}>
+                    <input
+                      value={editForm.universityMajorEn}
+                      onChange={(e) => setEditForm({ ...editForm, universityMajorEn: e.target.value })}
+                      className={inputCls}
+                    />
+                  </FormField>
+                </div>
+              </section>
+
+              {/* ── Salary section ── */}
+              <section className="space-y-3 pt-3 border-t border-outline-variant/20">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+                  {isAr ? "الراتب" : "Salary"}
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField label={isAr ? "الراتب الأساسي (ر.س)" : "Base Salary (SAR)"}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={editForm.baseSalary}
+                      onChange={(e) => setEditForm({ ...editForm, baseSalary: e.target.value })}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "البدلات (ر.س)" : "Allowances (SAR)"}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={editForm.allowances}
+                      onChange={(e) => setEditForm({ ...editForm, allowances: e.target.value })}
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                </div>
+              </section>
+
+              {editError && (
+                <p className="text-sm text-md-error font-bold flex items-center gap-2" role="alert">
+                  <Icon name="error" size={16} fill />
+                  {editError}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeEdit} disabled={editSaving}>
+              {t.common.cancel}
+            </Button>
+            <Button onClick={saveEdit} disabled={editSaving}>
+              {editSaving && <Icon name="progress_activity" size={18} className="animate-spin" />}
+              {editSaving ? (isAr ? "جاري الحفظ..." : "Saving...") : t.common.save}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Local helpers shared across the edit dialog inputs ────────────────
+const inputCls =
+  "h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-inset focus:ring-primary/40";
+
+function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-bold text-on-surface-variant">{label}</label>
+      {children}
     </div>
   );
 }
