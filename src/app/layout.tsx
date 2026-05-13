@@ -90,6 +90,14 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
             __html: `(function(){var m=document.cookie.match(/njd-theme=(\\w+)/);var t=m?m[1]:null;if(t==='dark'||(!t&&window.matchMedia('(prefers-color-scheme: dark)').matches)){document.documentElement.classList.add('dark')}})()`,
           }}
         />
+        {/* NJD Design System — vendored locally to avoid the cross-origin
+            redirect (njd-services.net → www.njd-services.net) that the
+            previous globals.css @import url(...) was paying on every visit.
+            no-css-tags warning is a false positive here: this is a static
+            shared file from /public served same-origin, not a per-page
+            stylesheet that Next.js would otherwise want to bundle. */}
+        {/* eslint-disable-next-line @next/next/no-css-tags */}
+        <link rel="stylesheet" href="/njd-design-system.css" />
         {/* Material Symbols Outlined — preload + block render until font loads (avoids flash of raw icon names) */}
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link

@@ -1,4 +1,7 @@
-@import url("https://njd-services.net/njd-design-system.css");
+/* njd-design-system.css is now loaded same-origin via <link> in
+   src/app/layout.tsx. The previous @import url("https://njd-services.net/...")
+   was render-blocking AND paid a 307 redirect to www.njd-services.net on
+   every cold-cache visit, adding 200-400ms to first paint. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

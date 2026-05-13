@@ -1,0 +1,652 @@
+/**
+ * ════════════════════════════════════════════════════════════════════════════
+ *  VENDORED FROM LANDING PAGE — DO NOT EDIT IN PLACE
+ * ════════════════════════════════════════════════════════════════════════════
+ *
+ *  Source of truth: NJD Services Landing Page → public/njd-design-system.css
+ *                   (served at https://njd-services.net/njd-design-system.css
+ *                    which 307-redirects to www.njd-services.net/...)
+ *
+ *  Last synced:  2026-05-13
+ *  SHA-256:      7be8092a5d1d4c4ce14db5fdeb93079877f040dbdb1a51c23b77215973784d93
+ *  MD5:          8f0996d9895a50ca31af95fe2d4359e1
+ *
+ *  Why vendored:
+ *    The Landing copy was loaded from globals.css via @import url(https://...)
+ *    which is render-blocking AND pays a same-org redirect (307 →
+ *    www.njd-services.net) on every cold cache miss — adding ~200-400ms to
+ *    first paint. Serving the same bytes same-origin via <link rel="stylesheet">
+ *    in <head> drops both costs and lets the browser parallelize the fetch
+ *    with the rest of the critical path.
+ *
+ *  To update: download the latest from the Landing URL, replace lines below
+ *  this header, refresh the Last synced / SHA-256 / MD5 above. Do NOT edit
+ *  the CSS rules in place — fix on Landing first, then re-vendor here.
+ * ════════════════════════════════════════════════════════════════════════════
+ */
+
+/*! NJD Design System v1.0
+ *  Brand tokens, components & animations for NJD Games projects.
+ *  Import: <link rel="stylesheet" href="/njd-design-system.css">
+ *          or  @import url('/njd-design-system.css');
+ */
+
+/* ═══════════════════════════════════════════════════════════
+   FONT
+   ═══════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@200;300;400;500;700;800;900&display=swap');
+
+/* ═══════════════════════════════════════════════════════════
+   DESIGN TOKENS — LIGHT (default)
+   ═══════════════════════════════════════════════════════════ */
+:root {
+    /* ── Neutrals ── */
+    --njd-white: #FFFFFF;
+    --njd-gray-50: #FAFAFA;
+    --njd-gray-100: #F4F4F5;
+    --njd-gray-200: #E4E4E7;
+    --njd-gray-300: #D4D4D8;
+    --njd-gray-400: #A1A1AA;
+    --njd-gray-500: #71717A;
+    --njd-gray-600: #52525B;
+    --njd-gray-700: #3F3F46;
+    --njd-gray-800: #27272A;
+    --njd-gray-900: #18181B;
+
+    /* ── Brand Purple ── */
+    --njd-purple-50: #FAF5FF;
+    --njd-purple-100: #F3E8FF;
+    --njd-purple-200: #E9D5FF;
+    --njd-purple-300: #D8B4FE;
+    --njd-purple-400: #C084FC;
+    --njd-purple-500: #A855F7;
+    --njd-purple-600: #9333EA;
+    --njd-purple-700: #7E22CE;
+    --njd-purple-800: #6B21A8;
+    --njd-purple-900: #581C87;
+
+    /* ── Semantic / Surface ── */
+    --njd-header-bg: rgba(255, 255, 255, 0.85);
+    --njd-header-scrolled-shadow: 0 1px 12px rgba(0,0,0,0.04);
+    --njd-status-bg: #ECFDF5;
+    --njd-status-border: #D1FAE5;
+    --njd-status-color: #059669;
+    --njd-status-dot: #10B981;
+    --njd-hero-gradient: radial-gradient(ellipse 80% 60% at 50% 0%, var(--njd-purple-50) 0%, transparent 70%);
+    --njd-card-hover-shadow: 0 20px 60px rgba(0,0,0,0.1);
+    --njd-gradient-text-from: var(--njd-purple-600);
+    --njd-gradient-text-to: var(--njd-purple-800);
+
+    /* ── Shadows ── */
+    --njd-shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --njd-shadow-md: 0 4px 16px rgba(0,0,0,0.06);
+    --njd-shadow-lg: 0 12px 40px rgba(0,0,0,0.08);
+    --njd-shadow-xl: 0 20px 60px rgba(0,0,0,0.1);
+    --njd-shadow-purple: 0 12px 40px rgba(147, 51, 234, 0.18);
+
+    /* ── Radii ── */
+    --njd-radius-sm: 8px;
+    --njd-radius-md: 14px;
+    --njd-radius-lg: 20px;
+    --njd-radius-xl: 28px;
+
+    /* ── Transitions ── */
+    --njd-transition-smooth: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    --njd-transition-ease: 0.3s ease;
+
+    /* ── Typography ── */
+    --njd-font: 'Tajawal', sans-serif;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DESIGN TOKENS — DARK
+   ═══════════════════════════════════════════════════════════ */
+[data-theme="dark"] {
+    --njd-white: #0C0C14;
+    --njd-gray-50: #121220;
+    --njd-gray-100: #1C1C2E;
+    --njd-gray-200: #2A2A40;
+    --njd-gray-300: #3A3A55;
+    --njd-gray-400: #606078;
+    --njd-gray-500: #9090A8;
+    --njd-gray-600: #B0B0C4;
+    --njd-gray-700: #D0D0DD;
+    --njd-gray-800: #E8E8F0;
+    --njd-gray-900: #F4F4F8;
+
+    --njd-purple-50: #14102A;
+    --njd-purple-100: #1E1845;
+    --njd-purple-200: #2E2460;
+
+    --njd-header-bg: rgba(12, 12, 20, 0.88);
+    --njd-header-scrolled-shadow: 0 1px 12px rgba(0,0,0,0.25);
+    --njd-status-bg: rgba(16, 185, 129, 0.1);
+    --njd-status-border: rgba(16, 185, 129, 0.2);
+    --njd-status-color: #34D399;
+    --njd-status-dot: #34D399;
+    --njd-hero-gradient: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(88, 28, 135, 0.18) 0%, transparent 70%);
+    --njd-card-hover-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    --njd-gradient-text-from: var(--njd-purple-400);
+    --njd-gradient-text-to: #D8B4FE;
+    --njd-shadow-purple: 0 12px 40px rgba(147, 51, 234, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   THEME TRANSITION HELPER
+   Apply .njd-theme-transitioning to <html> while toggling
+   ═══════════════════════════════════════════════════════════ */
+.njd-theme-transitioning,
+.njd-theme-transitioning *,
+.njd-theme-transitioning *::before,
+.njd-theme-transitioning *::after {
+    transition: background-color 0.4s ease,
+                color 0.4s ease,
+                border-color 0.4s ease,
+                box-shadow 0.4s ease,
+                fill 0.4s ease,
+                stroke 0.4s ease !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GRADIENT TEXT UTILITY
+   ═══════════════════════════════════════════════════════════ */
+.njd-gradient-text {
+    background: linear-gradient(135deg, var(--njd-gradient-text-from), var(--njd-gradient-text-to));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   NAVBAR  —  .njd-navbar
+   Sticky glassmorphism header. Add .scrolled via JS on scroll.
+   ═══════════════════════════════════════════════════════════ */
+.njd-navbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--njd-header-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid transparent;
+    transition: border-color var(--njd-transition-ease), box-shadow var(--njd-transition-ease);
+}
+
+.njd-navbar.scrolled {
+    border-bottom-color: var(--njd-gray-100);
+    box-shadow: var(--njd-header-scrolled-shadow);
+}
+
+.njd-navbar-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 32px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+[dir="rtl"] .njd-navbar-inner {
+    direction: ltr;
+    flex-direction: row-reverse;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   BUTTONS
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Primary  (filled purple gradient) ── */
+.njd-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 14px 36px;
+    background: linear-gradient(135deg, var(--njd-purple-600), var(--njd-purple-700));
+    color: white;
+    border: none;
+    border-radius: var(--njd-radius-md);
+    font-family: var(--njd-font);
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all var(--njd-transition-ease);
+    position: relative;
+    overflow: hidden;
+    text-decoration: none;
+}
+
+.njd-btn-primary::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 50%;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.12), transparent);
+    pointer-events: none;
+}
+
+.njd-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--njd-shadow-purple);
+    background: linear-gradient(135deg, var(--njd-purple-500), var(--njd-purple-700));
+}
+
+.njd-btn-primary:active { transform: translateY(0); }
+
+.njd-btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+/* ── Outline  (ghost / border) ── */
+.njd-btn-outline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--njd-gray-200);
+    border-radius: 100px;
+    font-family: var(--njd-font);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--njd-gray-500);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-decoration: none;
+}
+
+.njd-btn-outline:hover {
+    background: var(--njd-purple-50);
+    border-color: var(--njd-purple-200);
+    color: var(--njd-purple-700);
+}
+
+[data-theme="dark"] .njd-btn-outline:hover {
+    color: var(--njd-purple-400);
+}
+
+/* ── Outline Danger variant ── */
+.njd-btn-outline.danger:hover {
+    background: rgba(239, 68, 68, 0.06);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #EF4444;
+}
+
+[data-theme="dark"] .njd-btn-outline.danger:hover {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.25);
+    color: #F87171;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARD  —  .njd-card
+   ═══════════════════════════════════════════════════════════ */
+.njd-card {
+    background: var(--njd-white);
+    border: 1px solid var(--njd-gray-100);
+    border-radius: var(--njd-radius-xl);
+    padding: 40px 36px 36px;
+    position: relative;
+    transition: transform var(--njd-transition-smooth),
+                box-shadow var(--njd-transition-ease),
+                border-color var(--njd-transition-ease);
+    will-change: transform;
+    overflow: hidden;
+}
+
+[data-theme="dark"] .njd-card {
+    background: var(--njd-gray-50);
+}
+
+/* Purple accent bar on hover */
+.njd-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--njd-purple-400), var(--njd-purple-600));
+    opacity: 0;
+    transition: opacity var(--njd-transition-ease);
+}
+
+.njd-card:hover {
+    transform: translateY(-10px);
+    box-shadow: var(--njd-card-hover-shadow);
+    border-color: var(--njd-purple-100);
+}
+
+.njd-card:hover::before { opacity: 1; }
+
+/* ── Dashed / placeholder card ── */
+.njd-card-dashed {
+    border: 2px dashed var(--njd-gray-200);
+    border-radius: var(--njd-radius-xl);
+    padding: 40px 36px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    transition: border-color var(--njd-transition-ease);
+}
+
+.njd-card-dashed:hover { border-color: var(--njd-purple-200); }
+[data-theme="dark"] .njd-card-dashed:hover { border-color: var(--njd-purple-100); }
+
+/* ═══════════════════════════════════════════════════════════
+   BADGES
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Status badge (green online indicator) ── */
+.njd-badge-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 14px;
+    background: var(--njd-status-bg);
+    border: 1px solid var(--njd-status-border);
+    border-radius: 100px;
+    font-family: var(--njd-font);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--njd-status-color);
+}
+
+.njd-badge-status-dot {
+    width: 6px;
+    height: 6px;
+    background: var(--njd-status-dot);
+    border-radius: 50%;
+    animation: njd-pulse-dot 2s ease-in-out infinite;
+}
+
+/* ── Brand badge (purple pill) ── */
+.njd-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 16px;
+    background: var(--njd-purple-50);
+    border: 1px solid var(--njd-purple-100);
+    border-radius: 100px;
+    font-family: var(--njd-font);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--njd-purple-700);
+}
+
+[data-theme="dark"] .njd-badge { color: var(--njd-purple-400); }
+
+.njd-badge-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--njd-purple-500);
+    border-radius: 50%;
+    animation: njd-pulse-dot 2s ease-in-out infinite;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOGGLE  (segmented pill — lang switch, tabs)
+   ═══════════════════════════════════════════════════════════ */
+.njd-toggle {
+    display: inline-flex;
+    background: var(--njd-gray-100);
+    border-radius: 100px;
+    padding: 3px;
+    border: 1px solid var(--njd-gray-200);
+}
+
+.njd-toggle-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 100px;
+    background: transparent;
+    font-family: var(--njd-font);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--njd-gray-400);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    line-height: 1.4;
+}
+
+.njd-toggle-btn.active {
+    background: linear-gradient(135deg, var(--njd-purple-600), var(--njd-purple-700));
+    color: white;
+    box-shadow: 0 2px 10px rgba(147, 51, 234, 0.3);
+}
+
+.njd-toggle-btn:not(.active):hover { color: var(--njd-gray-600); }
+
+/* ═══════════════════════════════════════════════════════════
+   FORM INPUTS
+   ═══════════════════════════════════════════════════════════ */
+.njd-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 1px solid var(--njd-gray-200);
+    border-radius: var(--njd-radius-md);
+    background: var(--njd-gray-50);
+    font-family: var(--njd-font);
+    font-size: 15px;
+    color: var(--njd-gray-800);
+    outline: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
+}
+
+.njd-input:focus {
+    border-color: var(--njd-purple-400);
+    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
+    background: var(--njd-white);
+}
+
+.njd-input::placeholder { color: var(--njd-gray-300); }
+
+.njd-label {
+    display: block;
+    font-family: var(--njd-font);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--njd-gray-600);
+    margin-bottom: 6px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ICON BUTTON  (theme toggle, etc.)
+   ═══════════════════════════════════════════════════════════ */
+.njd-icon-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--njd-gray-100);
+    border: 1px solid var(--njd-gray-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+    color: var(--njd-gray-600);
+}
+
+.njd-icon-btn:hover {
+    background: var(--njd-gray-200);
+    border-color: var(--njd-gray-300);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SPINNER
+   ═══════════════════════════════════════════════════════════ */
+.njd-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid var(--njd-purple-100);
+    border-top-color: var(--njd-purple-600);
+    border-radius: 50%;
+    animation: njd-spin 0.8s linear infinite;
+}
+
+.njd-spinner-sm {
+    width: 20px;
+    height: 20px;
+    border-width: 2.5px;
+}
+
+.njd-spinner-white {
+    border-color: rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ALERT / INFO BOX
+   ═══════════════════════════════════════════════════════════ */
+.njd-alert-success {
+    text-align: center;
+    padding: 14px 16px;
+    background: var(--njd-status-bg);
+    border: 1px solid var(--njd-status-border);
+    border-radius: var(--njd-radius-md);
+    font-family: var(--njd-font);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--njd-status-color);
+    line-height: 1.6;
+}
+
+.njd-alert-error {
+    color: #EF4444;
+    font-family: var(--njd-font);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   KEYFRAME ANIMATIONS
+   ═══════════════════════════════════════════════════════════ */
+@keyframes njd-fade-in-up {
+    from { opacity: 0; transform: translateY(24px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes njd-pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.4; }
+}
+
+@keyframes njd-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-8px); }
+}
+
+@keyframes njd-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes njd-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes njd-fade-out {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+
+@keyframes njd-scale-in {
+    from { opacity: 0; transform: scale(0.9); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes njd-float-orb-1 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33%      { transform: translate(15px, -20px) scale(1.05); }
+    66%      { transform: translate(-10px, 10px) scale(0.95); }
+}
+
+@keyframes njd-float-orb-2 {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    50%      { transform: translate(20px, -15px) scale(1.08); }
+}
+
+@keyframes njd-float-orb-3 {
+    0%, 100% { transform: translate(0, 0); }
+    40%      { transform: translate(-12px, -18px); }
+    80%      { transform: translate(8px, 12px); }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   ANIMATION UTILITIES
+   ═══════════════════════════════════════════════════════════ */
+.njd-animate-fade-in-up { animation: njd-fade-in-up 0.6s ease forwards; }
+.njd-animate-float      { animation: njd-float 6s ease-in-out infinite; }
+.njd-animate-pulse-dot  { animation: njd-pulse-dot 2s ease-in-out infinite; }
+.njd-animate-scale-in   { animation: njd-scale-in 0.4s ease forwards; }
+
+/* Staggered delays */
+.njd-delay-100 { animation-delay: 0.1s; }
+.njd-delay-200 { animation-delay: 0.2s; }
+.njd-delay-300 { animation-delay: 0.3s; }
+.njd-delay-400 { animation-delay: 0.4s; }
+.njd-delay-500 { animation-delay: 0.5s; }
+
+/* ═══════════════════════════════════════════════════════════
+   DECORATIVE — ORB backgrounds
+   ═══════════════════════════════════════════════════════════ */
+.njd-orb {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    will-change: transform;
+}
+
+.njd-orb-1 {
+    width: 300px; height: 300px;
+    background: radial-gradient(circle, var(--njd-purple-300), transparent 70%);
+    opacity: 0.15;
+    animation: njd-float-orb-1 12s ease-in-out infinite;
+}
+
+.njd-orb-2 {
+    width: 250px; height: 250px;
+    background: radial-gradient(circle, var(--njd-purple-400), transparent 70%);
+    opacity: 0.1;
+    animation: njd-float-orb-2 10s ease-in-out infinite;
+}
+
+.njd-orb-3 {
+    width: 180px; height: 180px;
+    background: radial-gradient(circle, var(--njd-purple-200), transparent 70%);
+    opacity: 0.12;
+    animation: njd-float-orb-3 14s ease-in-out infinite;
+}
+
+[data-theme="dark"] .njd-orb-1 { opacity: 0.08; }
+[data-theme="dark"] .njd-orb-2 { opacity: 0.06; }
+[data-theme="dark"] .njd-orb-3 { opacity: 0.05; }
+
+/* Dot-grid overlay */
+.njd-dots-bg {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(circle, var(--njd-purple-200) 0.8px, transparent 0.8px);
+    background-size: 32px 32px;
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+[data-theme="dark"] .njd-dots-bg { opacity: 0.06; }
+
+/* ═══════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+    .njd-navbar-inner { padding: 0 16px; height: 64px; }
+    .njd-card { padding: 32px 28px 28px; }
+    .njd-icon-btn { width: 36px; height: 36px; }
+}

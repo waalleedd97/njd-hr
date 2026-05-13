@@ -248,6 +248,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
           department: string;
           job_title_ar: string;
           profile_completed: boolean;
+          // Added in migration admin_list_users_include_manager_and_national_id —
+          // surfaced by the RPC directly so we no longer need a second SELECT
+          // on profiles to backfill them. Either may be null.
+          manager_id: string | null;
+          national_id: string | null;
         }>
       | null = null;
 
@@ -257,7 +262,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
       const res = await supabase
         .from("profiles")
         .select(
-          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed"
+          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, manager_id, national_id"
         );
       if (res.error || !res.data) return [...defaultEmployees];
       users = res.data.map((p: Record<string, unknown>) => ({
@@ -273,6 +278,8 @@ export async function fetchEmployees(): Promise<Employee[]> {
         department: p.department as string,
         job_title_ar: p.job_title_ar as string,
         profile_completed: p.profile_completed as boolean,
+        manager_id: (p.manager_id as string) || null,
+        national_id: (p.national_id as string) || null,
       }));
     }
     if (!users) return [...defaultEmployees];
@@ -286,36 +293,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
       "bg-cyan-500",
       "bg-orange-500",
     ];
-    // Enrich with manager_id + national_id from profiles —
-    // admin_list_users RPC doesn't return these, so we batch-fetch by ID.
-    // National ID (هوية وطنية / إقامة) is the personal identifier used by the
-    // Onboarding banner to flag employees with missing ID. It's per-individual,
-    // unlike a Commercial Registration (which belongs to companies, not people).
-    const userIds = users.map((u) => u.user_id);
-    let extras = new Map<string, { managerId: string | null; nationalId: string | null }>();
-    if (userIds.length > 0) {
-      const { data: profileExtras } = await supabase
-        .from("profiles")
-        .select("id, manager_id, national_id")
-        .in("id", userIds);
-      if (profileExtras) {
-        extras = new Map(
-          profileExtras.map((p: Record<string, unknown>) => [
-            p.id as string,
-            {
-              managerId: (p.manager_id as string) || null,
-              nationalId: (p.national_id as string) || null,
-            },
-          ])
-        );
-      }
-    }
 
     return users.map((u, i): Employee => {
       const firstAr = (u.full_name_ar || u.name_ar || "").trim();
       const firstEn = (u.full_name_en || u.name_en || "").trim();
       const initialsSrc = firstEn || firstAr || u.email || "?";
-      const extra = extras.get(u.user_id);
       return {
         id: u.user_id,
         nameAr: firstAr || u.email?.split("@")[0] || "",
@@ -331,8 +313,8 @@ export async function fetchEmployees(): Promise<Employee[]> {
         salary: { basic: 0, housing: 0, transport: 0, other: 0 },
         color: colors[i % colors.length],
         profileCompleted: u.profile_completed ?? false,
-        managerId: extra?.managerId ?? null,
-        nationalId: extra?.nationalId ?? undefined,
+        managerId: u.manager_id ?? null,
+        nationalId: u.national_id ?? undefined,
       };
     });
   } catch {
