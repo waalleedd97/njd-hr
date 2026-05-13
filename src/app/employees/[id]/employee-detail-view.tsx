@@ -63,6 +63,10 @@ export function EmployeeDetailView({
   // Rich profile fields that aren't surfaced by the list-page RPC. We fetch
   // them directly from profiles on the detail view, so the list page stays
   // fast (one round-trip) and the detail page is fully populated.
+  // Salary is split into housing (subject to GOSI in KSA) and other
+  // (transport / food / comm — not subject) so we can compute the
+  // contribution properly. is_saudi gates whether the employee share
+  // applies at all (non-Saudis pay 0%).
   type ProfileExtras = {
     dateOfBirth: string | null;
     nationality: string | null;
@@ -72,7 +76,9 @@ export function EmployeeDetailView({
     emergencyPhone: string | null;
     iban: string | null;
     baseSalary: number | null;
-    allowances: number | null;
+    housingAllowance: number | null;
+    otherAllowances: number | null;
+    isSaudi: boolean | null;
     universityMajorAr: string | null;
     universityMajorEn: string | null;
     jobTitleEn: string | null;
@@ -106,7 +112,9 @@ export function EmployeeDetailView({
     universityMajorAr: string;
     universityMajorEn: string;
     baseSalary: string;
-    allowances: string;
+    housingAllowance: string;
+    otherAllowances: string;
+    isSaudi: "yes" | "no" | "unknown";
   };
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -145,7 +153,7 @@ export function EmployeeDetailView({
     supabase
       .from("profiles")
       .select(
-        "location_required, date_of_birth, nationality, gender, marital_status, passport_number, emergency_phone, iban, base_salary, allowances, university_major_ar, university_major_en, job_title_en, start_date"
+        "location_required, date_of_birth, nationality, gender, marital_status, passport_number, emergency_phone, iban, base_salary, housing_allowance, other_allowances, is_saudi, university_major_ar, university_major_en, job_title_en, start_date"
       )
       .eq("id", supabaseId)
       .single()
@@ -161,7 +169,9 @@ export function EmployeeDetailView({
           emergencyPhone: (data.emergency_phone as string) ?? null,
           iban: (data.iban as string) ?? null,
           baseSalary: (data.base_salary as number) ?? null,
-          allowances: (data.allowances as number) ?? null,
+          housingAllowance: (data.housing_allowance as number) ?? null,
+          otherAllowances: (data.other_allowances as number) ?? null,
+          isSaudi: (data.is_saudi as boolean) ?? null,
           universityMajorAr: (data.university_major_ar as string) ?? null,
           universityMajorEn: (data.university_major_en as string) ?? null,
           jobTitleEn: (data.job_title_en as string) ?? null,
@@ -223,7 +233,12 @@ export function EmployeeDetailView({
       universityMajorAr: profileExtras?.universityMajorAr ?? "",
       universityMajorEn: profileExtras?.universityMajorEn ?? "",
       baseSalary: profileExtras?.baseSalary != null ? String(profileExtras.baseSalary) : "",
-      allowances: profileExtras?.allowances != null ? String(profileExtras.allowances) : "",
+      housingAllowance:
+        profileExtras?.housingAllowance != null ? String(profileExtras.housingAllowance) : "",
+      otherAllowances:
+        profileExtras?.otherAllowances != null ? String(profileExtras.otherAllowances) : "",
+      isSaudi:
+        profileExtras?.isSaudi === true ? "yes" : profileExtras?.isSaudi === false ? "no" : "unknown",
     });
     setEditOpen(true);
   };
@@ -252,10 +267,12 @@ export function EmployeeDetailView({
 
     // Validate numeric salary fields.
     const baseNum = editForm.baseSalary.trim() === "" ? null : Number(editForm.baseSalary);
-    const allowNum = editForm.allowances.trim() === "" ? null : Number(editForm.allowances);
+    const housingNum = editForm.housingAllowance.trim() === "" ? null : Number(editForm.housingAllowance);
+    const otherNum = editForm.otherAllowances.trim() === "" ? null : Number(editForm.otherAllowances);
     if (
       (baseNum !== null && (Number.isNaN(baseNum) || baseNum < 0)) ||
-      (allowNum !== null && (Number.isNaN(allowNum) || allowNum < 0))
+      (housingNum !== null && (Number.isNaN(housingNum) || housingNum < 0)) ||
+      (otherNum !== null && (Number.isNaN(otherNum) || otherNum < 0))
     ) {
       setEditError(
         isAr ? "قيم الراتب يجب أن تكون أرقاماً موجبة" : "Salary fields must be non-negative numbers"
@@ -294,7 +311,10 @@ export function EmployeeDetailView({
           university_major_ar: trimOrNull(editForm.universityMajorAr),
           university_major_en: trimOrNull(editForm.universityMajorEn),
           base_salary: baseNum,
-          allowances: allowNum,
+          housing_allowance: housingNum,
+          other_allowances: otherNum,
+          is_saudi:
+            editForm.isSaudi === "yes" ? true : editForm.isSaudi === "no" ? false : null,
         })
         .eq("id", supabaseId);
       if (error) throw error;
@@ -311,7 +331,10 @@ export function EmployeeDetailView({
         emergencyPhone: trimOrNull(editForm.emergencyPhone),
         iban: trimOrNull(editForm.iban),
         baseSalary: baseNum,
-        allowances: allowNum,
+        housingAllowance: housingNum,
+        otherAllowances: otherNum,
+        isSaudi:
+          editForm.isSaudi === "yes" ? true : editForm.isSaudi === "no" ? false : null,
         universityMajorAr: trimOrNull(editForm.universityMajorAr),
         universityMajorEn: trimOrNull(editForm.universityMajorEn),
         jobTitleEn: trimOrNull(editForm.jobTitleEn),
@@ -409,15 +432,30 @@ export function EmployeeDetailView({
   }
 
   const empAssets = assets.filter((a) => a.employeeId === employee.id);
-  // Salary: prefer the live values fetched from profiles (base_salary +
-  // allowances). Fall back to the legacy 4-bucket structure on the Employee
-  // row for backwards compat. Allowances is treated as a single lump sum.
+  // Salary breakdown — read live from profiles. Housing is broken out
+  // because Saudi GOSI applies to (base + housing), not to other
+  // allowances like transport, food, or comm.
   const baseSalary = profileExtras?.baseSalary ?? employee.salary.basic;
-  const allowances = profileExtras?.allowances ?? (
-    employee.salary.housing + employee.salary.transport + employee.salary.other
+  const housingAllowance = profileExtras?.housingAllowance ?? employee.salary.housing;
+  const otherAllowances = profileExtras?.otherAllowances ?? (
+    employee.salary.transport + employee.salary.other
   );
-  const grossSalary = baseSalary + allowances;
-  const gosi = Math.round(baseSalary * GOSI_RATE);
+  const grossSalary = baseSalary + housingAllowance + otherAllowances;
+
+  // GOSI calc per Saudi labor law:
+  //   - Subject wage = base + housing  (transport/food/comm are exempt)
+  //   - Capped at 45,000 SAR/month
+  //   - Employee share = 9.75% (9% pension + 0.75% SANED unemployment)
+  //   - Applies ONLY to Saudi nationals. Non-Saudis pay 0% — the
+  //     employer-side 2% occupational hazards is paid by the company,
+  //     never by the worker.
+  //   - is_saudi NULL is treated as "unknown — assume the safer
+  //     no-deduction default" so we don't silently over-collect from
+  //     someone whose nationality wasn't entered yet.
+  const GOSI_CAP_SAR = 45000;
+  const gosiSubjectWage = Math.min(baseSalary + housingAllowance, GOSI_CAP_SAR);
+  const isSaudi = profileExtras?.isSaudi === true;
+  const gosi = isSaudi ? Math.round(gosiSubjectWage * GOSI_RATE) : 0;
   const net = grossSalary - gosi;
   const dept = departments[employee.department];
   const manager = employee.managerId
@@ -627,8 +665,9 @@ export function EmployeeDetailView({
           </div>
         </div>
 
-        {/* Salary info — uses live values from profiles (base_salary +
-            allowances). No more hardcoded zeros. */}
+        {/* Salary info — housing is broken out from other allowances so the
+            GOSI line tells the truth (it applies to base + housing only,
+            and only to Saudi nationals). */}
         <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
           <h2 className="font-headline font-bold text-base mb-4 flex items-center gap-2">
             <Icon name="payments" size={18} className="text-primary" />
@@ -645,10 +684,18 @@ export function EmployeeDetailView({
             </div>
             <div className="flex justify-between items-center text-sm">
               <dt className="text-on-surface-variant font-medium">
-                {isAr ? "البدلات" : "Allowances"}
+                {isAr ? "بدل السكن" : "Housing Allowance"}
               </dt>
               <dd className="font-bold tabular-nums">
-                {formatSalary(allowances)} {t.common.sar}
+                {formatSalary(housingAllowance)} {t.common.sar}
+              </dd>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <dt className="text-on-surface-variant font-medium">
+                {isAr ? "بدلات أخرى" : "Other Allowances"}
+              </dt>
+              <dd className="font-bold tabular-nums">
+                {formatSalary(otherAllowances)} {t.common.sar}
               </dd>
             </div>
             <div className="flex justify-between items-center text-sm pt-3 border-t border-outline-variant/20">
@@ -659,10 +706,23 @@ export function EmployeeDetailView({
                 {formatSalary(grossSalary)} {t.common.sar}
               </dd>
             </div>
-            <div className="flex justify-between items-center text-sm text-md-error">
-              <dt className="font-medium">{t.pay.gosiDeduction}</dt>
-              <dd className="font-bold tabular-nums">
-                -{formatSalary(gosi)} {t.common.sar}
+            {/* GOSI line + transparency note explaining how the number
+                was derived (subject wage, rate, or non-Saudi exemption). */}
+            <div className="flex justify-between items-start text-sm text-md-error gap-3">
+              <div className="min-w-0">
+                <dt className="font-medium">{t.pay.gosiDeduction}</dt>
+                <p className="text-[11px] text-on-surface-variant mt-0.5 leading-snug">
+                  {!isSaudi
+                    ? isAr
+                      ? "غير سعودي — لا يخضع لحصة الموظف"
+                      : "Non-Saudi — no employee share"
+                    : isAr
+                      ? `9.75% × ${formatSalary(gosiSubjectWage)} (أساسي + سكن${baseSalary + housingAllowance > GOSI_CAP_SAR ? `، السقف ${formatSalary(GOSI_CAP_SAR)}` : ""})`
+                      : `9.75% × ${formatSalary(gosiSubjectWage)} (base + housing${baseSalary + housingAllowance > GOSI_CAP_SAR ? `, capped at ${formatSalary(GOSI_CAP_SAR)}` : ""})`}
+                </p>
+              </div>
+              <dd className="font-bold tabular-nums shrink-0">
+                {gosi === 0 ? "0" : `-${formatSalary(gosi)}`} {t.common.sar}
               </dd>
             </div>
             <div className="flex justify-between items-center pt-3 mt-2 bg-primary-container/20 -mx-6 px-6 py-4 font-headline font-black text-primary">
@@ -1056,7 +1116,8 @@ export function EmployeeDetailView({
                 </div>
               </section>
 
-              {/* ── Salary section ── */}
+              {/* ── Salary section ── housing is broken out from "other"
+                  because GOSI applies to (base + housing) only. */}
               <section className="space-y-3 pt-3 border-t border-outline-variant/20">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
                   {isAr ? "الراتب" : "Salary"}
@@ -1073,18 +1134,54 @@ export function EmployeeDetailView({
                       dir="ltr"
                     />
                   </FormField>
-                  <FormField label={isAr ? "البدلات (ر.س)" : "Allowances (SAR)"}>
+                  <FormField label={isAr ? "بدل السكن (ر.س)" : "Housing Allowance (SAR)"}>
                     <input
                       type="number"
                       min={0}
                       step={1}
-                      value={editForm.allowances}
-                      onChange={(e) => setEditForm({ ...editForm, allowances: e.target.value })}
+                      value={editForm.housingAllowance}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, housingAllowance: e.target.value })
+                      }
                       className={cn(inputCls, "tabular-nums")}
                       dir="ltr"
                     />
                   </FormField>
+                  <FormField label={isAr ? "بدلات أخرى (ر.س)" : "Other Allowances (SAR)"}>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={editForm.otherAllowances}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, otherAllowances: e.target.value })
+                      }
+                      className={cn(inputCls, "tabular-nums")}
+                      dir="ltr"
+                    />
+                  </FormField>
+                  <FormField label={isAr ? "خاضع للتأمينات (سعودي)" : "Subject to GOSI (Saudi)"}>
+                    <select
+                      value={editForm.isSaudi}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          isSaudi: e.target.value as "yes" | "no" | "unknown",
+                        })
+                      }
+                      className={inputCls}
+                    >
+                      <option value="unknown">{isAr ? "غير محدد" : "Unknown"}</option>
+                      <option value="yes">{isAr ? "نعم — يُحسم 9.75%" : "Yes — 9.75% deducted"}</option>
+                      <option value="no">{isAr ? "لا — لا حسم" : "No — no deduction"}</option>
+                    </select>
+                  </FormField>
                 </div>
+                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                  {isAr
+                    ? "ملاحظة: التأمينات تُحسب على (الأساسي + بدل السكن) فقط، بحد أعلى 45,000 ر.س، ولا تُطبَّق على غير السعوديين (يدفع صاحب العمل وحده 2% أخطار مهنية)."
+                    : "Note: GOSI applies to (base + housing) only, capped at 45,000 SAR, and only to Saudis (the 2% occupational hazards share is paid by the employer for non-Saudis)."}
+                </p>
               </section>
 
               {editError && (
