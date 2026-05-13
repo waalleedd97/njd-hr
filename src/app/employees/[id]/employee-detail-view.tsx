@@ -52,6 +52,26 @@ export function EmployeeDetailView({
   const [empLocationRequired, setEmpLocationRequired] = useState(true);
   const [managerSaving, setManagerSaving] = useState(false);
 
+  // Rich profile fields that aren't surfaced by the list-page RPC. We fetch
+  // them directly from profiles on the detail view, so the list page stays
+  // fast (one round-trip) and the detail page is fully populated.
+  type ProfileExtras = {
+    dateOfBirth: string | null;
+    nationality: string | null;
+    gender: string | null;
+    maritalStatus: string | null;
+    passportNumber: string | null;
+    emergencyPhone: string | null;
+    iban: string | null;
+    baseSalary: number | null;
+    allowances: number | null;
+    universityMajorAr: string | null;
+    universityMajorEn: string | null;
+    jobTitleEn: string | null;
+    startDate: string | null;
+  };
+  const [profileExtras, setProfileExtras] = useState<ProfileExtras | null>(null);
+
   useEffect(() => {
     if (!isAdmin) return;
     (async () => {
@@ -69,21 +89,43 @@ export function EmployeeDetailView({
     })();
   }, [isAdmin]);
 
-  // Load the employee's location_required flag fresh from profiles. The cached
-  // store value can drift since the admin panel on the Landing app can change
-  // it independently — CLAUDE.md flags this as a never-trust-cache field.
+  // Load the full profile row in one go: location_required (drift-prone, must
+  // be read fresh per CLAUDE.md) plus all the rich identity / banking /
+  // education / salary fields that the list-page RPC doesn't surface.
   useEffect(() => {
     if (!employee) return;
     setEmpLocationRequired(true);
-    const supabaseId = userIdMap[employee.email.toLowerCase()];
+    setProfileExtras(null);
+    // The auth user_id IS the profile id (PK), so we don't actually need the
+    // userIdMap here — but we still wait for it because the location_required
+    // mutate path uses it for the UPDATE filter.
+    const supabaseId = userIdMap[employee.email.toLowerCase()] || employee.id;
     if (!supabaseId) return;
     supabase
       .from("profiles")
-      .select("location_required")
+      .select(
+        "location_required, date_of_birth, nationality, gender, marital_status, passport_number, emergency_phone, iban, base_salary, allowances, university_major_ar, university_major_en, job_title_en, start_date"
+      )
       .eq("id", supabaseId)
       .single()
-      .then(({ data }: { data: { location_required?: boolean } | null }) => {
-        if (data) setEmpLocationRequired(data.location_required ?? true);
+      .then(({ data }: { data: Record<string, unknown> | null }) => {
+        if (!data) return;
+        setEmpLocationRequired((data.location_required as boolean) ?? true);
+        setProfileExtras({
+          dateOfBirth: (data.date_of_birth as string) ?? null,
+          nationality: (data.nationality as string) ?? null,
+          gender: (data.gender as string) ?? null,
+          maritalStatus: (data.marital_status as string) ?? null,
+          passportNumber: (data.passport_number as string) ?? null,
+          emergencyPhone: (data.emergency_phone as string) ?? null,
+          iban: (data.iban as string) ?? null,
+          baseSalary: (data.base_salary as number) ?? null,
+          allowances: (data.allowances as number) ?? null,
+          universityMajorAr: (data.university_major_ar as string) ?? null,
+          universityMajorEn: (data.university_major_en as string) ?? null,
+          jobTitleEn: (data.job_title_en as string) ?? null,
+          startDate: (data.start_date as string) ?? null,
+        });
       });
   }, [employee, userIdMap]);
 
@@ -122,6 +164,33 @@ export function EmployeeDetailView({
     return t.emp.inactive;
   };
 
+  // Bilingual labels for the small enum-ish fields. Falls back to the raw
+  // string when the value isn't in the lookup (so admins still see what's
+  // stored even if it's a typo or a free-text entry).
+  const genderLabel = (g: string | null): string => {
+    if (!g) return "—";
+    const k = g.toLowerCase();
+    if (k === "male" || k === "m") return isAr ? "ذكر" : "Male";
+    if (k === "female" || k === "f") return isAr ? "أنثى" : "Female";
+    return g;
+  };
+  const maritalLabel = (m: string | null): string => {
+    if (!m) return "—";
+    const k = m.toLowerCase();
+    if (k === "single") return isAr ? "أعزب/عزباء" : "Single";
+    if (k === "married") return isAr ? "متزوج/ة" : "Married";
+    if (k === "divorced") return isAr ? "مطلّق/ة" : "Divorced";
+    if (k === "widowed") return isAr ? "أرمل/ة" : "Widowed";
+    return m;
+  };
+  const formatDOB = (d: string | null): string => {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString(
+      isAr ? "ar-SA-u-nu-latn" : "en-US",
+      { year: "numeric", month: "long", day: "numeric" }
+    );
+  };
+
   if (!employee) {
     // Employee not found in the loaded slice — could be a stale URL after a
     // delete, or a typo in the path. Show a friendly empty state with a link
@@ -148,9 +217,16 @@ export function EmployeeDetailView({
   }
 
   const empAssets = assets.filter((a) => a.employeeId === employee.id);
-  const sal = employee.salary;
-  const gosi = Math.round(sal.basic * GOSI_RATE);
-  const net = sal.basic + sal.housing + sal.transport + sal.other - gosi;
+  // Salary: prefer the live values fetched from profiles (base_salary +
+  // allowances). Fall back to the legacy 4-bucket structure on the Employee
+  // row for backwards compat. Allowances is treated as a single lump sum.
+  const baseSalary = profileExtras?.baseSalary ?? employee.salary.basic;
+  const allowances = profileExtras?.allowances ?? (
+    employee.salary.housing + employee.salary.transport + employee.salary.other
+  );
+  const grossSalary = baseSalary + allowances;
+  const gosi = Math.round(baseSalary * GOSI_RATE);
+  const net = grossSalary - gosi;
   const dept = departments[employee.department];
   const manager = employee.managerId
     ? employees.find((e) => e.id === employee.managerId)
@@ -214,11 +290,11 @@ export function EmployeeDetailView({
               <dt className="text-on-surface-variant font-medium shrink-0">
                 {t.emp.empId}
               </dt>
-              <dd
-                className="font-bold tabular-nums text-xs truncate"
-                title={employee.id}
-              >
-                {employee.id}
+              <dd className="font-bold tabular-nums">
+                {/* employeeNumber is the new 3-digit human-friendly ID
+                    (e.g. "002"). The full UUID is no longer surfaced — admins
+                    found it noisy and unactionable. */}
+                {employee.employeeNumber ?? (isAr ? "غير مُعيّن" : "Not assigned")}
               </dd>
             </div>
             <div className="flex justify-between items-center text-sm gap-3">
@@ -346,7 +422,8 @@ export function EmployeeDetailView({
           </div>
         </div>
 
-        {/* Salary info */}
+        {/* Salary info — uses live values from profiles (base_salary +
+            allowances). No more hardcoded zeros. */}
         <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
           <h2 className="font-headline font-bold text-base mb-4 flex items-center gap-2">
             <Icon name="payments" size={18} className="text-primary" />
@@ -355,37 +432,29 @@ export function EmployeeDetailView({
           <dl className="space-y-3">
             <div className="flex justify-between items-center text-sm">
               <dt className="text-on-surface-variant font-medium">
-                {t.emp.basic}
+                {isAr ? "الراتب الأساسي" : "Base Salary"}
               </dt>
               <dd className="font-bold tabular-nums">
-                {formatSalary(sal.basic)} {t.common.sar}
+                {formatSalary(baseSalary)} {t.common.sar}
               </dd>
             </div>
             <div className="flex justify-between items-center text-sm">
               <dt className="text-on-surface-variant font-medium">
-                {t.emp.housing}
+                {isAr ? "البدلات" : "Allowances"}
               </dt>
               <dd className="font-bold tabular-nums">
-                {formatSalary(sal.housing)} {t.common.sar}
+                {formatSalary(allowances)} {t.common.sar}
               </dd>
             </div>
-            <div className="flex justify-between items-center text-sm">
+            <div className="flex justify-between items-center text-sm pt-3 border-t border-outline-variant/20">
               <dt className="text-on-surface-variant font-medium">
-                {t.emp.transport}
+                {isAr ? "إجمالي الراتب" : "Gross Salary"}
               </dt>
               <dd className="font-bold tabular-nums">
-                {formatSalary(sal.transport)} {t.common.sar}
+                {formatSalary(grossSalary)} {t.common.sar}
               </dd>
             </div>
-            <div className="flex justify-between items-center text-sm">
-              <dt className="text-on-surface-variant font-medium">
-                {t.emp.other}
-              </dt>
-              <dd className="font-bold tabular-nums">
-                {formatSalary(sal.other)} {t.common.sar}
-              </dd>
-            </div>
-            <div className="flex justify-between items-center text-sm text-md-error pt-3 border-t border-outline-variant/20">
+            <div className="flex justify-between items-center text-sm text-md-error">
               <dt className="font-medium">{t.pay.gosiDeduction}</dt>
               <dd className="font-bold tabular-nums">
                 -{formatSalary(gosi)} {t.common.sar}
@@ -400,6 +469,119 @@ export function EmployeeDetailView({
           </dl>
         </div>
       </div>
+
+      {/* Identity & Personal — only shown when at least one field is filled */}
+      {profileExtras && (
+        profileExtras.dateOfBirth ||
+        profileExtras.nationality ||
+        profileExtras.gender ||
+        profileExtras.maritalStatus ||
+        profileExtras.passportNumber ||
+        profileExtras.emergencyPhone
+      ) && (
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
+          <h2 className="font-headline font-bold text-base mb-4 flex items-center gap-2">
+            <Icon name="contact_emergency" size={18} className="text-primary" />
+            {isAr ? "البيانات الشخصية والهوية" : "Identity & Personal"}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+            {profileExtras.dateOfBirth && (
+              <div className="flex justify-between items-center text-sm gap-3">
+                <dt className="text-on-surface-variant font-medium shrink-0">
+                  {isAr ? "تاريخ الميلاد" : "Date of Birth"}
+                </dt>
+                <dd className="font-bold tabular-nums">
+                  {formatDOB(profileExtras.dateOfBirth)}
+                </dd>
+              </div>
+            )}
+            {profileExtras.nationality && (
+              <div className="flex justify-between items-center text-sm gap-3">
+                <dt className="text-on-surface-variant font-medium shrink-0">
+                  {isAr ? "الجنسية" : "Nationality"}
+                </dt>
+                <dd className="font-bold">{profileExtras.nationality}</dd>
+              </div>
+            )}
+            {profileExtras.gender && (
+              <div className="flex justify-between items-center text-sm gap-3">
+                <dt className="text-on-surface-variant font-medium shrink-0">
+                  {isAr ? "الجنس" : "Gender"}
+                </dt>
+                <dd className="font-bold">{genderLabel(profileExtras.gender)}</dd>
+              </div>
+            )}
+            {profileExtras.maritalStatus && (
+              <div className="flex justify-between items-center text-sm gap-3">
+                <dt className="text-on-surface-variant font-medium shrink-0">
+                  {isAr ? "الحالة الاجتماعية" : "Marital Status"}
+                </dt>
+                <dd className="font-bold">
+                  {maritalLabel(profileExtras.maritalStatus)}
+                </dd>
+              </div>
+            )}
+            {profileExtras.passportNumber && (
+              <div className="flex justify-between items-center text-sm gap-3">
+                <dt className="text-on-surface-variant font-medium shrink-0">
+                  {isAr ? "رقم الجواز" : "Passport Number"}
+                </dt>
+                <dd className="font-bold tabular-nums" dir="ltr">
+                  {profileExtras.passportNumber}
+                </dd>
+              </div>
+            )}
+            {profileExtras.emergencyPhone && (
+              <div className="flex justify-between items-center text-sm gap-3">
+                <dt className="text-on-surface-variant font-medium shrink-0">
+                  {isAr ? "هاتف الطوارئ" : "Emergency Phone"}
+                </dt>
+                <dd className="font-bold tabular-nums" dir="ltr">
+                  {profileExtras.emergencyPhone}
+                </dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
+
+      {/* Banking + Education — both compact, share a 2-col row */}
+      {profileExtras && (profileExtras.iban || profileExtras.universityMajorAr || profileExtras.universityMajorEn) && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {profileExtras.iban && (
+            <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
+              <h2 className="font-headline font-bold text-base mb-4 flex items-center gap-2">
+                <Icon name="account_balance" size={18} className="text-primary" />
+                {isAr ? "البيانات البنكية" : "Banking"}
+              </h2>
+              <div className="text-sm">
+                <p className="text-on-surface-variant font-medium mb-1">IBAN</p>
+                <p className="font-bold font-mono tabular-nums break-all" dir="ltr">
+                  {profileExtras.iban}
+                </p>
+              </div>
+            </div>
+          )}
+          {(profileExtras.universityMajorAr || profileExtras.universityMajorEn) && (
+            <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
+              <h2 className="font-headline font-bold text-base mb-4 flex items-center gap-2">
+                <Icon name="school" size={18} className="text-primary" />
+                {isAr ? "التعليم" : "Education"}
+              </h2>
+              <div className="text-sm">
+                <p className="text-on-surface-variant font-medium mb-1">
+                  {isAr ? "التخصص الجامعي" : "University Major"}
+                </p>
+                <p className="font-bold">
+                  {(isAr
+                    ? profileExtras.universityMajorAr || profileExtras.universityMajorEn
+                    : profileExtras.universityMajorEn || profileExtras.universityMajorAr) || "—"}
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Issued assets */}
       {empAssets.length > 0 && (

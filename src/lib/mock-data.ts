@@ -7,6 +7,9 @@ export interface UploadedDocument {
 
 export interface Employee {
   id: string;
+  /** Human-friendly 3-digit staff number (e.g. "001"). Distinct from `id`
+   *  which stays the technical Supabase UUID for FK joins. */
+  employeeNumber?: string;
   nameAr: string;
   nameEn: string;
   positionAr: string;
@@ -27,9 +30,16 @@ export interface Employee {
   dateOfBirth?: string;
   mobileNumber?: string;
   nationalId?: string;
+  passportNumber?: string;
+  emergencyPhone?: string;
   bankName?: string;
   iban?: string;
   nationality?: string;
+  gender?: string;
+  universityMajorAr?: string;
+  universityMajorEn?: string;
+  baseSalary?: number;
+  allowances?: number;
   documents?: {
     nationalIdDoc?: UploadedDocument;
     cv?: UploadedDocument;

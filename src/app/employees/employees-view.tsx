@@ -294,9 +294,13 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
 
   const filteredEmployees = employees.filter((emp) => {
     const name = isAr ? emp.nameAr : emp.nameEn;
+    const q = searchQuery.toLowerCase();
     const matchesSearch = !searchQuery ||
-      name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.id.toLowerCase().includes(searchQuery.toLowerCase());
+      name.toLowerCase().includes(q) ||
+      emp.id.toLowerCase().includes(q) ||
+      // Allow searching by the 3-digit staff number, e.g. typing "002"
+      // jumps straight to that employee.
+      (emp.employeeNumber?.toLowerCase().includes(q) ?? false);
     const matchesDept = !departmentFilter || emp.department === departmentFilter;
     const matchesStatus = !statusFilter || emp.status === statusFilter;
     return matchesSearch && matchesDept && matchesStatus;
@@ -578,9 +582,10 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
       {/* Employee Table */}
       <div className="bg-surface-container-lowest rounded-2xl shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px]">
+          <table className="w-full min-w-[760px]">
             <thead>
               <tr className="bg-surface-container/30">
+                <th className="text-start px-4 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant w-16">#</th>
                 <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.name}</th>
                 <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.department}</th>
                 <th className="text-start px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-on-surface-variant">{t.common.status}</th>
@@ -597,6 +602,13 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
 
                 return (
                   <tr key={emp.id} className="hover:bg-surface-container-low transition-colors">
+                    {/* 3-digit human-friendly staff number — much more useful
+                        in a list than the truncated UUID we used to show. */}
+                    <td className="px-4 py-4">
+                      <span className="text-sm font-bold tabular-nums text-primary">
+                        {emp.employeeNumber ?? "—"}
+                      </span>
+                    </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <Avatar className="w-10 h-10">

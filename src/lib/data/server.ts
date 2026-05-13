@@ -248,11 +248,12 @@ export async function fetchEmployees(): Promise<Employee[]> {
           department: string;
           job_title_ar: string;
           profile_completed: boolean;
-          // Added in migration admin_list_users_include_manager_and_national_id —
-          // surfaced by the RPC directly so we no longer need a second SELECT
-          // on profiles to backfill them. Either may be null.
           manager_id: string | null;
           national_id: string | null;
+          // Added in migration admin_list_users_include_employee_number —
+          // 3-digit human-friendly staff number, used in listings and
+          // profile pages instead of the long auth UUID.
+          employee_number: string | null;
         }>
       | null = null;
 
@@ -262,7 +263,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
       const res = await supabase
         .from("profiles")
         .select(
-          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, manager_id, national_id"
+          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, manager_id, national_id, employee_number"
         );
       if (res.error || !res.data) return [...defaultEmployees];
       users = res.data.map((p: Record<string, unknown>) => ({
@@ -280,6 +281,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
         profile_completed: p.profile_completed as boolean,
         manager_id: (p.manager_id as string) || null,
         national_id: (p.national_id as string) || null,
+        employee_number: (p.employee_number as string) || null,
       }));
     }
     if (!users) return [...defaultEmployees];
@@ -300,6 +302,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
       const initialsSrc = firstEn || firstAr || u.email || "?";
       return {
         id: u.user_id,
+        employeeNumber: u.employee_number ?? undefined,
         nameAr: firstAr || u.email?.split("@")[0] || "",
         nameEn: firstEn || u.email?.split("@")[0] || "",
         initials: initialsSrc.charAt(0).toUpperCase(),
