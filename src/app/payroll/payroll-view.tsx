@@ -22,7 +22,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, roundMoney } from "@/lib/utils";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { PayrollSlice } from "@/lib/data/server";
 
@@ -53,41 +53,42 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
 
     const payroll = active.map((emp) => {
       const { basic, housing, transport, other } = emp.salary;
-      const gross = basic + housing + transport + other;
-      const gosi = Math.round(basic * GOSI_RATE * 100) / 100;
+      const gross = roundMoney(basic + housing + transport + other);
+      const gosi = roundMoney(basic * GOSI_RATE);
 
       let penalty = 0;
       const attendance = todayAttendance.find((a) => a.employeeId === emp.id);
-      if (attendance) {
+      if (attendance && emp.locationRequired !== false) {
         if (attendance.status === "late" && attendance.checkIn) {
           const [h, m] = attendance.checkIn.split(":").map(Number);
           const checkInMinutes = h * 60 + m;
           const minutesLate = checkInMinutes - 600;
           if (minutesLate > 0) {
             const percentage = calcPenalty(minutesLate);
-            penalty = Math.round(calcDailySalary(emp) * percentage / 100);
+            penalty = roundMoney(calcDailySalary(emp) * percentage / 100);
           }
         } else if (attendance.status === "absent") {
-          penalty = calcDailySalary(emp);
+          penalty = roundMoney(calcDailySalary(emp));
         }
       }
 
       let advanceDeduction = 0;
       const advance = salaryAdvances.find((a) => a.employeeId === emp.id && a.status === "approved");
       if (advance && advance.remainingBalance > 0) {
-        advanceDeduction = advance.monthlyDeduction;
+        advanceDeduction = roundMoney(advance.monthlyDeduction);
       }
 
-      const net = gross - gosi - penalty - advanceDeduction;
-      return { employee: emp, basic, housing, transport, other, gross, gosi, penalty, advanceDeduction, net };
+      const rawNet = roundMoney(gross - gosi - penalty - advanceDeduction);
+      const net = roundMoney(Math.max(rawNet, 0));
+      return { employee: emp, basic, housing, transport, other, gross, gosi, penalty, advanceDeduction, rawNet, net };
     });
 
-    const totalNet = payroll.reduce((sum, p) => sum + p.net, 0);
-    const avg = payroll.length > 0 ? totalNet / payroll.length : 0;
-    const allowances = payroll.reduce((sum, p) => sum + p.housing + p.transport + p.other, 0);
-    const deductions = payroll.reduce((sum, p) => sum + p.gosi, 0);
-    const gosiCompany = payroll.reduce((sum, p) => sum + p.employee.salary.basic * GOSI_RATE_COMPANY, 0);
-    const penalties = payroll.reduce((sum, p) => sum + p.penalty, 0);
+    const totalNet = roundMoney(payroll.reduce((sum, p) => sum + p.net, 0));
+    const avg = payroll.length > 0 ? roundMoney(totalNet / payroll.length) : 0;
+    const allowances = roundMoney(payroll.reduce((sum, p) => sum + p.housing + p.transport + p.other, 0));
+    const deductions = roundMoney(payroll.reduce((sum, p) => sum + p.gosi, 0));
+    const gosiCompany = roundMoney(payroll.reduce((sum, p) => sum + roundMoney(p.employee.salary.basic * GOSI_RATE_COMPANY), 0));
+    const penalties = roundMoney(payroll.reduce((sum, p) => sum + p.penalty, 0));
     const approved = salaryAdvances.filter((a) => a.status === "approved");
 
     return {
@@ -227,9 +228,16 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
                       <td className="px-4 py-3 text-sm text-tertiary tabular-nums font-medium">
                         {row.advanceDeduction > 0 ? `-${row.advanceDeduction.toLocaleString("en-US")}` : "-"}
                       </td>
-                      <td className="px-4 py-3 text-sm font-black text-on-surface tabular-nums">
-                        {row.net.toLocaleString("en-US")}
-                      </td>
+	                      <td className="px-4 py-3 text-sm font-black text-on-surface tabular-nums">
+	                        <div className="flex flex-col items-start gap-1">
+	                          <span>{row.net.toLocaleString("en-US")}</span>
+	                          {row.rawNet < 0 && (
+	                            <Badge variant="warning" className="h-5 px-2 text-[10px]">
+	                              {t.pay.negativeNetWarning}
+	                            </Badge>
+	                          )}
+	                        </div>
+	                      </td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => setSelectedEmployeeId(emp.id)}
@@ -479,12 +487,17 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
                   )}
                 </div>
 
-                <div className="pt-4 flex items-center justify-between bg-primary-container/20 -mx-6 px-6 py-4 rounded-2xl">
-                  <span className="font-headline text-base font-bold">{t.pay.net}</span>
-                  <span className="font-headline text-2xl font-black text-primary tabular-nums">
-                    {formatCurrency(selectedPayroll.net)}
-                  </span>
-                </div>
+	                <div className="pt-4 flex items-center justify-between bg-primary-container/20 -mx-6 px-6 py-4 rounded-2xl">
+	                  <span className="font-headline text-base font-bold">{t.pay.net}</span>
+	                  <div className="flex flex-col items-end gap-1">
+	                    <span className="font-headline text-2xl font-black text-primary tabular-nums">
+	                      {formatCurrency(selectedPayroll.net)}
+	                    </span>
+	                    {selectedPayroll.rawNet < 0 && (
+	                      <Badge variant="warning">{t.pay.negativeNetWarning}</Badge>
+	                    )}
+	                  </div>
+	                </div>
               </div>
               <DialogFooter className="gap-2 sm:gap-2">
                 <Button variant="outline" onClick={() => window.print()}>

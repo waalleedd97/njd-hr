@@ -102,7 +102,7 @@ function AuthProvider({
   // Layout already gated unauthenticated users to Landing — reaching here means authed.
   const [isAuthenticated] = useState(true);
 
-  // Accept pending invitations + react to SIGNED_OUT from other tabs / manual logout.
+  // Accept pending invitations + clear local auth cache on SIGNED_OUT.
   useEffect(() => {
     let cancelled = false;
 
@@ -131,7 +131,6 @@ function AuthProvider({
         } catch {
           /* ignore */
         }
-        window.location.href = LANDING_URL;
       }
     });
 
@@ -149,14 +148,20 @@ function AuthProvider({
     return false;
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
     try {
       localStorage.removeItem(AUTH_KEY);
     } catch {
       /* ignore */
     }
-    supabase.auth.signOut();
-    window.location.href = LANDING_URL;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) console.error("[auth] signOut failed:", error.message);
+    } catch (err) {
+      console.error("[auth] signOut threw:", err);
+    } finally {
+      window.location.href = LANDING_URL;
+    }
   }, []);
 
   const switchRole = useCallback(() => {

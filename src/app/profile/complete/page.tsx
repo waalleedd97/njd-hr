@@ -153,11 +153,11 @@ export default function CompleteProfilePage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-bold block mb-1.5">{t.profile.fullName} ({isAr ? "عربي" : "Arabic"})</label>
+	            <label className="text-sm font-bold block mb-1.5">{t.profile.fullName} ({t.profile.arabicLabel})</label>
             <input type="text" value={fullNameAr} onChange={(e) => setFullNameAr(e.target.value)} dir="rtl" className={inputClass} />
           </div>
           <div>
-            <label className="text-sm font-bold block mb-1.5">{t.profile.fullName} ({isAr ? "إنجليزي" : "English"})</label>
+	            <label className="text-sm font-bold block mb-1.5">{t.profile.fullName} ({t.profile.englishLabel})</label>
             <input type="text" value={fullNameEn} onChange={(e) => setFullNameEn(e.target.value)} dir="ltr" className={inputClass} />
           </div>
         </div>

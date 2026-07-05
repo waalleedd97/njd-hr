@@ -28,6 +28,12 @@ export function formatNumber(value: number, lang: string): string {
   return value.toLocaleString(getLocale(lang));
 }
 
+/** Round money values once at computation boundaries to avoid floating-point drift. */
+export function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 // ─── KSA (Asia/Riyadh) timezone helpers ───────────────────────────────
 //
 // All business-logic times (check-in/out, attendance dates, leave request

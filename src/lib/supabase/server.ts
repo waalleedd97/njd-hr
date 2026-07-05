@@ -1,16 +1,20 @@
 import { cookies } from "next/headers";
 import { createServerClient as createSSRClient } from "@supabase/ssr";
 
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://iauulqfgrbegwcnfatmx.supabase.co";
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "sb_publishable_Dvk_dI_FY6oxhyOw7__06Q_wzDmwguJ";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+function getSupabaseEnv(): { url: string; anonKey: string } {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("Supabase env vars missing");
+  }
+  return { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
+}
 
 export async function createServerClient() {
   const cookieStore = await cookies();
-  return createSSRClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const { url, anonKey } = getSupabaseEnv();
+  return createSSRClient(url, anonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

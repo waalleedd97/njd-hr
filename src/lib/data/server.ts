@@ -1,4 +1,5 @@
 import { createServerClient } from "@/lib/supabase/server";
+import { getKSADateString } from "@/lib/utils";
 import {
   employees as defaultEmployees,
   branches as defaultBranches,
@@ -69,7 +70,7 @@ const DEFAULT_BALANCES: LeaveBalance[] = [
 export async function fetchTodayAttendance(): Promise<AttRecord[]> {
   try {
     const supabase = await createServerClient();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     const { data } = await supabase
       .from("attendance")
       .select("*")
@@ -247,10 +248,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
           phone: string;
           department: string;
           job_title_ar: string;
-          profile_completed: boolean;
-          manager_id: string | null;
-          national_id: string | null;
-          // Added in migration admin_list_users_include_employee_number —
+	          profile_completed: boolean;
+	          manager_id: string | null;
+	          national_id: string | null;
+	          location_required?: boolean;
+	          // Added in migration admin_list_users_include_employee_number —
           // 3-digit human-friendly staff number, used in listings and
           // profile pages instead of the long auth UUID.
           employee_number: string | null;
@@ -260,11 +262,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
     if (!rpcResult.error && rpcResult.data) {
       users = rpcResult.data;
     } else {
-      const res = await supabase
-        .from("profiles")
-        .select(
-          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, manager_id, national_id, employee_number"
-        );
+	      const res = await supabase
+	        .from("profiles")
+	        .select(
+	          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, manager_id, national_id, employee_number, location_required"
+	        );
       if (res.error || !res.data) return [...defaultEmployees];
       users = res.data.map((p: Record<string, unknown>) => ({
         user_id: p.id as string,
@@ -279,12 +281,27 @@ export async function fetchEmployees(): Promise<Employee[]> {
         department: p.department as string,
         job_title_ar: p.job_title_ar as string,
         profile_completed: p.profile_completed as boolean,
-        manager_id: (p.manager_id as string) || null,
-        national_id: (p.national_id as string) || null,
-        employee_number: (p.employee_number as string) || null,
-      }));
-    }
-    if (!users) return [...defaultEmployees];
+	        manager_id: (p.manager_id as string) || null,
+	        national_id: (p.national_id as string) || null,
+	        location_required: p.location_required as boolean | undefined,
+	        employee_number: (p.employee_number as string) || null,
+	      }));
+	    }
+	    if (!users) return [...defaultEmployees];
+
+	    let locationRequiredById = new Map<string, boolean | undefined>();
+	    if (users.length > 0) {
+	      const { data: profileLocationRows } = await supabase
+	        .from("profiles")
+	        .select("id, location_required")
+	        .in("id", users.map((u) => u.user_id));
+	      locationRequiredById = new Map(
+	        (profileLocationRows ?? []).map((p: Record<string, unknown>) => [
+	          p.id as string,
+	          p.location_required as boolean | undefined,
+	        ])
+	      );
+	    }
 
     const colors = [
       "bg-blue-500",
@@ -315,11 +332,13 @@ export async function fetchEmployees(): Promise<Employee[]> {
         status: "active",
         salary: { basic: 0, housing: 0, transport: 0, other: 0 },
         color: colors[i % colors.length],
-        profileCompleted: u.profile_completed ?? false,
-        managerId: u.manager_id ?? null,
-        nationalId: u.national_id ?? undefined,
-      };
-    });
+	        profileCompleted: u.profile_completed ?? false,
+	        managerId: u.manager_id ?? null,
+	        nationalId: u.national_id ?? undefined,
+	        locationRequired:
+	          locationRequiredById.get(u.user_id) ?? u.location_required ?? true,
+	      };
+	    });
   } catch {
     return [...defaultEmployees];
   }

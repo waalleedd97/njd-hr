@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
+import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
+
+const ADMIN_EMAILS = ["waleed@njdstudio.net", "salman@njdstudio.net"];
+
+function getSupabaseEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!url || !anonKey || !serviceRoleKey) {
+    return null;
+  }
+
+  return { url, anonKey, serviceRoleKey };
+}
 
 /** Escape user-supplied text before interpolating into HTML email template. */
 function escapeHtml(input: unknown): string {
@@ -43,6 +58,46 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const supabaseEnv = getSupabaseEnv();
+    if (!supabaseEnv) {
+      return NextResponse.json({ error: "Supabase env vars missing" }, { status: 503 });
+    }
+
+    const authHeader = req.headers.get("authorization");
+    const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!token) {
+      return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+    }
+
+    const anonClient = createClient(supabaseEnv.url, supabaseEnv.anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: { user }, error: userError } = await anonClient.auth.getUser(token);
+    if (userError || !user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const adminClient = createClient(supabaseEnv.url, supabaseEnv.serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: roleRow, error: roleError } = await adminClient
+      .from("user_roles")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .eq("role_name", "super_admin")
+      .maybeSingle();
+
+    if (roleError) {
+      console.error("[invite] role lookup failed:", roleError.message);
+    }
+
+    const isAdmin = Boolean(roleRow) || Boolean(
+      user.email && ADMIN_EMAILS.includes(user.email.toLowerCase())
+    );
+    if (!isAdmin) {
+      return NextResponse.json({ error: "Forbidden: admin access required" }, { status: 403 });
+    }
+
     const apiKey = process.env.RESEND_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "RESEND_API_KEY not configured" }, { status: 503 });
@@ -71,8 +126,6 @@ export async function POST(req: NextRequest) {
 
     const missing: string[] = [];
     if (!isNonEmptyString(nameEn)) missing.push("nameEn");
-    if (!isNonEmptyString(positionAr)) missing.push("positionAr");
-    if (!isNonEmptyString(positionEn)) missing.push("positionEn");
     if (!isNonEmptyString(department)) missing.push("department");
     if (missing.length > 0) {
       return NextResponse.json(

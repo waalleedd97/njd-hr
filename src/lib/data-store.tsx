@@ -28,6 +28,7 @@ import {
 import { createNotification, notifyAdmins } from "./notifications";
 import { supabase } from "./supabase";
 import { LATE_REFERENCE_HOUR } from "./constants";
+import { getKSADateString } from "./utils";
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -145,7 +146,20 @@ function getDefaultState(): DataState {
 
 let idCounter = 1000;
 function genId(prefix: string) {
-  return `${prefix}${++idCounter}`;
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${++idCounter}`;
+  return `${prefix}-${random}`;
+}
+
+class InvitationEmailConflictError extends Error {
+  code = "INVITATION_EMAIL_CONFLICT";
+
+  constructor(public reason: "pending" | "employee") {
+    super("Invitation email is already in use");
+    this.name = "InvitationEmailConflictError";
+  }
 }
 
 /** Haversine distance in meters between two GPS coords */
@@ -216,8 +230,9 @@ interface DataContextType extends DataState {
   ) => Promise<void>;
 
   // Invitations (Supabase)
-  sendInvitation: (inv: Omit<PendingInvitation, "id">) => Promise<void>;
+  sendInvitation: (inv: Omit<PendingInvitation, "id">) => Promise<PendingInvitation>;
   resendInvitation: (id: string) => Promise<void>;
+  deleteInvitation: (id: string) => Promise<void>;
   refreshInvitations: () => Promise<void>;
 
   // Leave Balances (Supabase)
@@ -266,7 +281,7 @@ interface DataContextType extends DataState {
   updateEmployeeManager: (employeeId: string, managerId: string | null) => Promise<void>;
 
   // Profile completion
-  acceptInvitation: (email: string) => void;
+  acceptInvitation: (email: string) => Promise<void>;
   completeProfile: (id: string, data: Partial<Employee>) => Promise<void>;
 
   // Payroll
@@ -328,11 +343,10 @@ export function DataProvider({
       const saved = localStorage.getItem(SETTINGS_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        setState((prev) => ({
-          ...prev,
-          settings: { ...prev.settings, ...parsed.settings },
-          departments: parsed.departments || prev.departments,
-        }));
+	        setState((prev) => ({
+	          ...prev,
+	          settings: { ...prev.settings, ...parsed.settings },
+	        }));
       }
     } catch { /* ignore */ }
     setHydrated(true);
@@ -343,22 +357,22 @@ export function DataProvider({
     if (hydrated) {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify({
         settings: state.settings,
-        departments: state.departments,
       }));
     }
-  }, [state.settings, state.departments, hydrated]);
+  }, [state.settings, hydrated]);
 
   // ── Supabase Refresh Functions ──
 
   const refreshAttendance = useCallback(async () => {
     try {
-      const today = new Date().toISOString().split("T")[0];
-      const { data } = await supabase
-        .from("attendance")
-        .select("*")
-        .eq("date", today)
-        .order("created_at", { ascending: false });
-      if (!data) return;
+      const today = getKSADateString();
+	      const { data, error } = await supabase
+	        .from("attendance")
+	        .select("*")
+	        .eq("date", today)
+	        .order("created_at", { ascending: false });
+	      if (error) { console.error("[HR] attendance fetch error:", error.message); return; }
+	      if (!data) return;
       // Supabase returns TIME as "HH:MM:SS" — trim to "HH:MM"
       const trimTime = (t: unknown) => t ? String(t).slice(0, 5) : null;
       const mapped: AttRecord[] = data.map((r: Record<string, unknown>) => ({
@@ -370,7 +384,9 @@ export function DataProvider({
         status: ((r.status as string) || "present") as AttRecord["status"],
       }));
       setState((prev) => ({ ...prev, todayAttendance: mapped }));
-    } catch { /* table may not exist */ }
+	    } catch (err) {
+	      console.error("[HR] attendance fetch error:", err instanceof Error ? err.message : err);
+	    }
   }, []);
 
   const refreshLeaveRequests = useCallback(async () => {
@@ -393,16 +409,19 @@ export function DataProvider({
         reasonEn: (row.reason_en as string) || (row.reason as string) || "",
       }));
       setState((prev) => ({ ...prev, leaveRequests: mapped }));
-    } catch { /* */ }
+	    } catch (err) {
+	      console.error("[HR] leave_requests fetch error:", err instanceof Error ? err.message : err);
+	    }
   }, []);
 
   const refreshEmployeeRequests = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from("employee_requests")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!data) return;
+	      const { data, error } = await supabase
+	        .from("employee_requests")
+	        .select("*")
+	        .order("created_at", { ascending: false });
+	      if (error) { console.error("[HR] employee_requests fetch error:", error.message); return; }
+	      if (!data) return;
       const mapped: EmpReq[] = data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
         employeeId: r.employee_id as string,
@@ -413,16 +432,19 @@ export function DataProvider({
         detailsEn: (r.details_en as string) || "",
       }));
       setState((prev) => ({ ...prev, employeeRequests: mapped }));
-    } catch { /* */ }
+	    } catch (err) {
+	      console.error("[HR] employee_requests fetch error:", err instanceof Error ? err.message : err);
+	    }
   }, []);
 
   const refreshSalaryAdvances = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from("salary_advances")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!data) return;
+	      const { data, error } = await supabase
+	        .from("salary_advances")
+	        .select("*")
+	        .order("created_at", { ascending: false });
+	      if (error) { console.error("[HR] salary_advances fetch error:", error.message); return; }
+	      if (!data) return;
       const mapped: SalaryAdvance[] = data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
         employeeId: r.employee_id as string,
@@ -437,16 +459,19 @@ export function DataProvider({
         paidMonths: r.paid_months as number,
       }));
       setState((prev) => ({ ...prev, salaryAdvances: mapped }));
-    } catch { /* */ }
+	    } catch (err) {
+	      console.error("[HR] salary_advances fetch error:", err instanceof Error ? err.message : err);
+	    }
   }, []);
 
   const refreshAttendanceAdjustments = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from("attendance_adjustments")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!data) return;
+	      const { data, error } = await supabase
+	        .from("attendance_adjustments")
+	        .select("*")
+	        .order("created_at", { ascending: false });
+	      if (error) { console.error("[HR] attendance_adjustments fetch error:", error.message); return; }
+	      if (!data) return;
       const mapped: AttendanceAdjustment[] = data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
         employeeId: r.employee_id as string,
@@ -460,16 +485,19 @@ export function DataProvider({
         status: r.status as "pending" | "approved" | "rejected",
       }));
       setState((prev) => ({ ...prev, attendanceAdjustments: mapped }));
-    } catch { /* */ }
+	    } catch (err) {
+	      console.error("[HR] attendance_adjustments fetch error:", err instanceof Error ? err.message : err);
+	    }
   }, []);
 
   const refreshInvitations = useCallback(async () => {
     try {
-      const { data } = await supabase
-        .from("pending_invitations")
-        .select("*")
-        .order("created_at", { ascending: false });
-      if (!data) return;
+	      const { data, error } = await supabase
+	        .from("pending_invitations")
+	        .select("*")
+	        .order("created_at", { ascending: false });
+	      if (error) { console.error("[HR] pending_invitations fetch error:", error.message); return; }
+	      if (!data) return;
       const mapped: PendingInvitation[] = data.map((r: Record<string, unknown>) => ({
         id: r.id as string,
         email: r.email as string,
@@ -482,7 +510,9 @@ export function DataProvider({
         status: r.status as "pending" | "expired",
       }));
       setState((prev) => ({ ...prev, pendingInvitations: mapped }));
-    } catch { /* */ }
+	    } catch (err) {
+	      console.error("[HR] pending_invitations fetch error:", err instanceof Error ? err.message : err);
+	    }
   }, []);
 
   // Default leave balances — used when Supabase has no records for this employee/year
@@ -504,11 +534,12 @@ export function DataProvider({
       // rows for every employee in the system (RLS allows it for admins)
       // and the .map() below collapses by type_key — last write wins,
       // showing essentially random balance numbers to the admin.
-      const { data } = await supabase
-        .from("leave_balances")
-        .select("*")
-        .eq("employee_id", userId)
-        .eq("year", currentYear);
+	      const { data, error } = await supabase
+	        .from("leave_balances")
+	        .select("*")
+	        .eq("employee_id", userId)
+	        .eq("year", currentYear);
+	      if (error) { console.error("[HR] leave_balances fetch error:", error.message); return; }
       const mapped: LeaveBalance[] = (data ?? []).map((r: Record<string, unknown>) => ({
         typeKey: r.type_key as string,
         total: r.total as number,
@@ -520,9 +551,10 @@ export function DataProvider({
       const byType = new Map(mapped.map((b) => [b.typeKey, b]));
       const merged: LeaveBalance[] = DEFAULT_BALANCES.map((def) => byType.get(def.typeKey) ?? def);
       setState((prev) => ({ ...prev, leaveBalances: merged }));
-    } catch {
-      setState((prev) => prev.leaveBalances.length === 0 ? { ...prev, leaveBalances: DEFAULT_BALANCES } : prev);
-    }
+	    } catch (err) {
+	      console.error("[HR] leave_balances fetch error:", err instanceof Error ? err.message : err);
+	      setState((prev) => prev.leaveBalances.length === 0 ? { ...prev, leaveBalances: DEFAULT_BALANCES } : prev);
+	    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -558,28 +590,44 @@ export function DataProvider({
           user_id: string; email: string; created_at: string;
           role_name: string; name_ar: string; name_en: string;
           full_name_ar: string; full_name_en: string;
-          phone: string; department: string; job_title_ar: string;
-          profile_completed: boolean;
-        }> | null = null;
+	          phone: string; department: string; job_title_ar: string;
+	          profile_completed: boolean;
+	          location_required?: boolean;
+	        }> | null = null;
 
         const rpcResult = await supabase.rpc("admin_list_users");
         if (!rpcResult.error && rpcResult.data) {
           users = rpcResult.data;
         } else {
-          const res = await supabase.from("profiles").select("id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed");
-          if (res.error || !res.data) return;
-          users = res.data.map((p: Record<string, unknown>) => ({
-            user_id: p.id as string, email: "", created_at: "",
-            role_name: "employee", name_ar: p.name_ar as string, name_en: p.name_en as string,
-            full_name_ar: p.full_name_ar as string, full_name_en: p.full_name_en as string,
-            phone: p.phone as string, department: p.department as string,
-            job_title_ar: p.job_title_ar as string, profile_completed: p.profile_completed as boolean,
-          }));
-        }
-        if (!users) return;
+	          const res = await supabase.from("profiles").select("id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, location_required");
+	          if (res.error || !res.data) return;
+	          users = res.data.map((p: Record<string, unknown>) => ({
+	            user_id: p.id as string, email: "", created_at: "",
+	            role_name: "employee", name_ar: p.name_ar as string, name_en: p.name_en as string,
+	            full_name_ar: p.full_name_ar as string, full_name_en: p.full_name_en as string,
+	            phone: p.phone as string, department: p.department as string,
+	            job_title_ar: p.job_title_ar as string, profile_completed: p.profile_completed as boolean,
+	            location_required: p.location_required as boolean | undefined,
+	          }));
+	        }
+	        if (!users) return;
+
+	        let locationRequiredById = new Map<string, boolean | undefined>();
+	        if (users.length > 0) {
+	          const { data: profileLocationRows } = await supabase
+	            .from("profiles")
+	            .select("id, location_required")
+	            .in("id", users.map((u) => u.user_id));
+	          locationRequiredById = new Map(
+	            (profileLocationRows ?? []).map((p: Record<string, unknown>) => [
+	              p.id as string,
+	              p.location_required as boolean | undefined,
+	            ])
+	          );
+	        }
 
         setState((prev) => {
-          const today = new Date().toISOString().split("T")[0];
+          const today = getKSADateString();
           const incomingEmails = new Set(
             users
               .map((u) => (u.email || "").toLowerCase())
@@ -648,10 +696,12 @@ export function DataProvider({
                 resolvedNameEn.charAt(0).toUpperCase() ||
                 fallbackLabel.charAt(0).toUpperCase(),
               color: existing?.color || "bg-primary",
-              profileCompleted:
-                u.profile_completed ?? existing?.profileCompleted ?? false,
-            };
-          });
+	              profileCompleted:
+	                u.profile_completed ?? existing?.profileCompleted ?? false,
+	              locationRequired:
+	                locationRequiredById.get(u.user_id) ?? u.location_required ?? existing?.locationRequired ?? true,
+	            };
+	          });
 
           return {
             ...prev,
@@ -667,7 +717,11 @@ export function DataProvider({
   useEffect(() => {
     function handleAccept(e: Event) {
       const email = (e as CustomEvent).detail;
-      if (email) acceptInvitation(email);
+      if (email) {
+        void acceptInvitation(email).catch((err) =>
+          console.error("[HR] acceptInvitation failed:", err)
+        );
+      }
     }
     window.addEventListener("njd-accept-invitation", handleAccept);
     return () => window.removeEventListener("njd-accept-invitation", handleAccept);
@@ -678,7 +732,7 @@ export function DataProvider({
 
   const clockIn = useCallback(async (time: string) => {
     const userId = await getSessionUserId();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
 
     // Derive status from check-in time. Anything after 10:00 KSA is "late" —
     // payroll then reads the time itself and applies the right penalty band
@@ -703,7 +757,7 @@ export function DataProvider({
 
   const clockOut = useCallback(async (time: string) => {
     const userId = await getSessionUserId();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
 
     await supabase.from("attendance")
       .update({ check_out: time })
@@ -857,45 +911,64 @@ export function DataProvider({
     }).eq("id", id);
     if (error) throw error;
 
-    // Decrement the matching leave_balances row (creates it if it doesn't
-    // exist yet). Unpaid leaves are exempt — they don't draw from a quota.
-    const leaveType = req.type as string;
-    if (leaveType !== "unpaid") {
-      const balanceYear = new Date(req.start_date as string).getFullYear();
-      const defaultsByType: Record<string, number> = {
-        annual: 21,
-        sick: 10,
-        marriage: 7,
-        paternity: 3,
-      };
-      const defaultTotal = defaultsByType[leaveType] ?? 0;
-      const days = req.days as number;
+    try {
+      // Decrement the matching leave_balances row after marking the request
+      // approved. If the balance write fails, revert the approval below so a
+      // quota write failure cannot leave an approved request with no deduction.
+      const leaveType = req.type as string;
+      if (leaveType !== "unpaid") {
+        const balanceYear = new Date(req.start_date as string).getFullYear();
+        const defaultsByType: Record<string, number> = {
+          annual: 21,
+          sick: 10,
+          marriage: 7,
+          paternity: 3,
+        };
+	        const defaultTotal = defaultsByType[leaveType];
+	        if (defaultTotal === undefined) {
+	          console.warn(`[HR] Unknown leave type "${leaveType}", skipping balance mutation`);
+	        } else {
+	          const days = req.days as number;
 
-      const { data: existing } = await supabase
-        .from("leave_balances")
-        .select("id, used")
-        .eq("employee_id", req.employee_id as string)
-        .eq("type_key", leaveType)
-        .eq("year", balanceYear)
-        .maybeSingle();
+	          const { data: existing, error: balanceFetchError } = await supabase
+	            .from("leave_balances")
+	            .select("id, used")
+	            .eq("employee_id", req.employee_id as string)
+	            .eq("type_key", leaveType)
+	            .eq("year", balanceYear)
+	            .maybeSingle();
+	          if (balanceFetchError) throw balanceFetchError;
 
-      if (existing) {
-        await supabase
-          .from("leave_balances")
-          .update({ used: (existing.used as number) + days })
-          .eq("id", existing.id as string);
-      } else {
-        await supabase.from("leave_balances").insert({
-          employee_id: req.employee_id as string,
-          type_key: leaveType,
-          total: defaultTotal,
-          used: days,
-          year: balanceYear,
-        });
+	          if (existing) {
+	            const { error: balanceUpdateError } = await supabase
+	              .from("leave_balances")
+	              .update({ used: (existing.used as number) + days })
+	              .eq("id", existing.id as string);
+	            if (balanceUpdateError) throw balanceUpdateError;
+	          } else {
+	            const { error: balanceInsertError } = await supabase.from("leave_balances").insert({
+	              employee_id: req.employee_id as string,
+	              type_key: leaveType,
+	              total: defaultTotal,
+	              used: days,
+	              year: balanceYear,
+	            });
+	            if (balanceInsertError) throw balanceInsertError;
+	          }
+	          // Refresh local store so the admin sees the new used number on the
+	          // current page (Balance tab cards) without a hard refresh.
+	          await refreshLeaveBalances();
+	        }
+	      }
+    } catch (balanceErr) {
+      const { error: revertError } = await supabase
+        .from("leave_requests")
+        .update({ status: "pending", reviewed_by: null, reviewed_at: null })
+        .eq("id", id);
+      if (revertError) {
+        console.error("[HR] leave approval revert failed:", revertError.message);
       }
-      // Refresh local store so the admin sees the new used number on the
-      // current page (Balance tab cards) without a hard refresh.
-      await refreshLeaveBalances();
+      throw balanceErr;
     }
 
     let notifyTargetId: string | undefined;
@@ -1083,9 +1156,20 @@ export function DataProvider({
 
   const sendInvitation = useCallback(async (inv: Omit<PendingInvitation, "id">) => {
     const userId = await getSessionUserId();
+    const normalizedEmail = inv.email.trim().toLowerCase();
+
+    const alreadyPending = state.pendingInvitations.some(
+      (i) => i.status === "pending" && i.email.trim().toLowerCase() === normalizedEmail
+    );
+    if (alreadyPending) throw new InvitationEmailConflictError("pending");
+
+    const alreadyEmployee = state.employees.some(
+      (e) => e.email.trim().toLowerCase() === normalizedEmail
+    );
+    if (alreadyEmployee) throw new InvitationEmailConflictError("employee");
 
     const { data, error } = await supabase.from("pending_invitations").insert({
-      email: inv.email,
+      email: normalizedEmail,
       name_ar: inv.nameAr,
       name_en: inv.nameEn,
       department: inv.department,
@@ -1095,11 +1179,13 @@ export function DataProvider({
       status: "pending",
       invited_by: userId,
     }).select("*").single();
+    if (error?.code === "23505") throw new InvitationEmailConflictError("pending");
     if (error || !data) throw error ?? new Error("Insert returned no row");
 
     const newRow = mapInvitationRow(data);
     setState((p) => ({ ...p, pendingInvitations: [newRow, ...p.pendingInvitations] }));
-  }, []);
+    return newRow;
+  }, [state.employees, state.pendingInvitations]);
 
   const resendInvitation = useCallback(async (id: string) => {
     const newSentDate = new Date().toISOString().split("T")[0];
@@ -1114,6 +1200,19 @@ export function DataProvider({
       pendingInvitations: p.pendingInvitations.map((i) =>
         i.id === id ? { ...i, status: "pending" as const, sentDate: newSentDate } : i
       ),
+    }));
+  }, []);
+
+  const deleteInvitation = useCallback(async (id: string) => {
+    const { error } = await supabase
+      .from("pending_invitations")
+      .delete()
+      .eq("id", id);
+    if (error) throw error;
+
+    setState((p) => ({
+      ...p,
+      pendingInvitations: p.pendingInvitations.filter((i) => i.id !== id),
     }));
   }, []);
 
@@ -1419,6 +1518,7 @@ export function DataProvider({
   // ── Manager assignment (writes profiles.manager_id) ──
 
   const updateEmployeeManager = useCallback(async (employeeId: string, managerId: string | null) => {
+    const previousEmployees = state.employees;
     // Optimistic update of local employees state
     setState((p) => ({
       ...p,
@@ -1432,13 +1532,17 @@ export function DataProvider({
       .eq("id", employeeId);
     if (error) {
       console.error("[data-store] updateEmployeeManager failed:", error.message);
+      setState((p) => ({ ...p, employees: previousEmployees }));
       throw error;
     }
-  }, []);
+  }, [state.employees]);
 
   const processPayroll = useCallback(() => {
-    setState((p) => {
-      p.employees.forEach((emp) => {
+    const employeesToNotify = state.employees;
+    setState((p) => ({ ...p, payrollProcessed: true }));
+
+    void Promise.allSettled(
+      employeesToNotify.map((emp) =>
         createNotification({
           userId: emp.id,
           type: "payroll",
@@ -1447,11 +1551,17 @@ export function DataProvider({
           descAr: "تم معالجة رواتب الشهر الحالي بنجاح",
           descEn: "Current month payroll has been processed successfully",
           href: "/payroll",
-        });
-      });
-      return { ...p, payrollProcessed: true };
+        })
+      )
+    ).then((results) => {
+      const failures = results.filter(
+        (result) => result.status === "rejected" || result.value?.error
+      ).length;
+      if (failures > 0) {
+        console.warn(`[HR] processPayroll notification failures: ${failures}`);
+      }
     });
-  }, []);
+  }, [state.employees]);
 
   // ── Departments ──
 
@@ -1479,54 +1589,51 @@ export function DataProvider({
 
   // ── Profile / Invitation Acceptance ──
 
-  const acceptInvitation = useCallback((email: string) => {
+  const acceptInvitation = useCallback(async (email: string) => {
+    const normalizedEmail = email.toLowerCase();
+    const inv = state.pendingInvitations.find(
+      (i) => i.email.toLowerCase() === normalizedEmail && i.status === "pending"
+    );
+    if (!inv) return;
+
+    const { error } = await supabase
+      .from("pending_invitations")
+      .update({ status: "expired" })
+      .eq("id", inv.id);
+    if (error) throw error;
+
+    const colors = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-purple-500", "bg-cyan-500", "bg-orange-500", "bg-teal-500", "bg-pink-500", "bg-indigo-500"];
+    const newEmp: Employee = {
+      id: genId("EMP"),
+      nameAr: inv.nameAr,
+      nameEn: inv.nameEn,
+      positionAr: inv.positionAr,
+      positionEn: inv.positionEn,
+      department: inv.department,
+      email: inv.email,
+      phone: "",
+      status: "active",
+      joinDate: getKSADateString(),
+      salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+      initials: inv.nameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
+      color: colors[Math.floor(Math.random() * colors.length)],
+      profileCompleted: false,
+    };
+
     setState((p) => {
-      const inv = p.pendingInvitations.find(
-        (i) => i.email.toLowerCase() === email.toLowerCase() && i.status === "pending"
+      const pendingInvitations = p.pendingInvitations.map((i) =>
+        i.id === inv.id ? { ...i, status: "expired" as const } : i
       );
-      if (!inv) return p;
-
-      // Update invitation status in Supabase even if the employee already exists.
-      supabase.from("pending_invitations").update({ status: "expired" }).eq("id", inv.id);
-
       const alreadyExists = p.employees.some(
-        (e) => e.email.toLowerCase() === email.toLowerCase()
+        (e) => e.email.toLowerCase() === normalizedEmail
       );
-      if (alreadyExists) {
-        return {
-          ...p,
-          pendingInvitations: p.pendingInvitations.map((i) =>
-            i.id === inv.id ? { ...i, status: "expired" as const } : i
-          ),
-        };
-      }
-      const colors = ["bg-blue-500", "bg-emerald-500", "bg-amber-500", "bg-rose-500", "bg-purple-500", "bg-cyan-500", "bg-orange-500", "bg-teal-500", "bg-pink-500", "bg-indigo-500"];
-      const newEmp: Employee = {
-        id: genId("EMP"),
-        nameAr: inv.nameAr,
-        nameEn: inv.nameEn,
-        positionAr: inv.positionAr,
-        positionEn: inv.positionEn,
-        department: inv.department,
-        email: inv.email,
-        phone: "",
-        status: "active",
-        joinDate: new Date().toISOString().split("T")[0],
-        salary: { basic: 0, housing: 0, transport: 0, other: 0 },
-        initials: inv.nameAr.split(" ").map((w) => w[0]).slice(0, 2).join(""),
-        color: colors[Math.floor(Math.random() * colors.length)],
-        profileCompleted: false,
-      };
-
       return {
         ...p,
-        employees: [...p.employees, newEmp],
-        pendingInvitations: p.pendingInvitations.map((i) =>
-          i.id === inv.id ? { ...i, status: "expired" as const } : i
-        ),
+        employees: alreadyExists ? p.employees : [...p.employees, newEmp],
+        pendingInvitations,
       };
     });
-  }, []);
+  }, [state.pendingInvitations]);
 
   const completeProfile = useCallback(
     async (id: string, data: Partial<Employee>) => {
@@ -1582,6 +1689,7 @@ export function DataProvider({
     rejectItem,
     sendInvitation,
     resendInvitation,
+    deleteInvitation,
     refreshInvitations,
     refreshLeaveBalances,
     markNotificationRead,

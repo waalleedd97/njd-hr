@@ -6,7 +6,8 @@ import { useRouter } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { ASSET_TYPES, type AssetType, type EmployeeAsset } from "@/lib/mock-data";
-import type { Employee } from "@/lib/mock-data";
+import type { Employee, PendingInvitation } from "@/lib/mock-data";
+import { supabase } from "@/lib/supabase";
 import { useToast } from "@/components/ui/toast";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -335,14 +336,38 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
 
   const [inviteSending, setInviteSending] = useState(false);
 
+  const getInviteErrorMessage = (err: unknown) => {
+    const code = typeof err === "object" && err !== null && "code" in err
+      ? String((err as { code?: unknown }).code)
+      : "";
+    if (code === "INVITATION_EMAIL_CONFLICT" || code === "23505") {
+      return t.invite.alreadyPending;
+    }
+
+    const message = err instanceof Error ? err.message : "";
+    return message ? `${t.invite.sendFailed}: ${message}` : t.invite.sendFailed;
+  };
+
   const sendInviteEmail = async (data: { email: string; nameAr: string; nameEn: string; positionAr: string; positionEn: string; department: string }) => {
     const deptLabel = departments[data.department];
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error(t.invite.authRequired);
+
     const res = await fetch("/api/invite", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...data, department: isAr ? deptLabel?.ar : deptLabel?.en || data.department }),
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        ...data,
+        department: (isAr ? deptLabel?.ar : deptLabel?.en) || data.department,
+      }),
     });
-    if (!res.ok) throw new Error(`Email send failed: ${res.status}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.error || `HTTP ${res.status}`);
+    }
   };
 
   const [inviteError, setInviteError] = useState("");
@@ -363,10 +388,11 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
       status: "pending" as const,
     };
 
+    let createdInvitation: PendingInvitation | null = null;
+
     try {
-      await store.sendInvitation(invData);
+      createdInvitation = await store.sendInvitation(invData);
       await sendInviteEmail(invData);
-      setInviteSending(false);
       setInviteSent(true);
       setTimeout(() => {
         setInviteSent(false);
@@ -376,16 +402,31 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
         setInvitePosition("");
         setInviteOpen(false);
       }, 2000);
-    } catch {
+    } catch (err) {
+      console.error("[employees] invite failed:", err);
+      if (createdInvitation) {
+        try {
+          await store.deleteInvitation(createdInvitation.id);
+        } catch (rollbackErr) {
+          console.error("[employees] invite rollback failed:", rollbackErr);
+        }
+      }
+      setInviteError(getInviteErrorMessage(err));
+    } finally {
       setInviteSending(false);
-      setInviteError(isAr ? "فشل إرسال الدعوة. حاول مرة أخرى." : "Failed to send invitation. Please try again.");
     }
   };
 
   const handleResend = async (id: string) => {
-    await store.resendInvitation(id);
-    const inv = store.pendingInvitations.find((i) => i.id === id);
-    if (inv) await sendInviteEmail(inv);
+    try {
+      await store.resendInvitation(id);
+      const inv = store.pendingInvitations.find((i) => i.id === id);
+      if (inv) await sendInviteEmail(inv);
+      toast.success(t.invite.inviteSent);
+    } catch (err) {
+      console.error("[employees] resend invite failed:", err);
+      toast.error(getInviteErrorMessage(err));
+    }
   };
 
   return (

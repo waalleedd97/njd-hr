@@ -856,7 +856,7 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
                         >
                           {item.compliant ? t.set.compliant : t.set.notCompliant}
                         </Badge>
-                        <Button variant="ghost" size="sm" onClick={() => openEditCompliance(item)} aria-label={isAr ? "تعديل" : "Edit"} className="-mr-2">
+	                        <Button variant="ghost" size="sm" onClick={() => openEditCompliance(item)} aria-label={isAr ? "تعديل" : "Edit"} className="-me-2">
                           <Pencil className="w-3 h-3" />
                         </Button>
                       </div>

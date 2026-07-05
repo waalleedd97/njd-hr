@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData, haversineDistance } from "@/lib/data-store";
 import {
@@ -21,20 +21,15 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn, getKSADateString, formatDate } from "@/lib/utils";
+import { cn, getKSAHour, getKSADateString, getKSATimeString, formatDate } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { AttendanceSlice, AttRecord } from "@/lib/data/server";
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
-function getKSATime(): Date {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-}
-
 function isBeforeCheckinTime(): boolean {
-  const ksa = getKSATime();
-  return ksa.getHours() < 6;
+  return getKSAHour() < 6;
 }
 
 // ─── 12-hour Time Picker ──────────────────────────────────────────────
@@ -225,8 +220,9 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     attendanceAdjustments: initialSlice.attendanceAdjustments,
   });
   const { t, lang } = useLanguage();
-  const { isAdmin, user } = useAuth();
-  const store = useData();
+	  const { isAdmin, user } = useAuth();
+	  const store = useData();
+	  const { initialLoaded } = store;
   const employees = store.employees;
   const departments = store.departments;
   const isAr = lang === "ar";
@@ -257,7 +253,6 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     if (!currentUserId) return;
     const record = store.todayAttendance.find((a) => a.employeeId === currentUserId);
     if (record) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setClockedIn(!!record.checkIn && !record.checkOut);
       setClockInTime(record.checkIn ?? null);
       setClockOutTime(record.checkOut ?? null);
@@ -265,34 +260,49 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   }, [currentUserId, store.todayAttendance]);
 
   const [isInsideGeofence, setIsInsideGeofence] = useState(true);
-  const [locationRequired, setLocationRequired] = useState(true);
+  const [locationRequired, setLocationRequired] = useState(initialSlice.locationRequired);
   const [locationLoaded, setLocationLoaded] = useState(false);
   const [geolocationDenied, setGeolocationDenied] = useState(false);
 
-  useEffect(() => {
-    async function fetchLocationSetting() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user?.id) {
-          const { data } = await supabase
-            .from("profiles")
-            .select("location_required")
-            .eq("id", session.user.id)
-            .single();
-          if (data) {
-            setLocationRequired(data.location_required ?? true);
-          }
-        }
-      } catch { /* profiles table may not exist */ }
+  const fetchFreshLocationRequired = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user?.id) {
+        setLocationRequired(true);
+        return true;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("location_required")
+        .eq("id", session.user.id)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[attendance] location_required fetch failed:", error.message);
+        setLocationRequired(true);
+        return true;
+      }
+
+      const required = data?.location_required ?? true;
+      setLocationRequired(required);
+      return required;
+    } catch (err) {
+      console.error("[attendance] location_required fetch threw:", err);
+      setLocationRequired(true);
+      return true;
+    } finally {
       setLocationLoaded(true);
     }
-    fetchLocationSetting();
   }, []);
+
+  useEffect(() => {
+    void fetchFreshLocationRequired();
+  }, [fetchFreshLocationRequired]);
 
   useEffect(() => {
     if (!locationLoaded || !locationRequired) return;
     if (!navigator.geolocation) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setGeolocationDenied(true);
       setIsInsideGeofence(false);
       return;
@@ -324,8 +334,7 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const [adjReason, setAdjReason] = useState("");
 
   const getCurrentTime = () => {
-    const now = new Date();
-    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    return getKSATimeString();
   };
 
   const [tooEarly, setTooEarly] = useState(isBeforeCheckinTime());
@@ -402,7 +411,8 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
 
   const handleClockIn = async () => {
     if (tooEarly) return;
-    if (locationRequired && !isInsideGeofence) return;
+    const freshLocationRequired = await fetchFreshLocationRequired();
+    if (freshLocationRequired && !isInsideGeofence) return;
     const time = getCurrentTime();
     setClockedIn(true);
     setClockInTime(time);
@@ -410,8 +420,9 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     await store.clockIn(time);
   };
 
-  const handleClockOut = () => {
-    if (locationRequired && navigator.geolocation) {
+  const handleClockOut = async () => {
+    const freshLocationRequired = await fetchFreshLocationRequired();
+    if (freshLocationRequired && navigator.geolocation) {
       setCheckoutLocationLoading(true);
       setCheckoutOutside(false);
       navigator.geolocation.getCurrentPosition(
@@ -441,7 +452,7 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     setReportUploading(true);
 
     const time = getCurrentTime();
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     const attachments: { name: string; url: string; type: string }[] = [];
 
     if (currentUserId && reportFiles.length > 0) {
@@ -620,10 +631,14 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                       <Icon name={c.iconName} size={20} fill />
                     </div>
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-headline text-4xl font-black text-on-surface tabular-nums leading-none">
-                      {c.count}
-                    </span>
+	                  <div className="flex items-baseline gap-2">
+	                    <span className="font-headline text-4xl font-black text-on-surface tabular-nums leading-none">
+	                      {initialLoaded ? (
+	                        c.count
+	                      ) : (
+	                        <span className="inline-block h-9 w-14 rounded-lg bg-surface-container-highest animate-pulse align-middle" />
+	                      )}
+	                    </span>
                     <span className="text-xs text-on-surface-variant/70 font-medium">
                       {c.sub}
                     </span>
@@ -1012,10 +1027,14 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
               <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform", card.bg, card.color)}>
                 <Icon name={card.iconName} size={26} fill />
               </div>
-              <div className="min-w-0">
-                <p className="font-headline text-3xl font-black text-on-surface tabular-nums">
-                  {card.count}
-                </p>
+	              <div className="min-w-0">
+	                <p className="font-headline text-3xl font-black text-on-surface tabular-nums">
+	                  {initialLoaded ? (
+	                    card.count
+	                  ) : (
+	                    <span className="inline-block h-8 w-12 rounded-lg bg-surface-container-highest animate-pulse align-middle" />
+	                  )}
+	                </p>
                 <p className="text-sm text-on-surface-variant truncate font-medium">
                   {card.label}
                 </p>

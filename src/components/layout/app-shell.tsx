@@ -10,6 +10,9 @@ import { MobileNav } from "./mobile-nav";
 import { NotificationsPanel } from "./notifications-panel";
 import { Shield } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { ADMIN_ROUTE_REDIRECT_MS } from "@/lib/constants";
+
+const LANDING_URL = "https://njd-services.net";
 
 // TypeScript declaration for the njd-navbar web component
 // (React 19 reads JSX.IntrinsicElements from the "react" module namespace)
@@ -44,14 +47,19 @@ function NJDNavbar() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("profiles")
         .select("name_ar, name_en, full_name_ar, full_name_en")
         .eq("id", session.user.id)
-        .single();
+        .maybeSingle();
+
+      if (error) {
+        console.error("[app-shell] profile fetch failed:", error.message);
+        return;
+      }
 
       if (!data) {
-        window.location.href = "https://njd-services.net/#complete-profile";
+        window.location.href = `${LANDING_URL}/#complete-profile`;
         return;
       }
 
@@ -65,8 +73,15 @@ function NJDNavbar() {
     const el = navRef.current;
     if (!el) return;
 
-    const handleLogout = () => {
-      supabase.auth.signOut();
+    const handleLogout = async () => {
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) console.error("[app-shell] signOut failed:", error.message);
+      } catch (err) {
+        console.error("[app-shell] signOut threw:", err);
+      } finally {
+        window.location.href = LANDING_URL;
+      }
     };
 
     const handleLangChange = (e: Event) => {
@@ -158,6 +173,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // between client-nav request and server redirect response.
   const isBlocked =
     role === "employee" && adminOnlyPaths.includes(pathname);
+
+  useEffect(() => {
+    if (!isBlocked) return;
+    const id = setTimeout(() => {
+      window.location.href = "/";
+    }, ADMIN_ROUTE_REDIRECT_MS);
+    return () => clearTimeout(id);
+  }, [isBlocked]);
 
   return (
     <>

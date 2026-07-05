@@ -1,18 +1,22 @@
 "use client";
 import { createBrowserClient as createSSRBrowserClient } from "@supabase/ssr";
 
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ||
-  "https://iauulqfgrbegwcnfatmx.supabase.co";
-const SUPABASE_ANON_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-  "sb_publishable_Dvk_dI_FY6oxhyOw7__06Q_wzDmwguJ";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+function getSupabaseEnv(): { url: string; anonKey: string } {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error("Supabase env vars missing");
+  }
+  return { url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY };
+}
 
 let cached: ReturnType<typeof createSSRBrowserClient> | null = null;
 
 export function getBrowserClient() {
   if (cached) return cached;
-  cached = createSSRBrowserClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  const { url, anonKey } = getSupabaseEnv();
+  cached = createSSRBrowserClient(url, anonKey, {
     cookieOptions: {
       domain:
         typeof window !== "undefined" &&

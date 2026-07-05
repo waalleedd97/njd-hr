@@ -12,18 +12,21 @@ const tajawal = Tajawal({
   subsets: ["arabic", "latin"],
   weight: ["200", "300", "400", "500", "700", "800", "900"],
   variable: "--font-tajawal",
+  display: "swap",
 });
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700", "800"],
   variable: "--font-plus-jakarta",
+  display: "swap",
 });
 
 const inter = Inter({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-inter",
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -98,8 +101,7 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
             stylesheet that Next.js would otherwise want to bundle. */}
         {/* eslint-disable-next-line @next/next/no-css-tags */}
         <link rel="stylesheet" href="/njd-design-system.css" />
-        {/* Material Symbols Outlined — preload + block render until font loads (avoids flash of raw icon names) */}
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        {/* Material Symbols Outlined — render hidden by CSS until font loads (avoids flash of raw icon names) */}
         <link
           rel="preconnect"
           href="https://fonts.gstatic.com"
@@ -108,7 +110,7 @@ html.app-ready .njd-loader{opacity:0;visibility:hidden;pointer-events:none}
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=block"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap"
         />
         {/* Mark <html> when Material Symbols font is ready (hides FOUT of raw icon names) */}
         <script
