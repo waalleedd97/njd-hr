@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn } from "@/lib/utils";
+import { cn, formatNumber, getKSADateString } from "@/lib/utils";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { RequestsSlice } from "@/lib/data/server";
 import { useToast } from "@/components/ui/toast";
@@ -114,15 +114,24 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
     const base: UnifiedRequest[] = store.employeeRequests.map((r) => ({
       id: r.id, employeeId: r.employeeId, typeKey: r.typeKey, date: r.date, status: r.status, detailsAr: r.detailsAr, detailsEn: r.detailsEn,
     }));
-    const adjMapped: UnifiedRequest[] = store.attendanceAdjustments.map((a) => ({
-      id: a.id, employeeId: a.employeeId, typeKey: "attendanceAdjust", date: a.date, status: a.status,
-      detailsAr: "تعديل حضور — " + a.originalIn + " → " + a.requestedIn,
-      detailsEn: "Adjustment — " + a.originalIn + " → " + a.requestedIn,
-    }));
+    const adjMapped: UnifiedRequest[] = store.attendanceAdjustments.map((a) => {
+      // Show check-in and/or check-out changes — an adjustment may touch
+      // only one of the two, so render whichever pair has values.
+      const range = (original: string, requested: string) =>
+        original || requested ? `${original || "—"} → ${requested || "—"}` : "";
+      const inRange = range(a.originalIn, a.requestedIn);
+      const outRange = range(a.originalOut, a.requestedOut);
+      const detail = [inRange, outRange].filter(Boolean).join(" / ");
+      return {
+        id: a.id, employeeId: a.employeeId, typeKey: "attendanceAdjust", date: a.date, status: a.status,
+        detailsAr: "تعديل حضور — " + detail,
+        detailsEn: "Adjustment — " + detail,
+      };
+    });
     const advMapped: UnifiedRequest[] = store.salaryAdvances.map((s) => ({
       id: s.id, employeeId: s.employeeId, typeKey: "salaryAdvance", date: s.requestDate, status: s.status,
-      detailsAr: s.amount.toLocaleString() + " ر.س",
-      detailsEn: s.amount.toLocaleString() + " SAR",
+      detailsAr: formatNumber(s.amount, lang) + " ر.س",
+      detailsEn: formatNumber(s.amount, lang) + " SAR",
     }));
     const leaveMapped: UnifiedRequest[] = store.leaveRequests.map((lr) => ({
       id: lr.id,
@@ -138,7 +147,7 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
     const combined = [...base, ...adjMapped, ...advMapped, ...leaveMapped];
     combined.sort((a, b) => (a.date > b.date ? -1 : a.date < b.date ? 1 : 0));
     return combined;
-  }, [store.employeeRequests, store.attendanceAdjustments, store.salaryAdvances, store.leaveRequests]);
+  }, [store.employeeRequests, store.attendanceAdjustments, store.salaryAdvances, store.leaveRequests, lang]);
 
   const typeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -193,8 +202,18 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
     // the action programmatically we still bail out and steer them to /leaves.
     if (newReqType === "leaveRequest") return;
     setSubmitError("");
+    // Input validation — description is required for every type that carries
+    // one, and a salary advance must have a positive amount.
+    if (newReqType !== "attendanceAdjust" && !newReqDesc.trim()) {
+      setSubmitError(isAr ? "يرجى إدخال وصف الطلب" : "Please enter a request description");
+      return;
+    }
+    if (newReqType === "salaryAdvance" && advAmount <= 0) {
+      setSubmitError(isAr ? "يرجى إدخال مبلغ صحيح أكبر من صفر" : "Please enter an amount greater than zero");
+      return;
+    }
     setSubmitting(true);
-    const today = new Date().toISOString().split("T")[0];
+    const today = getKSADateString();
     try {
       if (newReqType === "attendanceAdjust") {
         await store.submitAdjustment({
@@ -607,13 +626,13 @@ export function RequestsView({ initialSlice }: { initialSlice: RequestsSlice }) 
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-on-surface-variant font-medium">{t.advance.monthlyDeduction}</span>
                       <span className="font-bold tabular-nums">
-                        {calculatedMonthlyDeduction.toLocaleString()} {t.common.sar}
+                        {formatNumber(calculatedMonthlyDeduction, lang)} {t.common.sar}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-on-surface-variant font-medium">{t.advance.remainingBalance}</span>
                       <span className="font-bold tabular-nums">
-                        {advAmount.toLocaleString()} {t.common.sar}
+                        {formatNumber(advAmount, lang)} {t.common.sar}
                       </span>
                     </div>
                   </div>

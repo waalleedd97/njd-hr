@@ -143,11 +143,17 @@ function NJDNavbar() {
 // ─── App Shell ───────────────────────────────────────────────────────
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try { return localStorage.getItem("njd-hr-sidebar-collapsed") === "1"; }
-    catch { return false; }
-  });
+  // Initialize with the SSR value (false); reading localStorage here would
+  // cause a server/client hydration mismatch. Stored value applied on mount.
+  const [collapsed, setCollapsed] = useState<boolean>(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("njd-hr-sidebar-collapsed") === "1") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: localStorage value can only be read post-mount (hydration fix)
+        setCollapsed(true);
+      }
+    } catch { /* ignore */ }
+  }, []);
   useEffect(() => {
     try { localStorage.setItem("njd-hr-sidebar-collapsed", collapsed ? "1" : "0"); }
     catch { /* quota */ }
@@ -172,7 +178,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // This client-side check exists only as a visual fallback for the brief moment
   // between client-nav request and server redirect response.
   const isBlocked =
-    role === "employee" && adminOnlyPaths.includes(pathname);
+    role === "employee" &&
+    adminOnlyPaths.some((p) => pathname === p || pathname.startsWith(p + "/"));
 
   useEffect(() => {
     if (!isBlocked) return;

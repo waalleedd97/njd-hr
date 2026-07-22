@@ -34,6 +34,10 @@ const statusBadgeVariant: Record<string, "success" | "warning" | "destructive"> 
 
 type EmpTab = "list" | "onboarding" | "orgchart" | "hired" | "assets";
 
+// Deliberately simple format check — the real deliverability test is the
+// invitation email itself; this just catches obvious typos before submit.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /** Recursive node for the Org Chart — renders one employee + indented reports. */
 function OrgNode({
   employee,
@@ -221,6 +225,20 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
     setAssetDialogOpen(true);
   };
 
+  const openEditAsset = (a: EmployeeAsset) => {
+    setAssetEditing(a);
+    setAssetForm({
+      employeeId: a.employeeId,
+      assetType: a.assetType,
+      nameAr: a.nameAr,
+      nameEn: a.nameEn,
+      serialNumber: a.serialNumber ?? "",
+      notes: a.notes ?? "",
+      issuedAt: a.issuedAt,
+    });
+    setAssetDialogOpen(true);
+  };
+
   const submitAsset = async () => {
     if (assetSaving) return;
     if (!assetForm.employeeId || !assetForm.nameAr || !assetForm.nameEn) {
@@ -373,7 +391,14 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
   const [inviteError, setInviteError] = useState("");
 
   const handleInviteSubmit = async () => {
-    if (!inviteName || !inviteEmail) return;
+    // Department is REQUIRED — it feeds the role fallback (department "hr"
+    // maps to admin), so silently defaulting to "hr" would be a privilege
+    // escalation bug. The submit button is also disabled until one is chosen.
+    if (!inviteName || !inviteEmail || !inviteDept) return;
+    if (!EMAIL_RE.test(inviteEmail.trim())) {
+      setInviteError(isAr ? "صيغة البريد الإلكتروني غير صحيحة" : "Invalid email address format");
+      return;
+    }
     setInviteSending(true);
     setInviteError("");
 
@@ -381,7 +406,7 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
       email: inviteEmail,
       nameAr: inviteName,
       nameEn: inviteName,
-      department: inviteDept || "hr",
+      department: inviteDept,
       positionAr: invitePosition || "",
       positionEn: invitePosition || "",
       sentDate: new Date().toISOString().split("T")[0],
@@ -692,7 +717,7 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
               })}
               {filteredEmployees.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-14 text-center">
+                  <td colSpan={6} className="py-14 text-center">
                     <Icon name="person_search" size={44} className="text-on-surface-variant opacity-40 mb-3" />
                     <p className="text-sm text-on-surface-variant font-medium">{t.common.noData}</p>
                   </td>
@@ -961,6 +986,9 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-1">
+                          <Button variant="ghost" size="sm" onClick={() => openEditAsset(a)} title={isAr ? "تعديل" : "Edit"}>
+                            <Icon name="edit" size={16} />
+                          </Button>
                           {a.status === "issued" && (
                             <Button variant="ghost" size="sm" onClick={() => markAssetReturned(a)} title={isAr ? "تسجيل استلام" : "Mark returned"}>
                               <Icon name="assignment_return" size={16} />
@@ -1101,7 +1129,7 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
                   onChange={(e) => setInviteDept(e.target.value)}
                   className="h-11 w-full rounded-xl bg-surface-container-high px-4 text-sm outline-none focus:ring-2 focus:ring-primary/40"
                 >
-                  <option value="">{t.emp.allDepartments}</option>
+                  <option value="">{isAr ? "اختر القسم..." : "Select department..."}</option>
                   {Object.entries(departments).map(([key, dept]) => (
                     <option key={key} value={key}>{isAr ? dept.ar : dept.en}</option>
                   ))}
@@ -1130,7 +1158,7 @@ export function EmployeesView({ initialSlice }: { initialSlice: EmployeesSlice }
               <Button variant="outline" onClick={() => setInviteOpen(false)}>
                 {t.common.cancel}
               </Button>
-              <Button onClick={handleInviteSubmit} disabled={!inviteName || !inviteEmail || inviteSending}>
+              <Button onClick={handleInviteSubmit} disabled={!inviteName || !inviteEmail || !inviteDept || inviteSending}>
                 {inviteSending ? (
                   <Icon name="progress_activity" size={18} className="animate-spin" />
                 ) : (

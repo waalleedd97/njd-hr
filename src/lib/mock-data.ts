@@ -47,6 +47,8 @@ export interface Employee {
     passport?: UploadedDocument;
   };
   locationRequired?: boolean;
+  /** Saudi-national flag from profiles.is_saudi — drives GOSI (9.75% Saudis only) */
+  isSaudi?: boolean | null;
   /** Supabase UUID of the direct line manager — used by the Org Chart tab */
   managerId?: string | null;
 }

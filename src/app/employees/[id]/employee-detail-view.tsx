@@ -186,10 +186,20 @@ export function EmployeeDetailView({
     if (!supabaseId) return;
     const newValue = !empLocationRequired;
     setEmpLocationRequired(newValue);
-    await supabase
+    const { error } = await supabase
       .from("profiles")
       .update({ location_required: newValue })
       .eq("id", supabaseId);
+    if (error) {
+      // Revert the optimistic toggle and tell the admin it didn't stick.
+      console.error("[employee-detail] location_required update failed:", error);
+      setEmpLocationRequired(!newValue);
+      toast.error(
+        isAr
+          ? "فشل تحديث إعداد الموقع — لم يتم الحفظ"
+          : "Failed to update location setting — not saved"
+      );
+    }
   };
 
   const handleManagerChange = async (newManagerId: string) => {
@@ -345,6 +355,21 @@ export function EmployeeDetailView({
       // employee_number changes immediately. The list page uses the same
       // slice on its next visit.
       router.refresh();
+      // router.refresh() alone doesn't re-seed the hydration hook, so also
+      // patch the visible employee in the store (local-only cache) — the
+      // hero card reads name/department/number from there. Fields the admin
+      // intentionally cleared (trimOrNull → null) keep their previous local
+      // value; the DB still stores NULL and the next full load will match.
+      store.updateEmployee(employee.id, {
+        nameAr: trimOrNull(editForm.fullNameAr) ?? employee.nameAr,
+        nameEn: trimOrNull(editForm.fullNameEn) ?? employee.nameEn,
+        phone: trimOrNull(editForm.phone) ?? employee.phone,
+        nationalId: trimOrNull(editForm.nationalId) ?? employee.nationalId,
+        department: trimOrNull(editForm.department) ?? employee.department,
+        positionAr: trimOrNull(editForm.jobTitleAr) ?? employee.positionAr,
+        positionEn: trimOrNull(editForm.jobTitleEn) ?? employee.positionEn,
+        employeeNumber: trimOrNull(empNum) ?? employee.employeeNumber,
+      });
       toast.success(isAr ? "تم حفظ التعديلات" : "Profile updated");
       setEditOpen(false);
     } catch (err) {
@@ -601,6 +626,13 @@ export function EmployeeDetailView({
               <button
                 onClick={handleLocationToggle}
                 disabled={!userIdMap[employee.email.toLowerCase()]}
+                title={
+                  !userIdMap[employee.email.toLowerCase()]
+                    ? isAr
+                      ? "غير متاح — تعذّر تحميل قائمة المستخدمين"
+                      : "Unavailable — the user list could not be loaded"
+                    : undefined
+                }
                 className={cn(
                   "relative w-12 h-7 rounded-full transition-colors shrink-0",
                   !userIdMap[employee.email.toLowerCase()] &&
@@ -619,6 +651,16 @@ export function EmployeeDetailView({
                 />
               </button>
             </div>
+            {/* The toggle is dead when admin_list_users failed (we never got
+                the auth user_id to target) — say so instead of silently
+                showing a disabled control. */}
+            {!userIdMap[employee.email.toLowerCase()] && (
+              <p className="text-[11px] text-on-surface-variant mt-2">
+                {isAr
+                  ? "التبديل غير متاح حالياً — تعذّر تحميل قائمة المستخدمين من الخادم."
+                  : "Toggle currently unavailable — the user list could not be loaded from the server."}
+              </p>
+            )}
           </div>
 
           {/* Direct manager picker */}

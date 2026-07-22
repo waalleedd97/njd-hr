@@ -38,15 +38,17 @@ export function useLanguage() {
   return ctx;
 }
 
-function getInitialLang(): Language {
-  if (typeof window === "undefined") return "ar";
-  const stored = localStorage.getItem("njd-lang");
-  if (stored === "en" || stored === "ar") return stored;
-  return "ar";
-}
-
 function LanguageProvider({ children }: { children: ReactNode }) {
-  const [lang, setLang] = useState<Language>(getInitialLang);
+  // Always initialize with the SSR default ("ar"); reading localStorage here
+  // would produce a server/client mismatch and break hydration. The stored
+  // value is applied in the mount effect below.
+  const [lang, setLang] = useState<Language>("ar");
+
+  useEffect(() => {
+    const stored = localStorage.getItem("njd-lang");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: localStorage value can only be read post-mount (hydration fix)
+    if (stored === "en" || stored === "ar") setLang(stored);
+  }, []);
 
   const toggleLang = useCallback(() => {
     setLang((prev) => (prev === "ar" ? "en" : "ar"));

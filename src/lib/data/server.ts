@@ -214,11 +214,18 @@ export async function fetchPendingInvitations(): Promise<PendingInvitation[]> {
 export async function fetchLeaveBalances(): Promise<LeaveBalance[]> {
   try {
     const supabase = await createServerClient();
+    // Filter by the current user — mirrors the client-side
+    // refreshLeaveBalances (RLS lets admins read ALL employees' balances,
+    // which would otherwise leak into this slice).
+    const { data: userRes } = await supabase.auth.getUser();
+    const userId = userRes.user?.id;
+    if (!userId) return DEFAULT_BALANCES;
     const currentYear = new Date().getFullYear();
     const { data } = await supabase
       .from("leave_balances")
       .select("*")
-      .eq("year", currentYear);
+      .eq("year", currentYear)
+      .eq("employee_id", userId);
     if (!data || data.length === 0) return DEFAULT_BALANCES;
     return data.map((r: Record<string, unknown>) => ({
       typeKey: r.type_key as string,
@@ -248,6 +255,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
           phone: string;
           department: string;
           job_title_ar: string;
+          job_title_en?: string | null;
+          base_salary?: number | null;
+          housing_allowance?: number | null;
+          other_allowances?: number | null;
+          is_saudi?: boolean | null;
 	          profile_completed: boolean;
 	          manager_id: string | null;
 	          national_id: string | null;
@@ -265,7 +277,7 @@ export async function fetchEmployees(): Promise<Employee[]> {
 	      const res = await supabase
 	        .from("profiles")
 	        .select(
-	          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, profile_completed, manager_id, national_id, employee_number, location_required"
+	          "id, name_ar, name_en, full_name_ar, full_name_en, phone, department, job_title_ar, job_title_en, base_salary, housing_allowance, other_allowances, is_saudi, profile_completed, manager_id, national_id, employee_number, location_required"
 	        );
       if (res.error || !res.data) return [...defaultEmployees];
       users = res.data.map((p: Record<string, unknown>) => ({
@@ -280,6 +292,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
         phone: p.phone as string,
         department: p.department as string,
         job_title_ar: p.job_title_ar as string,
+        job_title_en: (p.job_title_en as string) ?? null,
+        base_salary: (p.base_salary as number) ?? null,
+        housing_allowance: (p.housing_allowance as number) ?? null,
+        other_allowances: (p.other_allowances as number) ?? null,
+        is_saudi: (p.is_saudi as boolean) ?? null,
         profile_completed: p.profile_completed as boolean,
 	        manager_id: (p.manager_id as string) || null,
 	        national_id: (p.national_id as string) || null,
@@ -289,17 +306,52 @@ export async function fetchEmployees(): Promise<Employee[]> {
 	    }
 	    if (!users) return [...defaultEmployees];
 
-	    let locationRequiredById = new Map<string, boolean | undefined>();
+	    // Second-pass profiles query: admin_list_users() does not return the
+	    // salary / job_title_en / is_saudi columns, so fetch them from profiles
+	    // for BOTH paths (RPC and fallback) and merge by id.
+	    interface ProfileExtra {
+	      locationRequired: boolean | undefined;
+	      baseSalary: number | null;
+	      housingAllowance: number | null;
+	      otherAllowances: number | null;
+	      isSaudi: boolean | null;
+	      jobTitleEn: string | null;
+	    }
+	    let profileExtraById = new Map<string, ProfileExtra>();
+	    let onLeaveIds = new Set<string>();
 	    if (users.length > 0) {
-	      const { data: profileLocationRows } = await supabase
-	        .from("profiles")
-	        .select("id, location_required")
-	        .in("id", users.map((u) => u.user_id));
-	      locationRequiredById = new Map(
-	        (profileLocationRows ?? []).map((p: Record<string, unknown>) => [
+	      const todayKsa = getKSADateString();
+	      const [profileRowsRes, onLeaveRes] = await Promise.all([
+	        supabase
+	          .from("profiles")
+	          .select(
+	            "id, location_required, base_salary, housing_allowance, other_allowances, is_saudi, job_title_en"
+	          )
+	          .in("id", users.map((u) => u.user_id)),
+	        supabase
+	          .from("leave_requests")
+	          .select("employee_id")
+	          .eq("status", "approved")
+	          .lte("start_date", todayKsa)
+	          .gte("end_date", todayKsa),
+	      ]);
+	      profileExtraById = new Map(
+	        (profileRowsRes.data ?? []).map((p: Record<string, unknown>) => [
 	          p.id as string,
-	          p.location_required as boolean | undefined,
+	          {
+	            locationRequired: p.location_required as boolean | undefined,
+	            baseSalary: (p.base_salary as number) ?? null,
+	            housingAllowance: (p.housing_allowance as number) ?? null,
+	            otherAllowances: (p.other_allowances as number) ?? null,
+	            isSaudi: (p.is_saudi as boolean) ?? null,
+	            jobTitleEn: (p.job_title_en as string) ?? null,
+	          },
 	        ])
+	      );
+	      onLeaveIds = new Set(
+	        (onLeaveRes.data ?? []).map(
+	          (r: Record<string, unknown>) => r.employee_id as string
+	        )
 	      );
 	    }
 
@@ -313,10 +365,11 @@ export async function fetchEmployees(): Promise<Employee[]> {
       "bg-orange-500",
     ];
 
-    return users.map((u, i): Employee => {
+    return users.map((u, i): Employee & { isSaudi?: boolean } => {
       const firstAr = (u.full_name_ar || u.name_ar || "").trim();
       const firstEn = (u.full_name_en || u.name_en || "").trim();
       const initialsSrc = firstEn || firstAr || u.email || "?";
+      const extra = profileExtraById.get(u.user_id);
       return {
         id: u.user_id,
         employeeNumber: u.employee_number ?? undefined,
@@ -327,16 +380,23 @@ export async function fetchEmployees(): Promise<Employee[]> {
         phone: u.phone || "",
         department: u.department || "",
         positionAr: u.job_title_ar || "",
-        positionEn: "",
+        positionEn: extra?.jobTitleEn ?? u.job_title_en ?? "",
         joinDate: u.created_at ? u.created_at.split("T")[0] : "",
-        status: "active",
-        salary: { basic: 0, housing: 0, transport: 0, other: 0 },
+        status: onLeaveIds.has(u.user_id) ? "on-leave" : "active",
+        // No profiles column for transport allowance — always 0.
+        salary: {
+          basic: extra?.baseSalary ?? u.base_salary ?? 0,
+          housing: extra?.housingAllowance ?? u.housing_allowance ?? 0,
+          transport: 0,
+          other: extra?.otherAllowances ?? u.other_allowances ?? 0,
+        },
         color: colors[i % colors.length],
+	        isSaudi: extra?.isSaudi ?? u.is_saudi ?? undefined,
 	        profileCompleted: u.profile_completed ?? false,
 	        managerId: u.manager_id ?? null,
 	        nationalId: u.national_id ?? undefined,
 	        locationRequired:
-	          locationRequiredById.get(u.user_id) ?? u.location_required ?? true,
+	          extra?.locationRequired ?? u.location_required ?? true,
 	      };
 	    });
   } catch {
@@ -605,8 +665,8 @@ export async function fetchDailyReportsSlice(date: string): Promise<DailyReports
     supabase
       .from("daily_reports")
       .select("*")
-      .eq("date", date)
-      .order("created_at", { ascending: false }),
+      .eq("report_date", date)
+      .order("submitted_at", { ascending: false }),
     fetchTodayAttendance(),
     fetchEmployees(),
   ]);
@@ -631,9 +691,9 @@ export async function fetchDailyReportsSlice(date: string): Promise<DailyReports
       reports.push({
         id: r.id as string,
         userId: r.user_id as string,
-        date: r.date as string,
-        reportText: (r.report_text as string) || "",
-        createdAt: r.created_at as string,
+        date: r.report_date as string,
+        reportText: (r.content as string) || "",
+        createdAt: r.submitted_at as string,
         attachments,
       });
     }

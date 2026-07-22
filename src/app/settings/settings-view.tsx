@@ -120,20 +120,35 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
     if (notifSaving) return;
     setNotifSaving(true);
     try {
-      await savePreferences(user.id, notifPrefs);
+      const result = await savePreferences(user.id, notifPrefs);
+      // savePreferences returns the raw Supabase result — a resolved promise
+      // can still carry an error payload. Treat that as a failure instead of
+      // showing fake success.
+      if (result && typeof result === "object" && "error" in result && result.error) {
+        throw result.error;
+      }
       if (notifPrefs.push_notifications) {
         await requestPushPermission(user.id);
       }
       setNotifSaved(true);
       setTimeout(() => setNotifSaved(false), 2000);
+    } catch (err) {
+      console.error("[settings] save notification prefs failed:", err);
+      toast.error(isAr ? "فشل حفظ إعدادات الإشعارات" : "Failed to save notification settings");
     } finally {
       setNotifSaving(false);
     }
-  }, [user.id, notifPrefs, notifSaving]);
+  }, [user.id, notifPrefs, notifSaving, isAr, toast]);
 
   const [activeTab, setActiveTab] = useState<Tab>("companyInfo");
+  // Attendance enforcement (geofenceConfig in mock-data) uses a 1000m radius,
+  // but the AppSettings default in data-store.tsx is 200 — and data-store is
+  // owned by another change. So the VIEW treats an unset radius as 1000 and
+  // writes 1000 on the first save from this tab, keeping the consumer
+  // contract (settings.geofenceEnabled / settings.geofenceRadius) aligned.
+  const DEFAULT_GEOFENCE_RADIUS = 1000;
   const [geofenceEnabled, setGeofenceEnabled] = useState(settings.geofenceEnabled);
-  const [geofenceRadius, setGeofenceRadius] = useState(settings.geofenceRadius);
+  const [geofenceRadius, setGeofenceRadius] = useState(settings.geofenceRadius ?? DEFAULT_GEOFENCE_RADIUS);
   const [companySaved, setCompanySaved] = useState(false);
   const [geofenceSaved, setGeofenceSaved] = useState(false);
 
@@ -158,7 +173,7 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
   // Sync geofence state when settings change externally
   useEffect(() => {
     setGeofenceEnabled(settings.geofenceEnabled);
-    setGeofenceRadius(settings.geofenceRadius);
+    setGeofenceRadius(settings.geofenceRadius ?? DEFAULT_GEOFENCE_RADIUS);
   }, [settings.geofenceEnabled, settings.geofenceRadius]);
 
   // Company info form state
@@ -178,6 +193,20 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
   const [industry, setIndustry] = useState(
     isAr ? settings.industryAr : settings.industryEn
   );
+
+  // The form holds a single-language copy of the bilingual fields, and the
+  // save handler writes each value to the key matching the CURRENT language.
+  // Without this re-seed, switching language and then saving would write the
+  // previous language's text into the other language's fields.
+  useEffect(() => {
+    setCompanyName(isAr ? settings.companyNameAr : settings.companyNameEn);
+    setCrNumber(settings.crNumber);
+    setAddress(isAr ? settings.addressAr : settings.addressEn);
+    setCity(isAr ? settings.cityAr : settings.cityEn);
+    setCountry(isAr ? settings.countryAr : settings.countryEn);
+    setIndustry(isAr ? settings.industryAr : settings.industryEn);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAr]);
 
   // Department management state
   const [deptDialogOpen, setDeptDialogOpen] = useState(false);
@@ -485,9 +514,13 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
                       });
                       if (ok) {
                         try {
-                          store.removeDepartment(key);
+                          // await works whether the store method stays sync
+                          // or becomes async/throwing once departments persist
+                          // to Supabase.
+                          await store.removeDepartment(key);
                           toast.success(isAr ? "تم حذف القسم" : "Department deleted");
-                        } catch {
+                        } catch (err) {
+                          console.error("[settings] department delete failed:", err);
                           toast.error(isAr ? "فشل حذف القسم" : "Failed to delete department");
                         }
                       }
@@ -1320,6 +1353,16 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
             </div>
           </div>
 
+          {/* Hint: these settings drive the attendance check-in/out enforcement */}
+          <div className="mt-6 p-4 rounded-xl bg-muted/50 flex items-start gap-3">
+            <Info className="w-4 h-4 text-on-surface-variant mt-0.5 shrink-0" />
+            <p className="text-sm text-on-surface-variant">
+              {isAr
+                ? "تُطبَّق هذه الإعدادات على التحقق من الموقع عند تسجيل الحضور والانصراف."
+                : "These settings apply to location checks during attendance check-in and check-out."}
+            </p>
+          </div>
+
           {/* Save Button */}
           <div className="flex justify-end mt-6 pt-4 border-t border-outline-variant/20">
             <Button
@@ -1719,37 +1762,44 @@ export function SettingsView({ initialSlice }: { initialSlice: SettingsSlice }) 
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeptDialogOpen(false)}>{t.common.cancel}</Button>
-            <Button disabled={!deptKey || !deptNameAr || !deptNameEn} onClick={() => {
-              if (deptEditKey) {
-                store.updateDepartment(deptEditKey, deptNameAr, deptNameEn);
-              } else {
-                if (!/^[a-z0-9-]+$/.test(deptKey)) {
-                  addNotification({
-                    type: "system",
-                    titleAr: "معرّف غير صالح",
-                    titleEn: "Invalid Key",
-                    descAr: "يجب أن يحتوي معرّف القسم على أحرف إنجليزية صغيرة، أرقام، وشرطات فقط",
-                    descEn: "Department key must contain only lowercase letters, digits, and hyphens",
-                    time: 0,
-                    read: false,
-                  });
-                  return;
+            <Button disabled={!deptKey || !deptNameAr || !deptNameEn} onClick={async () => {
+              try {
+                if (deptEditKey) {
+                  // await works for both the current sync store method and a
+                  // future async/throwing Supabase-backed one.
+                  await store.updateDepartment(deptEditKey, deptNameAr, deptNameEn);
+                } else {
+                  if (!/^[a-z0-9-]+$/.test(deptKey)) {
+                    addNotification({
+                      type: "system",
+                      titleAr: "معرّف غير صالح",
+                      titleEn: "Invalid Key",
+                      descAr: "يجب أن يحتوي معرّف القسم على أحرف إنجليزية صغيرة، أرقام، وشرطات فقط",
+                      descEn: "Department key must contain only lowercase letters, digits, and hyphens",
+                      time: 0,
+                      read: false,
+                    });
+                    return;
+                  }
+                  if (store.departments[deptKey]) {
+                    addNotification({
+                      type: "system",
+                      titleAr: "معرّف موجود",
+                      titleEn: "Key Exists",
+                      descAr: "هذا المعرّف مستخدم بالفعل",
+                      descEn: "This key is already in use",
+                      time: 0,
+                      read: false,
+                    });
+                    return;
+                  }
+                  await store.addDepartment(deptKey, deptNameAr, deptNameEn);
                 }
-                if (store.departments[deptKey]) {
-                  addNotification({
-                    type: "system",
-                    titleAr: "معرّف موجود",
-                    titleEn: "Key Exists",
-                    descAr: "هذا المعرّف مستخدم بالفعل",
-                    descEn: "This key is already in use",
-                    time: 0,
-                    read: false,
-                  });
-                  return;
-                }
-                store.addDepartment(deptKey, deptNameAr, deptNameEn);
+                setDeptDialogOpen(false);
+              } catch (err) {
+                console.error("[settings] department save failed:", err);
+                toast.error(isAr ? "فشل حفظ القسم" : "Failed to save department");
               }
-              setDeptDialogOpen(false);
             }}>{t.common.save}</Button>
           </DialogFooter>
         </DialogContent>

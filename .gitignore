@@ -39,3 +39,7 @@ next-env.d.ts
 
 # test output
 /test-results/
+
+# mcp-server
+/mcp-server/node_modules/
+/mcp-server/.env

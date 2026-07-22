@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import {
@@ -11,6 +11,8 @@ import {
   penaltyRules,
   earlyDepartureRules,
 } from "@/lib/mock-data";
+import { supabase } from "@/lib/supabase";
+import { WORK_DAY_TARGET_MIN } from "@/lib/constants";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,9 +24,42 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
-import { cn, roundMoney } from "@/lib/utils";
+import { cn, roundMoney, getKSADateString } from "@/lib/utils";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { PayrollSlice } from "@/lib/data/server";
+
+/** Raw row shape from the `attendance` table (check_in/out are TIME columns). */
+interface MonthAttendanceRow {
+  employee_id: string;
+  date: string; // YYYY-MM-DD (KSA calendar day)
+  check_in: string | null; // "HH:MM:SS"
+  check_out: string | null;
+  status: string;
+}
+
+/** "HH:MM[:SS]" → minutes since midnight. */
+function toMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/** Early-departure penalty percentage (bands from earlyDepartureRules: E001–E004). */
+function calcEarlyDeparturePenalty(minutesEarly: number): number {
+  if (minutesEarly <= 0) return 0;
+  const rule = earlyDepartureRules.find(
+    (r) => r.minLate >= 0 && minutesEarly >= r.minLate && minutesEarly <= r.maxLate,
+  );
+  return rule?.percentage ?? 0;
+}
+
+// GOSI calc per Saudi labor law (mirrors employee-detail-view.tsx):
+//   - Subject wage = basic + housing, capped at 45,000 SAR/month
+//   - Employee share 9.75% applies ONLY to Saudi nationals (is_saudi === true);
+//     non-Saudis and unknown (null) pay 0 — the safer no-deduction default.
+//   - Company share: 12.25% of subject wage for Saudis; 2% occupational
+//     hazard only for non-Saudis.
+const GOSI_CAP_SAR = 45000;
+const GOSI_COMPANY_NON_SAUDI_RATE = 0.02;
 
 export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
   useDataHydration(initialSlice);
@@ -34,10 +69,27 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
   const { initialLoaded } = store;
   const { processPayroll, payrollProcessed } = store;
   const employees = store.employees;
-  const todayAttendance = store.todayAttendance;
   const salaryAdvances = store.salaryAdvances;
   const isAr = lang === "ar";
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+
+  // Whole current KSA month's attendance, so monthly payroll reflects every
+  // late/early-departure/absent day — not just today's record.
+  const [monthAttendance, setMonthAttendance] = useState<MonthAttendanceRow[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const todayKsa = getKSADateString();
+      const monthStart = todayKsa.slice(0, 7) + "-01";
+      const { data } = await supabase
+        .from("attendance")
+        .select("employee_id,date,check_in,check_out,status")
+        .gte("date", monthStart)
+        .lte("date", todayKsa);
+      if (!cancelled && data) setMonthAttendance(data as MonthAttendanceRow[]);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const {
     totalPayroll,
@@ -49,45 +101,87 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
     employeePayroll,
     approvedAdvances,
   } = useMemo(() => {
+    const todayKsa = getKSADateString();
     const active = employees.filter((emp) => emp.status !== "inactive");
 
     const payroll = active.map((emp) => {
       const { basic, housing, transport, other } = emp.salary;
       const gross = roundMoney(basic + housing + transport + other);
-      const gosi = roundMoney(basic * GOSI_RATE);
 
+      const gosiSubjectWage = Math.min(basic + housing, GOSI_CAP_SAR);
+      // `isSaudi` lands on Employee with the server-side contract fix; treat
+      // missing/null as not-Saudi (no employee-side deduction) per reference.
+      const isSaudi = (emp as { isSaudi?: boolean | null }).isSaudi === true;
+      const gosi = isSaudi ? roundMoney(gosiSubjectWage * GOSI_RATE) : 0;
+      const gosiCompany = roundMoney(
+        gosiSubjectWage * (isSaudi ? GOSI_RATE_COMPANY : GOSI_COMPANY_NON_SAUDI_RATE),
+      );
+
+      // Penalties summed over the whole month. Remote employees
+      // (locationRequired === false) are fully exempt.
+      const daily = calcDailySalary(emp);
       let penalty = 0;
-      const attendance = todayAttendance.find((a) => a.employeeId === emp.id);
-      if (attendance && emp.locationRequired !== false) {
-        if (attendance.status === "late" && attendance.checkIn) {
-          const [h, m] = attendance.checkIn.split(":").map(Number);
-          const checkInMinutes = h * 60 + m;
-          const minutesLate = checkInMinutes - 600;
-          if (minutesLate > 0) {
-            const percentage = calcPenalty(minutesLate);
-            penalty = roundMoney(calcDailySalary(emp) * percentage / 100);
+      let lateDays = 0;
+      let earlyDays = 0;
+      let absentDays = 0;
+      let missingCheckoutDays = 0;
+      if (emp.locationRequired !== false) {
+        for (const row of monthAttendance) {
+          if (row.employee_id !== emp.id) continue;
+          if (row.status === "on-leave" || row.status === "half-day") continue;
+          if (row.status === "absent") {
+            penalty += daily;
+            absentDays += 1;
+            continue;
           }
-        } else if (attendance.status === "absent") {
-          penalty = roundMoney(calcDailySalary(emp));
+          if (!row.check_in) continue;
+          const inMin = toMinutes(row.check_in);
+          const minutesLate = inMin - 600; // 10:00 AM KSA reference
+          const latePct = calcPenalty(minutesLate);
+          if (latePct > 0) {
+            penalty += daily * latePct / 100;
+            lateDays += 1;
+          }
+          if (row.check_out) {
+            let worked = toMinutes(row.check_out) - inMin;
+            if (worked < 0) worked += 24 * 60; // overnight shift
+            const earlyPct = calcEarlyDeparturePenalty(WORK_DAY_TARGET_MIN - worked);
+            if (earlyPct > 0) {
+              penalty += daily * earlyPct / 100;
+              earlyDays += 1;
+            }
+          } else if (row.date < todayKsa) {
+            // E005: checked in but never checked out on a past day → full-day
+            // deduction. Today is excluded — the workday may still be running.
+            penalty += daily;
+            missingCheckoutDays += 1;
+          }
         }
       }
+      penalty = roundMoney(penalty);
 
-      let advanceDeduction = 0;
-      const advance = salaryAdvances.find((a) => a.employeeId === emp.id && a.status === "approved");
-      if (advance && advance.remainingBalance > 0) {
-        advanceDeduction = roundMoney(advance.monthlyDeduction);
-      }
+      // Deduct EVERY approved advance with a remaining balance, each capped at
+      // min(monthlyDeduction, remainingBalance).
+      const advanceDeduction = roundMoney(
+        salaryAdvances
+          .filter((a) => a.employeeId === emp.id && a.status === "approved" && a.remainingBalance > 0)
+          .reduce((sum, a) => sum + Math.min(a.monthlyDeduction, a.remainingBalance), 0),
+      );
 
       const rawNet = roundMoney(gross - gosi - penalty - advanceDeduction);
       const net = roundMoney(Math.max(rawNet, 0));
-      return { employee: emp, basic, housing, transport, other, gross, gosi, penalty, advanceDeduction, rawNet, net };
+      return {
+        employee: emp, basic, housing, transport, other, gross, gosi, gosiCompany,
+        penalty, lateDays, earlyDays, absentDays, missingCheckoutDays,
+        advanceDeduction, rawNet, net,
+      };
     });
 
     const totalNet = roundMoney(payroll.reduce((sum, p) => sum + p.net, 0));
     const avg = payroll.length > 0 ? roundMoney(totalNet / payroll.length) : 0;
     const allowances = roundMoney(payroll.reduce((sum, p) => sum + p.housing + p.transport + p.other, 0));
     const deductions = roundMoney(payroll.reduce((sum, p) => sum + p.gosi, 0));
-    const gosiCompany = roundMoney(payroll.reduce((sum, p) => sum + roundMoney(p.employee.salary.basic * GOSI_RATE_COMPANY), 0));
+    const gosiCompany = roundMoney(payroll.reduce((sum, p) => sum + p.gosiCompany, 0));
     const penalties = roundMoney(payroll.reduce((sum, p) => sum + p.penalty, 0));
     const approved = salaryAdvances.filter((a) => a.status === "approved");
 
@@ -102,7 +196,7 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
       employeePayroll: payroll,
       approvedAdvances: approved,
     };
-  }, [employees, salaryAdvances, todayAttendance]);
+  }, [employees, salaryAdvances, monthAttendance]);
 
   const visiblePayroll = useMemo(() => {
     if (isAdmin) return employeePayroll;
@@ -142,7 +236,11 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
             className={payrollProcessed ? "!bg-emerald-600 !bg-none" : ""}
           >
             {payrollProcessed ? <Icon name="check_circle" size={20} fill /> : <Icon name="payments" size={20} />}
-            {payrollProcessed ? (isAr ? "✓ تمت المعالجة" : "✓ Processed") : t.pay.runPayroll}
+            {payrollProcessed ? (
+              isAr
+                ? "✓ تمت المعالجة — خُصمت السلف وأُشعر الموظفون"
+                : "✓ Processed — advances deducted & employees notified"
+            ) : t.pay.runPayroll}
           </Button>
         )}
       </div>
@@ -261,21 +359,16 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
             {/* WPS Status */}
             <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm">
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-emerald-500/15">
-                  <Icon name="verified" size={22} fill className="text-emerald-600 dark:text-emerald-400" />
+                <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-surface-container-high">
+                  <Icon name="account_balance" size={22} className="text-on-surface-variant" />
                 </div>
                 <h3 className="font-headline font-bold">{t.pay.wpsStatus}</h3>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-on-surface-variant font-medium">{t.pay.wpsCompliant}</span>
-                  <Badge variant="success">{isAr ? "متوافق" : "Compliant"}</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-on-surface-variant font-medium">{t.pay.lastTransfer}</span>
-                  <span className="text-sm font-bold tabular-nums">2026-03-01</span>
-                </div>
-              </div>
+              <p className="text-sm text-on-surface-variant font-medium">
+                {isAr
+                  ? "تصدير ملف حماية الأجور (WPS) غير متوفر بعد."
+                  : "WPS file export is not yet available."}
+              </p>
             </div>
 
             {/* GOSI Summary */}
@@ -414,7 +507,7 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
 
       {/* Payslip Dialog */}
       <Dialog open={selectedEmployeeId !== null} onOpenChange={(open) => { if (!open) setSelectedEmployeeId(null); }}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md payslip-print-area">
           {selectedPayroll && (
             <>
               <DialogHeader>
@@ -431,7 +524,9 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
                     <p className="font-headline font-bold">
                       {isAr ? selectedPayroll.employee.nameAr : selectedPayroll.employee.nameEn}
                     </p>
-                    <p className="text-xs text-on-surface-variant tabular-nums">{selectedPayroll.employee.id}</p>
+                    <p className="text-xs text-on-surface-variant tabular-nums">
+                      #{selectedPayroll.employee.employeeNumber ?? selectedPayroll.employee.id.slice(0, 8)}
+                    </p>
                   </div>
                 </div>
 
@@ -470,11 +565,27 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
                     </span>
                   </div>
                   {selectedPayroll.penalty > 0 && (
-                    <div className="flex items-center justify-between py-1">
-                      <span className="text-sm text-on-surface-variant font-medium">{t.penalty.title}</span>
-                      <span className="text-sm font-bold text-md-error tabular-nums">
-                        -{formatCurrency(selectedPayroll.penalty)}
-                      </span>
+                    <div className="py-1 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-on-surface-variant font-medium">{t.penalty.title}</span>
+                        <span className="text-sm font-bold text-md-error tabular-nums">
+                          -{formatCurrency(selectedPayroll.penalty)}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant/80 tabular-nums">
+                        {[
+                          selectedPayroll.lateDays > 0 &&
+                            (isAr ? `${selectedPayroll.lateDays} يوم تأخير` : `${selectedPayroll.lateDays} late day(s)`),
+                          selectedPayroll.earlyDays > 0 &&
+                            (isAr ? `${selectedPayroll.earlyDays} انصراف مبكر` : `${selectedPayroll.earlyDays} early departure(s)`),
+                          selectedPayroll.absentDays > 0 &&
+                            (isAr ? `${selectedPayroll.absentDays} يوم غياب` : `${selectedPayroll.absentDays} absent day(s)`),
+                          selectedPayroll.missingCheckoutDays > 0 &&
+                            (isAr
+                              ? `${selectedPayroll.missingCheckoutDays} بدون تسجيل خروج`
+                              : `${selectedPayroll.missingCheckoutDays} missing checkout(s)`),
+                        ].filter(Boolean).join(isAr ? "، " : ", ")}
+                      </p>
                     </div>
                   )}
                   {selectedPayroll.advanceDeduction > 0 && (
@@ -499,7 +610,7 @@ export function PayrollView({ initialSlice }: { initialSlice: PayrollSlice }) {
 	                  </div>
 	                </div>
               </div>
-              <DialogFooter className="gap-2 sm:gap-2">
+              <DialogFooter className="gap-2 sm:gap-2 no-print">
                 <Button variant="outline" onClick={() => window.print()}>
                   <Icon name="print" size={18} />
                   {isAr ? "طباعة" : "Print"}

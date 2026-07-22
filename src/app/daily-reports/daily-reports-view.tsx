@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { supabase } from "@/lib/supabase";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, getKSADateString } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Icon } from "@/components/ui/icon";
@@ -30,20 +30,39 @@ export function DailyReportsView({ initialSlice }: { initialSlice: DailyReportsS
   const store = useData();
   const isAr = lang === "ar";
 
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  // Business date in Asia/Riyadh — never UTC.
+  const [selectedDate, setSelectedDate] = useState(getKSADateString());
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filter, setFilter] = useState<"all" | "submitted" | "missing">("all");
   const [loading, setLoading] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+  // Attendance rows for the SELECTED date (not store.todayAttendance, which
+  // always holds today and showed wrong times next to past dates' reports).
+  const [dateAttendance, setDateAttendance] = useState<
+    Record<string, { checkIn: string | null; checkOut: string | null }>
+  >({});
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
+    setFetchError("");
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("daily_reports")
         .select("*")
         .eq("report_date", selectedDate)
         .order("submitted_at", { ascending: false });
+
+      if (error) {
+        console.error("[daily-reports] reports fetch failed:", error.message);
+        setReports([]);
+        setFetchError(
+          isAr
+            ? "تعذّر تحميل التقارير. تحقق من الاتصال وحاول مرة أخرى."
+            : "Could not load reports. Check your connection and try again."
+        );
+        return;
+      }
 
       const reports = (data || []) as DailyReport[];
       for (const report of reports) {
@@ -61,13 +80,42 @@ export function DailyReportsView({ initialSlice }: { initialSlice: DailyReportsS
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, [selectedDate, isAr]);
 
   useEffect(() => { fetchReports(); }, [fetchReports]);
 
+  // Fetch attendance for the selected date so check-in/out times match the
+  // reports being viewed. Failure here is non-fatal: times render as "—".
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("employee_id, check_in, check_out")
+        .eq("date", selectedDate);
+      if (cancelled) return;
+      if (error) {
+        console.error("[daily-reports] attendance fetch failed:", error.message);
+        setDateAttendance({});
+        return;
+      }
+      const map: Record<string, { checkIn: string | null; checkOut: string | null }> = {};
+      for (const r of (data || []) as Record<string, unknown>[]) {
+        map[r.employee_id as string] = {
+          checkIn: r.check_in ? String(r.check_in).slice(0, 5) : null,
+          checkOut: r.check_out ? String(r.check_out).slice(0, 5) : null,
+        };
+      }
+      setDateAttendance(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate]);
+
   const employeeReports = store.employees.map((emp) => {
     const report = reports.find((r) => r.user_id === emp.id);
-    const attendance = store.todayAttendance.find((a) => a.employeeId === emp.id);
+    const attendance = dateAttendance[emp.id];
     return {
       employee: emp,
       report,
@@ -148,7 +196,20 @@ export function DailyReportsView({ initialSlice }: { initialSlice: DailyReportsS
           </div>
         )}
 
-        {!loading && filtered.length === 0 && (
+        {!loading && fetchError && (
+          <div className="bg-surface-container-lowest rounded-2xl p-12 text-center" role="alert">
+            <Icon name="error" size={48} className="text-md-error opacity-70 mb-3" />
+            <p className="text-sm text-on-surface-variant font-medium">{fetchError}</p>
+            <button
+              onClick={() => void fetchReports()}
+              className="mt-4 px-5 py-2 rounded-full text-sm font-bold gradient-btn shadow-primary-glow"
+            >
+              {isAr ? "إعادة المحاولة" : "Retry"}
+            </button>
+          </div>
+        )}
+
+        {!loading && !fetchError && filtered.length === 0 && (
           <div className="bg-surface-container-lowest rounded-2xl p-12 text-center">
             <Icon name="description" size={48} className="text-on-surface-variant opacity-40 mb-3" />
             <p className="text-sm text-on-surface-variant font-medium">
@@ -157,7 +218,7 @@ export function DailyReportsView({ initialSlice }: { initialSlice: DailyReportsS
           </div>
         )}
 
-        {!loading && filtered.map((er) => {
+        {!loading && !fetchError && filtered.map((er) => {
           const emp = er.employee;
           const name = isAr ? emp.nameAr : emp.nameEn;
           const isExpanded = expandedId === emp.id;

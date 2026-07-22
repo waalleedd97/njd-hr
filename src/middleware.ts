@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(req: NextRequest) {
-  let res = NextResponse.next({ request: req });
+  // Inject pathname as a REQUEST header — a response header is invisible to
+  // Server Components; headers() in the root layout only sees request headers
+  // forwarded via NextResponse.next({ request: { headers } }).
+  const requestHeaders = new Headers(req.headers);
+  requestHeaders.set("x-pathname", req.nextUrl.pathname);
 
-  // Inject pathname header so RSC layouts can read it via headers().
-  res.headers.set("x-pathname", req.nextUrl.pathname);
+  let res = NextResponse.next({ request: { headers: requestHeaders } });
 
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -18,8 +21,19 @@ export async function middleware(req: NextRequest) {
           return req.cookies.getAll();
         },
         setAll(cookiesToSet) {
-          res = NextResponse.next({ request: req });
-          res.headers.set("x-pathname", req.nextUrl.pathname);
+          for (const { name, value } of cookiesToSet) {
+            req.cookies.set(name, value);
+          }
+          // Rebuild the cookie request header so downstream RSCs (layout's
+          // getServerUser) see the refreshed session in this same request.
+          requestHeaders.set(
+            "cookie",
+            req.cookies
+              .getAll()
+              .map((c) => `${c.name}=${c.value}`)
+              .join("; ")
+          );
+          res = NextResponse.next({ request: { headers: requestHeaders } });
           for (const { name, value, options } of cookiesToSet) {
             res.cookies.set(name, value, options);
           }

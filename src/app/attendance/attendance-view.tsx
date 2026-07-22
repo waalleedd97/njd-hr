@@ -22,6 +22,11 @@ import {
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { cn, getKSAHour, getKSADateString, getKSATimeString, formatDate } from "@/lib/utils";
+import {
+  GEOLOCATION_TIMEOUT_MS,
+  DAILY_REPORT_MAX_FILES,
+  DAILY_REPORT_MAX_FILE_SIZE_BYTES,
+} from "@/lib/constants";
 import { supabase } from "@/lib/supabase";
 import { useDataHydration } from "@/lib/hooks/use-data-hydration";
 import type { AttendanceSlice, AttRecord } from "@/lib/data/server";
@@ -240,7 +245,9 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const [rosterRecords, setRosterRecords] = useState<AttRecord[]>([]);
   const [rosterLoading, setRosterLoading] = useState(false);
 
-  const currentUserId = isAdmin ? null : user.id;
+  // Admins track their own attendance like everyone else — no special-casing
+  // (they still get the admin roster/overview tabs on top of the clock UI).
+  const currentUserId = user.id;
   const existingRecord = currentUserId
     ? store.todayAttendance.find((a) => a.employeeId === currentUserId)
     : null;
@@ -259,10 +266,23 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     }
   }, [currentUserId, store.todayAttendance]);
 
-  const [isInsideGeofence, setIsInsideGeofence] = useState(true);
+  // Geofence settings come from the shared store (admin-tunable in Settings);
+  // office coordinates stay pinned to geofenceConfig in mock-data.
+  const geofenceEnabled = store.settings.geofenceEnabled ?? true;
+  const geofenceRadius = store.settings.geofenceRadius ?? 1000;
+
+  // Tri-state geofence status: "unknown" until the async position check
+  // resolves. The clock-in button stays disabled while location is enforced
+  // and the status is not confirmed "inside" — employees can no longer clock
+  // in from anywhere before the check finishes.
+  const [geofenceStatus, setGeofenceStatus] = useState<"unknown" | "inside" | "outside">("unknown");
   const [locationRequired, setLocationRequired] = useState(initialSlice.locationRequired);
   const [locationLoaded, setLocationLoaded] = useState(false);
   const [geolocationDenied, setGeolocationDenied] = useState(false);
+
+  // Location enforcement applies only when BOTH the per-employee flag and the
+  // global geofence toggle are on; otherwise everyone is treated as inside.
+  const locationEnforced = locationRequired && geofenceEnabled;
 
   const fetchFreshLocationRequired = useCallback(async () => {
     try {
@@ -300,30 +320,64 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     void fetchFreshLocationRequired();
   }, [fetchFreshLocationRequired]);
 
+  // Fix: this page's server slice only includes todayAttendance / employees /
+  // attendanceAdjustments, and with seedFromServer the DataProvider skips its
+  // full batch load — so pull the remaining slices client-side. Without these,
+  // the overview counters (pending requests, ready-for-payroll) and the
+  // on-leave derivation below would silently read empty arrays.
+  const { refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances } = store;
   useEffect(() => {
-    if (!locationLoaded || !locationRequired) return;
-    if (!navigator.geolocation) {
-      setGeolocationDenied(true);
-      setIsInsideGeofence(false);
+    void refreshLeaveRequests();
+    if (!isAdmin) return; // the other counters are only rendered for admins
+    void refreshEmployeeRequests();
+    void refreshSalaryAdvances();
+  }, [isAdmin, refreshLeaveRequests, refreshEmployeeRequests, refreshSalaryAdvances]);
+
+  // One-shot position check shared by the mount effect and the clock-in/out
+  // handlers. Never rejects — resolves "outside" when location is unavailable
+  // so each caller decides how strict to be.
+  const verifyPosition = useCallback((): Promise<"inside" | "outside"> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) {
+        setGeolocationDenied(true);
+        resolve("outside");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGeolocationDenied(false);
+          const dist = haversineDistance(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            geofenceConfig.officeLat,
+            geofenceConfig.officeLng
+          );
+          resolve(dist <= geofenceRadius ? "inside" : "outside");
+        },
+        () => {
+          setGeolocationDenied(true);
+          resolve("outside");
+        },
+        { timeout: GEOLOCATION_TIMEOUT_MS }
+      );
+    });
+  }, [geofenceRadius]);
+
+  useEffect(() => {
+    if (!locationLoaded) return;
+    if (!locationEnforced) {
+      // Remote employee or geofence disabled globally: treated as inside.
+      setGeofenceStatus("inside");
       return;
     }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setGeolocationDenied(false);
-        const dist = haversineDistance(
-          pos.coords.latitude,
-          pos.coords.longitude,
-          geofenceConfig.officeLat,
-          geofenceConfig.officeLng
-        );
-        setIsInsideGeofence(dist <= geofenceConfig.radiusMeters);
-      },
-      () => {
-        setGeolocationDenied(true);
-        setIsInsideGeofence(false);
-      }
-    );
-  }, [locationLoaded, locationRequired]);
+    let cancelled = false;
+    void verifyPosition().then((status) => {
+      if (!cancelled) setGeofenceStatus(status);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [locationLoaded, locationEnforced, verifyPosition]);
 
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
   const [adjDate, setAdjDate] = useState("");
@@ -332,6 +386,8 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const [adjOriginalOut, setAdjOriginalOut] = useState("");
   const [adjRequestedOut, setAdjRequestedOut] = useState("");
   const [adjReason, setAdjReason] = useState("");
+  const [adjError, setAdjError] = useState("");
+  const [adjSubmitting, setAdjSubmitting] = useState(false);
 
   const getCurrentTime = () => {
     return getKSATimeString();
@@ -345,11 +401,18 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
 
   const [checkoutOutside, setCheckoutOutside] = useState(false);
   const [checkoutLocationLoading, setCheckoutLocationLoading] = useState(false);
+  // Shown when the clock-out location check fails (timeout/denied): checkout
+  // stays allowed (fail-open) but the user is told location wasn't verified.
+  const [checkoutNotice, setCheckoutNotice] = useState("");
+  const [clockInBusy, setClockInBusy] = useState(false);
+  const [clockError, setClockError] = useState("");
 
   const [reportOpen, setReportOpen] = useState(false);
   const [reportText, setReportText] = useState("");
   const [reportFiles, setReportFiles] = useState<File[]>([]);
   const [reportUploading, setReportUploading] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [fileError, setFileError] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const rosterDateInputRef = useRef<HTMLInputElement>(null);
 
@@ -410,19 +473,52 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   }, [rosterDate, isAdmin, todayDateStr]);
 
   const handleClockIn = async () => {
-    if (tooEarly) return;
-    const freshLocationRequired = await fetchFreshLocationRequired();
-    if (freshLocationRequired && !isInsideGeofence) return;
-    const time = getCurrentTime();
-    setClockedIn(true);
-    setClockInTime(time);
-    setClockOutTime(null);
-    await store.clockIn(time);
+    if (tooEarly || clockInBusy) return;
+    setClockError("");
+    setClockInBusy(true);
+    try {
+      const freshLocationRequired = await fetchFreshLocationRequired();
+      if (freshLocationRequired && geofenceEnabled) {
+        // Re-verify position at click time — never trust the stale
+        // mount-time geofenceStatus for the actual write.
+        const status = await verifyPosition();
+        setGeofenceStatus(status);
+        if (status !== "inside") {
+          setClockError(
+            isAr
+              ? "تعذّر تأكيد وجودك داخل النطاق الجغرافي للمكتب. تحقق من إذن الموقع وحاول مرة أخرى."
+              : "Could not confirm you are inside the office geofence. Check location permission and try again."
+          );
+          return;
+        }
+      }
+      const time = getCurrentTime();
+      // Optimistic UI — reverted below if the Supabase write throws.
+      const prevCheckIn = clockInTime;
+      const prevCheckOut = clockOutTime;
+      setClockedIn(true);
+      setClockInTime(time);
+      setClockOutTime(null);
+      try {
+        await store.clockIn(time);
+      } catch (err) {
+        console.error("[attendance] clock-in failed:", err);
+        setClockedIn(false);
+        setClockInTime(prevCheckIn);
+        setClockOutTime(prevCheckOut);
+        setClockError(
+          isAr ? "فشل تسجيل الحضور. حاول مرة أخرى." : "Clock-in failed. Please try again."
+        );
+      }
+    } finally {
+      setClockInBusy(false);
+    }
   };
 
   const handleClockOut = async () => {
+    setCheckoutNotice("");
     const freshLocationRequired = await fetchFreshLocationRequired();
-    if (freshLocationRequired && navigator.geolocation) {
+    if (freshLocationRequired && geofenceEnabled && navigator.geolocation) {
       setCheckoutLocationLoading(true);
       setCheckoutOutside(false);
       navigator.geolocation.getCurrentPosition(
@@ -431,15 +527,24 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
             pos.coords.latitude, pos.coords.longitude,
             geofenceConfig.officeLat, geofenceConfig.officeLng
           );
-          const outside = dist > geofenceConfig.radiusMeters;
+          const outside = dist > geofenceRadius;
           setCheckoutOutside(outside);
           setCheckoutLocationLoading(false);
           if (!outside) setReportOpen(true);
         },
         () => {
-          setCheckoutOutside(true);
+          // Location unavailable (timeout/denied): fail-open — the daily
+          // report + checkout stay allowed, but tell the user the location
+          // could not be verified.
           setCheckoutLocationLoading(false);
-        }
+          setCheckoutNotice(
+            isAr
+              ? "تعذّر التحقق من موقعك — تم السماح بتسجيل الانصراف بدون تحقق."
+              : "Location could not be verified — check-out allowed without verification."
+          );
+          setReportOpen(true);
+        },
+        { timeout: GEOLOCATION_TIMEOUT_MS }
       );
     } else {
       setCheckoutOutside(false);
@@ -448,49 +553,90 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   };
 
   const handleSubmitReport = async () => {
-    if (!reportText.trim()) return;
+    if (!reportText.trim() || reportUploading) return;
+    setReportError("");
     setReportUploading(true);
 
     const time = getCurrentTime();
     const today = getKSADateString();
     const attachments: { name: string; url: string; type: string }[] = [];
 
-    if (currentUserId && reportFiles.length > 0) {
+    try {
+      // Upload attachments first — a failed upload names the file and aborts
+      // the submit (no silent drops, no partial clock-out).
       for (const file of reportFiles) {
         const path = `${currentUserId}/${today}/${file.name}`;
-        const { data } = await supabase.storage
+        const { data, error } = await supabase.storage
           .from("daily-reports")
           .upload(path, file, { upsert: true });
-        if (data) {
-          attachments.push({ name: file.name, url: data.path, type: file.type });
+        if (error || !data) {
+          console.error("[attendance] attachment upload failed:", file.name, error?.message);
+          setReportError(
+            isAr
+              ? `فشل رفع الملف "${file.name}". حاول مرة أخرى.`
+              : `Failed to upload "${file.name}". Please try again.`
+          );
+          return;
         }
+        attachments.push({ name: file.name, url: data.path, type: file.type });
       }
-    }
 
-    if (currentUserId) {
-      await supabase.from("daily_reports").upsert({
+      // The daily report is mandatory: if the upsert fails, do NOT complete
+      // clock-out — the employee stays clocked in and can retry.
+      const { error: upsertError } = await supabase.from("daily_reports").upsert({
         user_id: currentUserId,
         report_date: today,
         content: reportText,
         attachments,
       }, { onConflict: "user_id,report_date" });
+      if (upsertError) {
+        console.error("[attendance] daily_reports upsert failed:", upsertError.message);
+        setReportError(
+          isAr
+            ? "فشل حفظ التقرير اليومي — لم يتم تسجيل الانصراف. حاول مرة أخرى."
+            : "Failed to save the daily report — check-out was not recorded. Please try again."
+        );
+        return;
+      }
+
+      await store.clockOut(time);
+    } catch (err) {
+      console.error("[attendance] report submit / clock-out failed:", err);
+      setReportError(
+        isAr
+          ? "حدث خطأ أثناء تسجيل الانصراف. حاول مرة أخرى."
+          : "Something went wrong while checking out. Please try again."
+      );
+      return;
+    } finally {
+      setReportUploading(false);
     }
 
     setClockedIn(false);
     setClockOutTime(time);
-    await store.clockOut(time);
 
     setReportOpen(false);
     setReportText("");
     setReportFiles([]);
-    setReportUploading(false);
+    setReportError("");
+    setFileError("");
     setCheckoutOutside(false);
+    setCheckoutNotice("");
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    const valid = files.filter((f) => f.size <= 10 * 1024 * 1024);
-    setReportFiles((prev) => [...prev, ...valid].slice(0, 5));
+    const valid = files.filter((f) => f.size <= DAILY_REPORT_MAX_FILE_SIZE_BYTES);
+    const rejected = files.filter((f) => f.size > DAILY_REPORT_MAX_FILE_SIZE_BYTES);
+    // Surface rejected files instead of silently dropping them.
+    setFileError(
+      rejected.length > 0
+        ? isAr
+          ? `تم تجاوز الحد الأقصى (10MB): ${rejected.map((f) => f.name).join("، ")}`
+          : `Over the 10MB limit: ${rejected.map((f) => f.name).join(", ")}`
+        : ""
+    );
+    setReportFiles((prev) => [...prev, ...valid].slice(0, DAILY_REPORT_MAX_FILES));
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -499,17 +645,46 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   };
 
   const handleAdjustmentSubmit = async () => {
-    await store.submitAdjustment({
-      employeeId: currentUserId || user.id,
-      date: adjDate,
-      originalIn: adjOriginalIn,
-      requestedIn: adjRequestedIn,
-      originalOut: adjOriginalOut,
-      requestedOut: adjRequestedOut,
-      reasonAr: adjReason,
-      reasonEn: adjReason,
-      status: "pending",
-    });
+    if (adjSubmitting) return;
+    setAdjError("");
+    if (!adjDate) {
+      setAdjError(isAr ? "الرجاء اختيار التاريخ." : "Please pick a date.");
+      return;
+    }
+    if (!adjRequestedIn && !adjRequestedOut) {
+      setAdjError(
+        isAr
+          ? "الرجاء إدخال وقت تسجيل حضور أو انصراف مطلوب واحد على الأقل."
+          : "Please enter at least one requested check-in or check-out time."
+      );
+      return;
+    }
+    if (!adjReason.trim()) {
+      setAdjError(isAr ? "الرجاء كتابة سبب التعديل." : "Please provide a reason for the adjustment.");
+      return;
+    }
+    setAdjSubmitting(true);
+    try {
+      await store.submitAdjustment({
+        employeeId: currentUserId,
+        date: adjDate,
+        originalIn: adjOriginalIn,
+        requestedIn: adjRequestedIn,
+        originalOut: adjOriginalOut,
+        requestedOut: adjRequestedOut,
+        reasonAr: adjReason,
+        reasonEn: adjReason,
+        status: "pending",
+      });
+    } catch (err) {
+      console.error("[attendance] adjustment submit failed:", err);
+      setAdjError(
+        isAr ? "فشل إرسال الطلب. حاول مرة أخرى." : "Failed to submit request. Please try again."
+      );
+      return;
+    } finally {
+      setAdjSubmitting(false);
+    }
     setAdjustDialogOpen(false);
     setAdjDate("");
     setAdjOriginalIn("");
@@ -517,6 +692,7 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     setAdjOriginalOut("");
     setAdjRequestedOut("");
     setAdjReason("");
+    setAdjError("");
   };
 
   const filteredRecords = store.todayAttendance.filter((record) => {
@@ -526,10 +702,36 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
     return emp?.department === selectedDept;
   });
 
+  // ── Absent / on-leave derivation (display-side) ──
+  // Nothing in the system ever writes "absent" or "on-leave" attendance rows,
+  // so counting record.status for those would always yield 0. Instead:
+  //  - on-leave = employees with an APPROVED leave request covering the date
+  //  - absent   = only meaningful for PAST dates: a missing record today just
+  //    means "not yet recorded", so today-bound cards/tiles keep absent at 0.
+  //    The admin roster derives per-employee absent/on-leave badges for past
+  //    dates (see the roster table below).
+  const isOnApprovedLeave = (employeeId: string, email: string, date: string) =>
+    store.leaveRequests.some(
+      (r) =>
+        r.status === "approved" &&
+        (r.employeeId === employeeId || r.employeeId === email) &&
+        r.startDate <= date &&
+        r.endDate >= date
+    );
+
+  const scopedEmployees = isAdmin
+    ? selectedDept === "all"
+      ? employees
+      : employees.filter((e) => e.department === selectedDept)
+    : employees.filter((e) => e.id === currentUserId);
+
   const presentCount = filteredRecords.filter((r) => r.status === "present").length;
-  const absentCount = filteredRecords.filter((r) => r.status === "absent").length;
+  // Today-bound: absence can only be determined for past dates (note above).
+  const absentCount = 0;
   const lateCount = filteredRecords.filter((r) => r.status === "late").length;
-  const onLeaveCount = filteredRecords.filter((r) => r.status === "on-leave").length;
+  const onLeaveCount = scopedEmployees.filter((e) =>
+    isOnApprovedLeave(e.id, e.email, todayDateStr)
+  ).length;
 
   const summaryCards = [
     { iconName: "how_to_reg", label: t.att.present, count: presentCount, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/15" },
@@ -540,10 +742,13 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
 
   // ── Overview KPIs (admin only) ──
   const totalEmployees = employees.length;
+  const onLeaveTodayAll = employees.filter((e) =>
+    isOnApprovedLeave(e.id, e.email, todayDateStr)
+  ).length;
   // Employees scheduled today but have no attendance record at all = unscheduled / no-show
   const unscheduledCount = Math.max(
     0,
-    totalEmployees - store.todayAttendance.length - onLeaveCount
+    totalEmployees - store.todayAttendance.length - onLeaveTodayAll
   );
 
   // ── Roster panel data source (admin only) ──
@@ -554,6 +759,15 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   // Mask a stale `rosterLoading=true` flag that may linger when the user
   // switches back to today before a prior fetch resolves.
   const showRosterLoading = !isTodayRoster && rosterLoading;
+  // Past-date absent tally for the roster header: employees with no record
+  // on the selected (past) date who were not on approved leave.
+  const rosterAbsentCount = !isTodayRoster
+    ? employees.filter(
+        (emp) =>
+          !visibleRoster.some((a) => a.employeeId === emp.id) &&
+          !isOnApprovedLeave(emp.id, emp.email, rosterDate)
+      ).length
+    : 0;
   // Cross-feature pending counters
   const pendingAdjustments = store.attendanceAdjustments.filter((a) => a.status === "pending").length;
   const pendingLeaveRequests = store.leaveRequests.filter((r) => r.status === "pending").length;
@@ -562,7 +776,10 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
   const totalPendingActions = pendingAdjustments; // attendance-specific actions awaiting admin
   const readyForPayroll = store.salaryAdvances.filter((a) => a.status === "approved" && a.remainingBalance > 0).length;
 
-  const geofenceDisabled = locationRequired && !isInsideGeofence;
+  // Clock-in stays blocked while location is enforced and the geofence check
+  // is unresolved ("unknown") or confirmed "outside".
+  const clockInDisabled =
+    tooEarly || clockInBusy || (locationEnforced && geofenceStatus !== "inside");
 
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-8">
@@ -691,6 +908,9 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                 </div>
                 <span className="text-xs text-on-surface-variant tabular-nums">
                   {visiblePresentCount}/{employees.length} {isAr ? "حاضر" : "present"}
+                  {!isTodayRoster && rosterAbsentCount > 0 && (
+                    <> · {rosterAbsentCount} {isAr ? "غائب" : "absent"}</>
+                  )}
                 </span>
               </div>
               {/* Toolbar row: single clean date-picker pill on the start,
@@ -805,10 +1025,16 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                                 <Badge variant={statusBadgeVariant[status] ?? "secondary"}>
                                   {statusLabelFn[status]?.(t) ?? status}
                                 </Badge>
-                              ) : (
+                              ) : isOnApprovedLeave(emp.id, emp.email, rosterDate) ? (
+                                // No attendance row, but approved leave covers this date
+                                <Badge variant="info">{t.att.onLeave}</Badge>
+                              ) : isTodayRoster ? (
                                 <Badge variant="warning">
                                   {isAr ? "لم يسجّل" : "Not checked in"}
                                 </Badge>
+                              ) : (
+                                // Past date + no record + no approved leave = absent
+                                <Badge variant="destructive">{t.att.absent}</Badge>
                               )}
                             </td>
                           </tr>
@@ -910,16 +1136,20 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
             ) : !clockedIn ? (
               <button
                 onClick={handleClockIn}
-                disabled={geofenceDisabled || tooEarly}
+                disabled={clockInDisabled}
                 className={cn(
                   "w-40 h-40 rounded-full flex flex-col items-center justify-center gap-1.5 font-bold text-lg transition-all duration-300 active:scale-95",
-                  (geofenceDisabled || tooEarly)
+                  clockInDisabled
                     ? "bg-surface-container-high text-on-surface-variant cursor-not-allowed"
                     : "bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-xl shadow-emerald-500/40 hover:shadow-2xl hover:shadow-emerald-500/50 hover:-translate-y-1"
                 )}
               >
-                <Icon name="schedule" size={36} fill />
-                {t.clock.clockIn}
+                {clockInBusy ? (
+                  <Icon name="progress_activity" size={36} className="animate-spin" />
+                ) : (
+                  <Icon name="schedule" size={36} fill />
+                )}
+                {clockInBusy ? t.clock.verifyingLocation : t.clock.clockIn}
               </button>
             ) : (
               <button
@@ -947,10 +1177,22 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                 {isAr ? "وقت تسجيل الحضور يبدأ من الساعة 6:00 صباحاً" : "Check-in starts at 6:00 AM"}
               </p>
             )}
-            {!tooEarly && !clockedIn && geofenceDisabled && (
+            {!tooEarly && !clockedIn && !clockInBusy && locationEnforced && geofenceStatus === "unknown" && (
+              <p className="text-xs text-on-surface-variant font-bold flex items-center gap-1">
+                <Icon name="progress_activity" size={14} className="animate-spin" />
+                {isAr ? "جارٍ التحقق من موقعك…" : "Verifying your location…"}
+              </p>
+            )}
+            {!tooEarly && !clockedIn && locationEnforced && geofenceStatus === "outside" && (
               <p className="text-xs text-md-error font-bold flex items-center gap-1">
                 <Icon name="location_off" size={14} />
                 {t.clock.geofenceRequired}
+              </p>
+            )}
+            {clockError && (
+              <p className="text-xs text-md-error font-bold flex items-center gap-1 max-w-[320px] text-center" role="alert">
+                <Icon name="error" size={14} />
+                {clockError}
               </p>
             )}
             {clockedIn && checkoutOutside && (
@@ -959,7 +1201,13 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                 {t.clock.geofenceRequired}
               </p>
             )}
-            {locationRequired && geolocationDenied && (
+            {checkoutNotice && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1.5 max-w-[300px] text-center" role="status">
+                <Icon name="warning" size={14} fill />
+                {checkoutNotice}
+              </p>
+            )}
+            {locationEnforced && geolocationDenied && (
               <p className="text-xs text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1.5 max-w-[300px] text-center" role="alert">
                 <Icon name="warning" size={14} fill />
                 {isAr
@@ -990,14 +1238,28 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                     <Icon name="my_location" size={18} className="text-primary" />
                     <span className="text-sm font-bold">{t.clock.officeLocation}</span>
                   </div>
-                  <Badge variant={isInsideGeofence ? "success" : "destructive"}>
-                    {isInsideGeofence ? t.clock.insideGeofence : t.clock.outsideGeofence}
+                  <Badge
+                    variant={
+                      geofenceStatus === "inside"
+                        ? "success"
+                        : geofenceStatus === "outside"
+                          ? "destructive"
+                          : "secondary"
+                    }
+                  >
+                    {geofenceStatus === "inside"
+                      ? t.clock.insideGeofence
+                      : geofenceStatus === "outside"
+                        ? t.clock.outsideGeofence
+                        : isAr
+                          ? "جارٍ التحقق…"
+                          : "Checking…"}
                   </Badge>
                 </div>
                 <div className="text-xs text-on-surface-variant space-y-1">
                   <p className="font-medium">{isAr ? geofenceConfig.officeNameAr : geofenceConfig.officeNameEn}</p>
                   <p>
-                    {t.clock.radius}: {geofenceConfig.radiusMeters >= 1000 ? `${geofenceConfig.radiusMeters / 1000} ${isAr ? "كم" : "km"}` : `${geofenceConfig.radiusMeters} ${t.clock.meters}`}
+                    {t.clock.radius}: {geofenceRadius >= 1000 ? `${geofenceRadius / 1000} ${isAr ? "كم" : "km"}` : `${geofenceRadius} ${t.clock.meters}`}
                   </p>
                 </div>
               </div>
@@ -1006,7 +1268,7 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
             <Button
               variant="outline"
               size="lg"
-              onClick={() => setAdjustDialogOpen(true)}
+              onClick={() => { setAdjError(""); setAdjustDialogOpen(true); }}
               className="w-full"
             >
               <Icon name="edit_note" size={20} />
@@ -1230,7 +1492,7 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
       )}
 
       {/* ── Adjustment Dialog ─────────────────────────── */}
-      <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
+      <Dialog open={adjustDialogOpen} onOpenChange={(v) => { setAdjustDialogOpen(v); if (!v) setAdjError(""); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t.clock.requestAdjustment}</DialogTitle>
@@ -1269,14 +1531,23 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                 className="w-full rounded-xl bg-surface-container-high px-4 py-3 text-sm outline-none resize-none focus:ring-2 focus:ring-primary/40"
               />
             </div>
+
+            {adjError && (
+              <p className="text-xs text-md-error font-bold flex items-center gap-1" role="alert">
+                <Icon name="error" size={14} />
+                {adjError}
+              </p>
+            )}
           </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setAdjustDialogOpen(false)}>
               {t.common.cancel}
             </Button>
-            <Button onClick={handleAdjustmentSubmit}>
-              {t.common.submit}
+            <Button onClick={handleAdjustmentSubmit} disabled={adjSubmitting}>
+              {adjSubmitting
+                ? isAr ? "جارٍ الإرسال…" : "Submitting…"
+                : t.common.submit}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1353,7 +1624,20 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
               <p className="text-xs text-on-surface-variant mt-2">
                 {isAr ? "الحد الأقصى: 10MB لكل ملف" : "Max: 10MB per file"}
               </p>
+              {fileError && (
+                <p className="text-xs text-md-error font-bold flex items-center gap-1 mt-2" role="alert">
+                  <Icon name="error" size={14} />
+                  {fileError}
+                </p>
+              )}
             </div>
+
+            {reportError && (
+              <p className="text-xs text-md-error font-bold flex items-center gap-1" role="alert">
+                <Icon name="error" size={14} />
+                {reportError}
+              </p>
+            )}
           </div>
 
           <DialogFooter>
@@ -1363,7 +1647,10 @@ export function AttendanceView({ initialSlice }: { initialSlice: AttendanceSlice
                 setReportOpen(false);
                 setReportText("");
                 setReportFiles([]);
+                setReportError("");
+                setFileError("");
                 setCheckoutOutside(false);
+                setCheckoutNotice("");
               }}
             >
               {t.common.cancel}

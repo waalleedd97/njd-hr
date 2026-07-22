@@ -329,3 +329,15 @@ NJD HR/
 | `src/app/layout.tsx` | Root layout: Tajawal font, loading screen, theme script, cookie sync |
 | `src/app/globals.css` | CSS variables (light/dark), NJD design tokens, custom utility classes |
 | `supabase/schema.sql` | Full database schema (reference — actual schema lives in Landing project) |
+
+## MCP Server (`mcp-server/`)
+
+A standalone stdio MCP server (plain ESM Node.js, no build step) that lets an AI assistant fully manage the HR system — read attendance/leaves/requests/payroll/invitations and perform all admin write operations. It connects directly to the production Supabase project with the service-role key and sends email via Resend.
+
+- **Isolated**: own `package.json` — never add its deps to the root `package.json`.
+- **Env**: loads `.env.local` from the repo root (requires `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`; optional `RESEND_FROM_EMAIL`).
+- **Setup**: `cd mcp-server && npm install`
+- **Test**: `npm test` — spawns the server over stdio, lists the 28 registered tools, and calls `get_dashboard_stats` + `list_employees` against the live database.
+- **Register with Claude Code**: `claude mcp add njd-hr -- node "/Users/waleed97/Downloads/مشاريع ومجلدات/NJD HR/mcp-server/index.js"` (Claude Desktop config snippet in `mcp-server/README.md`).
+- **Structure**: `index.js` (server + transport), `lib/` (supabase/resend clients, KSA timezone + penalty helpers, notifications), `tools/` (one module per domain, each exporting `register(server, ctx)`).
+- **Note**: the `admin_list_users()` RPC is granted to `authenticated` only and rejects the service-role PostgREST role — the server resolves users via `supabase.auth.admin.listUsers()` + `profiles` + `user_roles` instead (`mcp-server/lib/helpers.js`).

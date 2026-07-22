@@ -36,6 +36,27 @@ export const getServerUser = cache(async (): Promise<ServerSession | null> => {
   const email = authUser.email!;
   const userId = authUser.id;
 
+  // App access gate: has_app_access(uid, "hr") — redirect on explicit false.
+  // Fail-open on RPC error so a transient failure doesn't lock everyone out.
+  // NB: redirect() throws NEXT_REDIRECT, so it must stay outside try/catch.
+  let hasAccess: boolean | null = null;
+  let accessErr: unknown = null;
+  try {
+    const res = await supabase.rpc("has_app_access", { uid: userId, app: "hr" });
+    hasAccess = res.data as boolean | null;
+    accessErr = res.error;
+  } catch (err) {
+    accessErr = err;
+  }
+  if (accessErr) {
+    console.error(
+      "[auth] has_app_access RPC failed (fail-open):",
+      accessErr instanceof Error ? accessErr.message : accessErr
+    );
+  } else if (hasAccess === false) {
+    redirect(LANDING_URL);
+  }
+
   const [roleRes, profRes] = await Promise.allSettled([
     supabase.rpc("get_user_role", { uid: userId }),
     supabase

@@ -415,3 +415,27 @@ html:not(.fonts-loaded) .material-symbols-outlined {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--md-outline);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Print — payslip only (hides navbar, sidebar, tables)
+   ═══════════════════════════════════════════════════════════ */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .payslip-print-area,
+  .payslip-print-area * {
+    visibility: visible;
+  }
+  .payslip-print-area {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    box-shadow: none;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

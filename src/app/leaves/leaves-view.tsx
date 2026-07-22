@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useLanguage, useAuth } from "@/components/providers";
 import { useData } from "@/lib/data-store";
 import { saudiHolidays, type Employee } from "@/lib/mock-data";
-import { formatDate } from "@/lib/utils";
+import { formatDate, getKSADateString } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +32,8 @@ const FALLBACK_LEAVE_BALANCES: LeaveBalance[] = [
   { typeKey: "annual", total: 21, used: 0, remaining: 21 },
   { typeKey: "sick", total: 10, used: 0, remaining: 10 },
   { typeKey: "unpaid", total: 30, used: 0, remaining: 30 },
+  { typeKey: "marriage", total: 7, used: 0, remaining: 7 },
+  { typeKey: "paternity", total: 3, used: 0, remaining: 3 },
 ];
 
 /**
@@ -39,11 +41,19 @@ const FALLBACK_LEAVE_BALANCES: LeaveBalance[] = [
  * baseline list above. Fetched rows override the matching default by
  * typeKey; missing types stay at their default. This way an employee who
  * has only ever taken a sick day still shows a 21-day annual card and a
- * 30-day unpaid card instead of disappearing them.
+ * 30-day unpaid card instead of disappearing them. Any fetched type NOT in
+ * the fallback list (e.g. a custom type written directly to the DB) is
+ * preserved as-is so it never silently drops out of the UI.
  */
 function mergeBalancesWithFallback(fetched: LeaveBalance[]): LeaveBalance[] {
   const byType = new Map(fetched.map((b) => [b.typeKey, b]));
-  return FALLBACK_LEAVE_BALANCES.map((def) => byType.get(def.typeKey) ?? def);
+  const merged = FALLBACK_LEAVE_BALANCES.map((def) => byType.get(def.typeKey) ?? def);
+  for (const b of fetched) {
+    if (!FALLBACK_LEAVE_BALANCES.some((def) => def.typeKey === b.typeKey)) {
+      merged.push(b);
+    }
+  }
+  return merged;
 }
 
 // ---------- constants ----------
@@ -98,6 +108,14 @@ const statusBadgeVariant: Record<string, "warning" | "success" | "destructive" |
 
 function isSameDay(a: Date, b: Date) {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** Local YYYY-MM-DD for a Date — unlike toISOString() this never shifts the
+ *  day for UTC+3 (KSA) users, where local midnight is still the previous UTC day. */
+function localDateStr(d: Date) {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 function isDateInRange(date: Date, start: string, end: string) {
@@ -421,7 +439,7 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
   // the future but a check-in exists for today (cheap heuristic; precise
   // detection would query attendance.date > today which we don't have here).
   const earlyResumptionCandidates = useMemo(() => {
-    const todayStr = new Date().toISOString().split("T")[0];
+    const todayStr = getKSADateString();
     return approvedLeaves
       .filter((lr) => lr.endDate > todayStr)
       .slice(0, 4)
@@ -452,7 +470,14 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
 
     const start = new Date(formStart + "T00:00:00");
     const end = new Date(formEnd + "T00:00:00");
-    if (end < start) return;
+    if (end < start) {
+      setSubmitError(
+        isAr
+          ? "تاريخ النهاية لا يمكن أن يكون قبل تاريخ البداية"
+          : "End date cannot be before start date"
+      );
+      return;
+    }
     const diffMs = end.getTime() - start.getTime();
     const days = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
 
@@ -1186,7 +1211,7 @@ export function LeavesView({ initialSlice, initialTab }: { initialSlice: LeavesS
                   {overlaps.slice(0, 8).map((o) => (
                     <li key={o.date.getTime()} className="text-xs">
                       <p className="font-bold tabular-nums text-amber-700 dark:text-amber-400">
-                        {fmtDate(o.date.toISOString().split("T")[0], lang)}
+                        {fmtDate(localDateStr(o.date), lang)}
                       </p>
                       <p className="text-on-surface-variant text-[11px] mt-0.5">
                         {o.employees.length} {isAr ? "موظف في إجازة" : "employees on leave"}

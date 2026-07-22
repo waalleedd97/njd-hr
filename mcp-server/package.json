@@ -1,0 +1,19 @@
+{
+  "name": "njd-hr-mcp-server",
+  "version": "1.0.0",
+  "description": "MCP server for NJD HR — full admin management of attendance, leaves, requests, payroll, invitations via Supabase + Resend",
+  "type": "module",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node test.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@supabase/supabase-js": "^2.99.1",
+    "dotenv": "^16.6.1",
+    "resend": "^6.9.3",
+    "zod": "^3.25.0"
+  }
+}
