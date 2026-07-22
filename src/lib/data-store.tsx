@@ -1828,17 +1828,21 @@ export function DataProvider({
     async (id: string, data: Partial<Employee>) => {
       const fullNameAr = data.fullNameAr || data.nameAr || "";
       const fullNameEn = data.fullNameEn || data.nameEn || "";
+      // Upsert (not update): employees registered before the
+      // handle_new_user trigger seeded profiles may have NO row yet —
+      // a plain UPDATE would match 0 rows and silently "succeed",
+      // leaving profile_completed false forever.
       const { error } = await supabase
         .from("profiles")
-        .update({
+        .upsert({
+          id,
           name_ar: data.nameAr || fullNameAr,
           name_en: data.nameEn || fullNameEn,
           full_name_ar: fullNameAr,
           full_name_en: fullNameEn,
           phone: data.phone || data.mobileNumber || null,
           profile_completed: true,
-        })
-        .eq("id", id);
+        });
 
       if (error) throw error;
 

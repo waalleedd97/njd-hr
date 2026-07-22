@@ -98,8 +98,13 @@ export default function CompleteProfilePage() {
     fullNameAr && fullNameEn && maritalStatus && dateOfBirth && mobileNumber &&
     nationalId && bankName && iban && salary && nationality;
 
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
   const handleSubmit = async () => {
-    if (!employeeId || !requiredFilled) return;
+    if (!employeeId || !requiredFilled || submitting) return;
+    setSubmitting(true);
+    setSubmitError("");
     try {
       await store.completeProfile(employeeId, {
         fullNameAr,
@@ -121,6 +126,12 @@ export default function CompleteProfilePage() {
       window.location.href = "/";
     } catch (error) {
       console.error("[HR] profile completion failed:", error);
+      setSubmitError(
+        isAr
+          ? "تعذر حفظ البيانات — تحقق من اتصالك وحاول مرة أخرى"
+          : "Could not save your data — check your connection and try again"
+      );
+      setSubmitting(false);
     }
   };
 
@@ -272,10 +283,13 @@ export default function CompleteProfilePage() {
       </div>
 
       {/* Submit */}
-      <div className="flex justify-end">
-        <Button size="lg" disabled={!requiredFilled} onClick={handleSubmit}>
+      <div className="flex items-center justify-end gap-4">
+        {submitError && (
+          <p role="alert" className="text-sm font-bold text-red-500">{submitError}</p>
+        )}
+        <Button size="lg" disabled={!requiredFilled || submitting} onClick={handleSubmit}>
           <Icon name="check_circle" size={20} fill />
-          {t.profile.completeProfile}
+          {submitting ? (isAr ? "جاري الحفظ..." : "Saving...") : t.profile.completeProfile}
         </Button>
       </div>
     </div>
