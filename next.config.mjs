@@ -3,8 +3,25 @@ import { dirname } from "node:path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Supabase project host for CSP (must match NEXT_PUBLIC_SUPABASE_URL host)
-const SUPABASE_HOSTS = "https://*.supabase.co wss://*.supabase.co";
+// Supabase project host for CSP (must match NEXT_PUBLIC_SUPABASE_URL host).
+// Hosted projects are covered by the *.supabase.co wildcard; a self-hosted
+// backend (e.g. db.njd-services.net) must be added explicitly or every
+// client-side fetch/websocket gets blocked by the browser.
+function resolveSupabaseHosts() {
+  const hosted = "https://*.supabase.co wss://*.supabase.co";
+  try {
+    const u = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+    if (u.host && !u.host.endsWith("supabase.co")) {
+      return `${hosted} https://${u.host} wss://${u.host}`;
+    }
+  } catch {
+    // env unset or malformed — fall back to hosted wildcard only
+  }
+  return hosted;
+}
+const SUPABASE_HOSTS = resolveSupabaseHosts();
+// Host used for storage files (signed URLs) in img-src
+const SUPABASE_IMG_HOSTS = SUPABASE_HOSTS.split(" ").filter((h) => h.startsWith("https://")).join(" ");
 // Landing-Page origins are intentionally NOT in the CSP allow-list: the navbar
 // web component is vendored locally at public/njd-navbar.js and the logo is
 // served from public/logo.png. Keeping the allow-list empty removes a whole
@@ -26,7 +43,7 @@ const csp = [
   `script-src 'self' 'unsafe-inline'`,
   `style-src 'self' 'unsafe-inline' ${FONTS_ORIGINS}`,
   `font-src 'self' ${FONTS_ORIGINS}`,
-  `img-src 'self' data: blob: https://*.supabase.co`,
+  `img-src 'self' data: blob: ${SUPABASE_IMG_HOSTS}`,
   `connect-src 'self' ${SUPABASE_HOSTS} ${SENTRY_HOST}`.trim(),
   `frame-ancestors 'none'`,
   `form-action 'self'`,
