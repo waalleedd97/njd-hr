@@ -37,7 +37,7 @@ All three apps share authentication, theming, language, and the njd-navbar web c
 
 ## Supabase Configuration
 
-Auth and all shared tables live in the **Supabase Landing project** (`iauulqfgrbegwcnfatmx`). This HR app connects to that same project for everything:
+Auth and all shared tables live in the **self-hosted Supabase** instance on the NJD Hetzner server (`db.njd-services.net`, Docker container `supabase-db` on `njd-services-prod`). This HR app connects to it for everything:
 
 - **Auth**: Handled entirely by the Landing Page. HR never renders a login form — unauthenticated users are redirected to `njd-services.net`.
 - **Shared tables**: `profiles`, `user_roles`, `app_access`, `departments`, `notifications`, `daily_reports`
@@ -220,7 +220,7 @@ Dialog/Sheet headers include `pe-8` / `pe-12` padding to prevent overlap with cl
 ## Strict Rules
 
 1. **Western Arabic numerals ONLY** (0-9). NEVER use Eastern Arabic numerals (٠١٢٣٤٥٦٧٨٩) anywhere in the codebase. Use locale `ar-SA-u-nu-latn` for Arabic number formatting.
-2. **All SQL migrations** run in Supabase Landing project (`iauulqfgrbegwcnfatmx`), not locally.
+2. **All SQL migrations** run on the self-hosted Supabase (`db.njd-services.net`, container `supabase-db` on the Hetzner server), NOT the old Supabase Cloud project `iauulqfgrbegwcnfatmx` (paused/unused). Apply via SSH: `ssh -i ~/.ssh/njd-hetzner root@167.233.196.52 'docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1' < supabase/migrations/XXX.sql`
 3. **Edge Functions** deploy via: `cd '/Users/waleed97/Downloads/NJD Services Landing Page' && npx supabase functions deploy [name]`
 4. **njd-navbar.js** is the single source of truth for the navbar. Do NOT create a local navbar component.
 5. **Profile page** lives in Landing Page (`njd-services.net/#profile`). Do NOT build a local profile page. The `/profile/complete` route in this repo is only for first-time profile completion of invited employees.
@@ -258,7 +258,7 @@ NJD HR/
 │   │   ├── api/invite/route.ts     # POST — send invitation email via Resend
 │   │   ├── attendance/page.tsx     # Clock in/out, geofence, daily report, adjustments
 │   │   ├── daily-reports/page.tsx  # Admin: view all employee daily reports by date
-│   │   ├── employees/page.tsx      # Admin: employee list, profiles, invitations
+│   │   ├── employees/page.tsx      # Admin: employee list, profiles, invitations; [id]/ detail page (profile, salary, official documents)
 │   │   ├── leaves/page.tsx         # Leave balances, requests, team calendar
 │   │   ├── payroll/page.tsx        # Payroll table, GOSI, WPS, advances, payslips
 │   │   ├── reports/page.tsx        # Admin: workforce analytics
@@ -304,9 +304,9 @@ NJD HR/
 │       ├── supabase.ts             # Supabase client singleton
 │       └── utils.ts                # cn(), getLocale(), formatDate(), formatNumber()
 ├── supabase/
-│   ├── schema.sql                  # Full DB schema (reference only — runs in Landing project)
+│   ├── schema.sql                  # Full DB schema (reference only — runs on self-hosted Supabase)
 │   └── migrations/
-│       └── 003_daily_reports.sql   # Daily reports table + storage bucket + RLS
+│       └── 003_daily_reports.sql   # Daily reports table + storage bucket + RLS (018_employee_documents.sql adds the official-documents table + bucket)
 ├── tailwind.config.ts
 ├── next.config.mjs
 ├── tsconfig.json
@@ -328,7 +328,7 @@ NJD HR/
 | `src/components/layout/app-shell.tsx` | Main layout: njd-navbar bridge, sidebar, route protection |
 | `src/app/layout.tsx` | Root layout: Tajawal font, loading screen, theme script, cookie sync |
 | `src/app/globals.css` | CSS variables (light/dark), NJD design tokens, custom utility classes |
-| `supabase/schema.sql` | Full database schema (reference — actual schema lives in Landing project) |
+| `supabase/schema.sql` | Full database schema (reference — actual schema lives on the self-hosted Supabase) |
 
 ## MCP Server (`mcp-server/`)
 

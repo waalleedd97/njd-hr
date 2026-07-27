@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLanguage, useAuth } from "@/components/providers";
@@ -29,6 +29,34 @@ const statusBadgeVariant: Record<string, "success" | "warning" | "destructive"> 
   "on-leave": "warning",
   inactive: "destructive",
 };
+
+// ── Official employee documents ──────────────────────────────────────
+// One file per doc_type, stored in the private `employee-documents`
+// bucket under {employee_id}/{doc_type}/ and tracked in the
+// employee_documents table (unique per employee + type). Passport is
+// only relevant for non-Saudi employees, hence the `nonSaudiOnly` flag.
+const DOC_TYPES = [
+  { key: "cv", ar: "السيرة الذاتية", en: "CV / Résumé", icon: "description" },
+  { key: "degree", ar: "المؤهل الدراسي", en: "Degree Certificate", icon: "school" },
+  { key: "iban", ar: "شهادة الآيبان (البنك)", en: "IBAN Certificate", icon: "account_balance" },
+  { key: "national_id", ar: "الهوية الوطنية / الإقامة", en: "National ID / Iqama", icon: "badge" },
+  { key: "passport", ar: "جواز السفر (لغير السعوديين)", en: "Passport (non-Saudis)", icon: "public" },
+  { key: "qiwa_contract", ar: "عقد العمل (قوى)", en: "Work Contract (Qiwa)", icon: "article" },
+  { key: "national_address", ar: "العنوان الوطني", en: "National Address", icon: "location_on" },
+] as const;
+type DocType = (typeof DOC_TYPES)[number]["key"];
+
+type EmpDoc = {
+  id: string;
+  doc_type: DocType;
+  file_name: string;
+  file_path: string;
+  file_size: number | null;
+  created_at: string;
+};
+
+const DOC_ACCEPT = "image/*,.pdf";
+const DOC_MAX_BYTES = 10 * 1024 * 1024; // 10MB, same cap as daily-report attachments
 
 export function EmployeeDetailView({
   initialSlice,
@@ -85,6 +113,15 @@ export function EmployeeDetailView({
     startDate: string | null;
   };
   const [profileExtras, setProfileExtras] = useState<ProfileExtras | null>(null);
+
+  // ── Official documents state ───────────────────────────────────────
+  // Fetched per-employee from employee_documents; uploads go to the
+  // private `employee-documents` bucket. `docBusy` holds the doc_type
+  // currently uploading/replacing/deleting so only that row spins.
+  const [docs, setDocs] = useState<EmpDoc[]>([]);
+  const [docBusy, setDocBusy] = useState<DocType | null>(null);
+  const docInputRef = useRef<HTMLInputElement>(null);
+  const pendingDocType = useRef<DocType | null>(null);
 
   // ── Edit profile dialog state ──────────────────────────────────────
   // One unified form covering every editable column. Opened from a
@@ -179,6 +216,123 @@ export function EmployeeDetailView({
         });
       });
   }, [employee, userIdMap]);
+
+  // Load the employee's official documents. Same table the storage bucket
+  // mirrors; a missing table (migration not yet applied) is logged, not
+  // fatal — the card just shows every type as "not uploaded".
+  useEffect(() => {
+    if (!employee) return;
+    setDocs([]);
+    const supabaseId = userIdMap[employee.email.toLowerCase()] || employee.id;
+    if (!supabaseId) return;
+    supabase
+      .from("employee_documents")
+      .select("id, doc_type, file_name, file_path, file_size, created_at")
+      .eq("employee_id", supabaseId)
+      .then(({ data, error }: { data: EmpDoc[] | null; error: { message: string } | null }) => {
+        if (error) {
+          console.error("[employee-detail] documents fetch failed:", error.message);
+          return;
+        }
+        setDocs(data ?? []);
+      });
+  }, [employee, userIdMap]);
+
+  // Opens the single hidden file input, remembering which doc_type the
+  // click came from so handleDocFile knows what to label the upload.
+  const pickDoc = (type: DocType) => {
+    pendingDocType.current = type;
+    docInputRef.current?.click();
+  };
+
+  const handleDocFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    const type = pendingDocType.current;
+    if (!file || !type || !employee || docBusy) return;
+    if (file.size > DOC_MAX_BYTES) {
+      toast.error(
+        isAr ? "حجم الملف يتجاوز 10 ميجابايت" : "File exceeds the 10MB limit"
+      );
+      return;
+    }
+    const supabaseId = userIdMap[employee.email.toLowerCase()] || employee.id;
+    setDocBusy(type);
+    try {
+      // Strip characters Supabase Storage keys dislike.
+      const safeName = file.name.replace(/[^\w.\-؀-ۿ ]/g, "_");
+      const path = `${supabaseId}/${type}/${Date.now()}-${safeName}`;
+      const { error: upErr } = await supabase.storage
+        .from("employee-documents")
+        .upload(path, file);
+      if (upErr) throw upErr;
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const existing = docs.find((d) => d.doc_type === type);
+      const { data: row, error: dbErr } = await supabase
+        .from("employee_documents")
+        .upsert(
+          {
+            employee_id: supabaseId,
+            doc_type: type,
+            file_name: file.name,
+            file_path: path,
+            file_size: file.size,
+            mime_type: file.type || null,
+            uploaded_by: sessionData.session?.user.id ?? null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "employee_id,doc_type" }
+        )
+        .select("id, doc_type, file_name, file_path, file_size, created_at")
+        .single();
+      if (dbErr) throw dbErr;
+
+      // The DB row now points at the new file — safe to drop the replaced one.
+      if (existing && existing.file_path !== path) {
+        await supabase.storage.from("employee-documents").remove([existing.file_path]);
+      }
+      setDocs((prev) => [...prev.filter((d) => d.doc_type !== type), row as EmpDoc]);
+      toast.success(isAr ? "تم رفع الوثيقة بنجاح" : "Document uploaded");
+    } catch (err) {
+      console.error("[employee-detail] document upload failed:", err);
+      toast.error(isAr ? "فشل رفع الوثيقة. حاول مرة أخرى." : "Upload failed. Please try again.");
+    } finally {
+      setDocBusy(null);
+    }
+  };
+
+  const handleDocView = async (doc: EmpDoc) => {
+    const { data, error } = await supabase.storage
+      .from("employee-documents")
+      .createSignedUrl(doc.file_path, 3600);
+    if (error || !data?.signedUrl) {
+      toast.error(isAr ? "تعذّر فتح الملف" : "Could not open the file");
+      return;
+    }
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleDocDelete = async (doc: EmpDoc) => {
+    if (docBusy) return;
+    if (!window.confirm(isAr ? `حذف "${doc.file_name}"؟` : `Delete "${doc.file_name}"?`)) return;
+    setDocBusy(doc.doc_type);
+    try {
+      await supabase.storage.from("employee-documents").remove([doc.file_path]);
+      const { error } = await supabase
+        .from("employee_documents")
+        .delete()
+        .eq("id", doc.id);
+      if (error) throw error;
+      setDocs((prev) => prev.filter((d) => d.id !== doc.id));
+      toast.success(isAr ? "تم حذف الوثيقة" : "Document deleted");
+    } catch (err) {
+      console.error("[employee-detail] document delete failed:", err);
+      toast.error(isAr ? "فشل حذف الوثيقة" : "Failed to delete the document");
+    } finally {
+      setDocBusy(null);
+    }
+  };
 
   const handleLocationToggle = async () => {
     if (!employee) return;
@@ -457,6 +611,11 @@ export function EmployeeDetailView({
   }
 
   const empAssets = assets.filter((a) => a.employeeId === employee.id);
+  // Passport applies to non-Saudis only — hide that row once the profile
+  // flags the employee as Saudi. Unknown (null) keeps the row visible.
+  const visibleDocTypes = DOC_TYPES.filter(
+    (dt) => dt.key !== "passport" || profileExtras?.isSaudi !== true
+  );
   // Salary breakdown — read live from profiles. Housing is broken out
   // because Saudi GOSI applies to (base + housing), not to other
   // allowances like transport, food, or comm.
@@ -889,6 +1048,109 @@ export function EmployeeDetailView({
           )}
         </div>
       )}
+
+      {/* Official documents — CV, degree, IBAN cert, ID/iqama, passport,
+          Qiwa contract, national address. One file per type; re-uploading
+          replaces. Passport row is hidden for employees flagged Saudi. */}
+      <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-outline-variant/40">
+        <h2 className="font-headline font-bold text-base mb-1 flex items-center gap-2">
+          <Icon name="folder_open" size={18} className="text-primary" />
+          {isAr ? "الوثائق الرسمية" : "Official Documents"}
+          <Badge variant="default">
+            {docs.filter((d) => visibleDocTypes.some((dt) => dt.key === d.doc_type)).length}/
+            {visibleDocTypes.length}
+          </Badge>
+        </h2>
+        <p className="text-xs text-on-surface-variant mb-4">
+          {isAr
+            ? "صور أو PDF — بحد أقصى 10 ميجابايت لكل وثيقة"
+            : "Images or PDF — up to 10MB per document"}
+        </p>
+        {/* Single shared file input; pendingDocType remembers which row asked. */}
+        <input
+          ref={docInputRef}
+          type="file"
+          accept={DOC_ACCEPT}
+          className="hidden"
+          onChange={handleDocFile}
+        />
+        <ul className="space-y-2">
+          {visibleDocTypes.map((dt) => {
+            const doc = docs.find((d) => d.doc_type === dt.key);
+            const busy = docBusy === dt.key;
+            return (
+              <li
+                key={dt.key}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-container/40 border border-outline-variant/20"
+              >
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-surface-container text-primary shrink-0">
+                  <Icon name={dt.icon} size={16} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-bold text-sm">{isAr ? dt.ar : dt.en}</p>
+                  {doc ? (
+                    <p className="text-xs text-on-surface-variant truncate">
+                      {doc.file_name}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-on-surface-variant">
+                      {isAr ? "لم تُرفع بعد" : "Not uploaded yet"}
+                    </p>
+                  )}
+                </div>
+                {doc && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleDocView(doc)}
+                      disabled={busy}
+                      title={isAr ? "عرض" : "View"}
+                      aria-label={isAr ? "عرض" : "View"}
+                    >
+                      <Icon name="visibility" size={16} />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => handleDocDelete(doc)}
+                      disabled={busy}
+                      title={isAr ? "حذف" : "Delete"}
+                      aria-label={isAr ? "حذف" : "Delete"}
+                      className="text-md-error"
+                    >
+                      <Icon name="delete" size={16} />
+                    </Button>
+                  </>
+                )}
+                <Button
+                  variant={doc ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => pickDoc(dt.key)}
+                  disabled={busy}
+                >
+                  {busy ? (
+                    <Icon name="progress_activity" size={16} className="animate-spin" />
+                  ) : (
+                    <Icon name={doc ? "sync" : "upload"} size={16} />
+                  )}
+                  {busy
+                    ? isAr
+                      ? "جاري..."
+                      : "Working..."
+                    : doc
+                      ? isAr
+                        ? "استبدال"
+                        : "Replace"
+                      : isAr
+                        ? "رفع"
+                        : "Upload"}
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
 
       {/* Issued assets */}
       {empAssets.length > 0 && (
