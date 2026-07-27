@@ -306,7 +306,7 @@ NJD HR/
 ├── supabase/
 │   ├── schema.sql                  # Full DB schema (reference only — runs on self-hosted Supabase)
 │   └── migrations/
-│       └── 003_daily_reports.sql   # Daily reports table + storage bucket + RLS (018_employee_documents.sql adds the official-documents table + bucket)
+│       └── 003_daily_reports.sql   # Daily reports table + storage bucket + RLS (018_employee_documents.sql adds the official-documents table + bucket; 019 makes departments.id text + employee self-service docs)
 ├── tailwind.config.ts
 ├── next.config.mjs
 ├── tsconfig.json
