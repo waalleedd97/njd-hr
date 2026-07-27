@@ -259,8 +259,15 @@ export function EmployeeDetailView({
     const supabaseId = userIdMap[employee.email.toLowerCase()] || employee.id;
     setDocBusy(type);
     try {
-      // Strip characters Supabase Storage keys dislike.
-      const safeName = file.name.replace(/[^\w.\-؀-ۿ ]/g, "_");
+      // Supabase Storage keys must be ASCII — Arabic filenames are rejected
+      // with InvalidKey. Keep the extension, slug the base to ASCII.
+      const nameMatch = file.name.match(/^(.*?)(\.[A-Za-z0-9]{1,10})?$/);
+      const safeBase =
+        (nameMatch?.[1] || "")
+          .replace(/[^A-Za-z0-9_-]+/g, "_")
+          .replace(/^_+|_+$/g, "")
+          .slice(0, 60) || "file";
+      const safeName = safeBase + (nameMatch?.[2] || "");
       const path = `${supabaseId}/${type}/${Date.now()}-${safeName}`;
       const { error: upErr } = await supabase.storage
         .from("employee-documents")
