@@ -158,6 +158,14 @@ export function EmployeeDetailView({
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
 
+  // ── Delete employee state ──────────────────────────────────────────
+  // Server route does the actual work (auth.admin.deleteUser needs the
+  // service key); this dialog just collects confirmation and shows the
+  // result. Deleting cascades to profiles + all related rows.
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   useEffect(() => {
     if (!isAdmin) return;
     (async () => {
@@ -338,6 +346,50 @@ export function EmployeeDetailView({
       toast.error(isAr ? "فشل حذف الوثيقة" : "Failed to delete the document");
     } finally {
       setDocBusy(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!employee || deleting) return;
+    setDeleteError("");
+    const supabaseId = userIdMap[employee.email.toLowerCase()] || employee.id;
+    setDeleting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("no session");
+      const res = await fetch("/api/employees/delete", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId: supabaseId }),
+      });
+      if (!res.ok) {
+        const j = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(j.error || `HTTP ${res.status}`);
+      }
+      toast.success(isAr ? "تم حذف الموظف نهائياً" : "Employee permanently deleted");
+      router.push("/employees");
+      router.refresh();
+    } catch (err) {
+      console.error("[employee-detail] delete failed:", err);
+      const msg = err instanceof Error ? err.message : "";
+      setDeleteError(
+        msg.includes("super admin")
+          ? isAr
+            ? "لا يمكن حذف حساب مدير نظام"
+            : "Cannot delete a super admin account"
+          : msg.includes("own account")
+            ? isAr
+              ? "لا يمكنك حذف حسابك الخاص"
+              : "You cannot delete your own account"
+            : isAr
+              ? "فشل حذف الموظف. حاول مرة أخرى."
+              : "Failed to delete the employee. Please try again."
+      );
+      setDeleting(false);
     }
   };
 
@@ -1224,6 +1276,64 @@ export function EmployeeDetailView({
           </ul>
         </div>
       )}
+
+      {/* Danger zone — permanent employee deletion (admin only). The API
+          route guards again: caller must be super_admin, target can't be
+          self or another super_admin. */}
+      {isAdmin && (
+        <div className="bg-surface-container-lowest rounded-2xl p-6 shadow-sm border border-md-error/30">
+          <h2 className="font-headline font-bold text-base mb-1 flex items-center gap-2 text-md-error">
+            <Icon name="warning" size={18} />
+            {isAr ? "منطقة الخطر" : "Danger Zone"}
+          </h2>
+          <p className="text-xs text-on-surface-variant mb-4">
+            {isAr
+              ? "حذف الموظف يزيل حسابه وكل بياناته نهائياً (الحضور، الطلبات، الوثائق، الرواتب) ولا يمكن التراجع عنه."
+              : "Deleting an employee permanently removes their account and all their data (attendance, requests, documents, payroll). This cannot be undone."}
+          </p>
+          <Button variant="destructive" onClick={() => { setDeleteError(""); setDeleteOpen(true); }}>
+            <Icon name="person_remove" size={18} />
+            {isAr ? "حذف الموظف نهائياً" : "Delete Employee Permanently"}
+          </Button>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={deleteOpen} onOpenChange={(v) => { if (!deleting) setDeleteOpen(v); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-md-error">
+              {isAr ? "تأكيد حذف الموظف" : "Confirm Employee Deletion"}
+            </DialogTitle>
+            <DialogDescription>
+              {isAr
+                ? `سيتم حذف "${employee.nameAr}" وكل بياناته نهائياً. هذا الإجراء لا يمكن التراجع عنه.`
+                : `"${employee.nameEn}" and all their data will be permanently deleted. This action cannot be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && (
+            <p className="text-sm text-md-error font-bold flex items-center gap-2" role="alert">
+              <Icon name="error" size={16} fill />
+              {deleteError}
+            </p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              {t.common.cancel}
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting && <Icon name="progress_activity" size={18} className="animate-spin" />}
+              {deleting
+                ? isAr
+                  ? "جاري الحذف..."
+                  : "Deleting..."
+                : isAr
+                  ? "نعم، احذف نهائياً"
+                  : "Yes, delete permanently"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Edit Profile Dialog — single unified form covering every editable
           column on profiles. Email is excluded (lives in auth.users and
